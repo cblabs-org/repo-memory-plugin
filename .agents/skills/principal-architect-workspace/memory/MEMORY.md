@@ -9,6 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
+| pr-01-go-skeleton | WO1/7 — In Progress | Core Infrastructure, Harness Adapters | [PROJECT.md](../pr-01-go-skeleton/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
