@@ -72,6 +72,8 @@ func TestCoreImportBoundaries(t *testing.T) {
 
 		relPath, _ := filepath.Rel(root, path)
 
+		isTestFile := strings.HasSuffix(path, "_test.go")
+
 		for _, imp := range node.Imports {
 			importPath, err := strconv.Unquote(imp.Path.Value)
 			if err != nil {
@@ -80,6 +82,12 @@ func TestCoreImportBoundaries(t *testing.T) {
 
 			for _, forbidden := range forbiddenAdapters {
 				if strings.Contains(importPath, forbidden) {
+					// Tests under internal/core are permitted to import internal/harness/fake (SPEC §18.6 Rule 6).
+					// Production code in internal/core must never import any adapter (including fake).
+					// No code in internal/core (test or production) may import antigravity or claudecode.
+					if isTestFile && forbidden == "internal/harness/fake" {
+						continue
+					}
 					t.Errorf("boundary violation in %s: imports forbidden adapter %q", relPath, importPath)
 				}
 			}
