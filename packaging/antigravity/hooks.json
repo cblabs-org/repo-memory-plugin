@@ -1,0 +1,39 @@
+{
+  "repo-memory": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "<bin> hook antigravity PreInvocation"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_to_file|replace_file_content|call_mcp_tool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<bin> hook antigravity PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<bin> hook antigravity PostToolUse"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "<bin> hook antigravity Stop"
+      }
+    ]
+  }
+}
