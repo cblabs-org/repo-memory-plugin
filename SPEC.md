@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.7 (see Revision history) |
+| **Status** | Draft v0.8 (see Revision history) |
 | **Date** | 2026-09-30 |
 | **Scope** | Repository-level memory for coding agents. **Release 1: Antigravity. Release 2: Claude Code.** Text marked **[R2]** belongs to Release 2; Release 1 is built so that Release 2 is an adapter, not a rewrite (§18.6). |
 | **Implementation** | One Go binary, `repo-memory` (§18) |
@@ -232,6 +232,8 @@ Housekeeping cost has two parts: a **fixed overhead per call** (~17k input token
 
 Session rates since May: ~1.4 top-level and ~7 subagent Antigravity sessions a day, and ~0.9 Claude Code sessions a day.
 
+The Antigravity sizes above were measured on `transcript.jsonl`, which truncates large fields (§6.2). Untruncated sizes are larger, so the estimates below are lower bounds until P0 re-measures them from the merged transcript set.
+
 **Payload per episode, before any overhead.** Compaction keeps dialogue, reasoning and outcome excerpts, and those are 10–30% of a transcript, so compaction should reach 4× or more on Antigravity and 3× on Claude Code. Salience windows (§6.4) should roughly halve that again. A median Antigravity top-level episode then comes out as:
 
 | Step | Tokens |
@@ -292,7 +294,7 @@ The plugin is installed globally, so its hooks fire in every workspace the harne
 
 1. creates `.memory/` (`config.yaml`, `claims/`, `events/`, `views/`) and `.memory/.gitignore` for `.cache/`;
 2. adds the map include line to the harness's own instruction file (`GEMINI.md` in Release 1; **[R2]** `CLAUDE.md`), never to the shared `AGENTS.md` (§12.2);
-3. registers the repository in `<data-dir>/registry.json`: repo ID (hash of the root commit), root path and known worktree paths;
+3. registers the repository in `<data-dir>/registry.json`: repo ID, root path and known worktree paths. The repo ID is `sha256(root commit + ":" + canonical origin URL)`, or `sha256(root commit + ":" + real path of the main worktree)` when there is no remote. The root commit alone isn't enough: repositories created from a template such as esp32-app-foundation share their root commit. The ID lives in the machine registry, never in the repository, so a template's committed files can't carry it into a downstream project;
 4. offers the subsystem bootstrap (§5.2), whose proposal the user reviews.
 
 **What enrolment controls:**
@@ -327,7 +329,7 @@ Location: `<data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst`. Here `<
   "harness": "antigravity" | "claude-code",
   "session_id": "<native id>",
   "parent_episode": null | "ep-…",
-  "repo_id": "<hash of root commit>",
+  "repo_id": "<sha256(root commit : canonical origin URL)>", // §4.6
   "branch": "ble/wo6-dis-service",
   "started": "2026-09-22T19:04:11Z", "ended": "…",
   "head_start": "<sha>", "head_end": "<sha>",
@@ -614,7 +616,7 @@ Views are regenerated when any claim they cite changes, or when the entity skele
 ├── jobs.sqlite                 # job table (§4.3); written by the tick only
 ├── tick.lock
 ├── runs/                       # working directory for housekeeping runs (§4.4)
-├── worktree/                   # dedicated git worktree for the memory/pending branch (§6.8)
+├── worktrees/<clone-id>/        # git worktree for the memory/pending branch, one per clone of the repo (§6.8)
 ├── episodes/<yyyy>/*.jsonl.zst # compacted, scrubbed episodes
 ├── raw/                        # optional raw transcript retention (off by default)
 ├── pending/                    # claims awaiting review, usable locally (§6.8)
@@ -649,7 +651,7 @@ Capture uses both invocation paths (§4.1). The event path captures sessions pro
 **Event path (primary).** The `Stop` hook:
 
 1. writes `{harness, conversation_id, transcript_path, repo_root, branch, head}` to `spool/`;
-2. copies the transcript into `queue/` at once, so later pruning can't lose it;
+2. copies the transcript files into `queue/` **incrementally**: only bytes appended since the last copy. Per-file byte offsets and a hash of the already-copied prefix are kept in `state/`. If the prefix hash no longer matches (the harness rewrote the file), the file is copied in full once. Without this, a long session would re-copy multi-megabyte transcripts on every turn;
 3. returns immediately.
 
 It never returns `"decision": "continue"`. `Stop` fires whenever the execution loop ends, so a conversation with several user turns produces several `Stop` events. Each one re-copies the transcript. Processing waits until the conversation has been idle for 15 minutes (checked by the next tick), so the same conversation isn't extracted repeatedly mid-flight.
@@ -663,7 +665,22 @@ It never returns `"decision": "continue"`. `Stop` fires whenever the execution l
   - Anthropic documents the entry format as internal and version-dependent, so the Claude Code parser is version-aware and tolerant (§12.2).
   - As insurance against parser breaks, the Claude Code `Stop` hook also appends the turn's essentials (prompt, tool names, error excerpts, commit commands), taken from hook inputs, to a harness-neutral side-log in the spool.
 
-A `transcript_full.jsonl` sits alongside most Antigravity transcripts (562 of 567). It covers the same steps and doesn't fill the step gaps described below. Which file to prefer depends on per-step content differences, to be checked in P0.
+**Antigravity transcript file set.** Each conversation's `logs/` directory holds four sources:
+
+| Source | Content |
+|---|---|
+| `transcript.jsonl` | The compact transcript |
+| `transcript_full.jsonl` | Untruncated content |
+| `chunks/transcript/*.jsonl` and `chunks/transcript_full/*.jsonl` | Numbered shards |
+
+Large fields in `transcript.jsonl` are truncated and marked `"truncated_fields": ["content", "thinking", "tool_calls"]`; the untruncated step is in the full variant. This is common: 487 of 535 transcripts on the reference machine contained truncated lines (10,035 lines in total). Truncated fields are exactly the compiler errors, backtraces and reasoning that triage and extraction depend on.
+
+The Antigravity parser therefore:
+- reads all four sources and merges them by `step_index`;
+- prefers full variants, resolving every `truncated_fields` entry;
+- records any steps still missing as gaps.
+
+Chunk files sometimes hold more lines than `transcript.jsonl` (225 of 395 sampled differ), so they may fill the step gaps noted below. Their exact relationship is experiment E12.
 
 It copies each changed transcript into the queue. Sessions are attributed to a repo via `conversation_summaries.db` `workspace_uris` for Antigravity and the project directory for Claude Code. This covers:
 
@@ -714,7 +731,7 @@ A **small model** handles the ambiguous remainder, answering "Is there durable, 
 | A revert or abandoned edit | ±5 steps |
 | A human message with a decision, preference, correction or approval signal | ±3 steps; human messages themselves are always included |
 | A write to a memory artefact | The `note` step, plus the steps back to the start of the failure, discussion or decision it records (at most 20) |
-| A reasoning span that weighs alternatives | The span, +2 steps |
+| A reasoning span that weighs alternatives, or a human message that sets a constraint or trade-off | The span, +2 steps. Detected lexically in `thinking`, agent text and human messages, using a configurable marker list (default: "trade-off", "instead of", "rather than", "decided to", "because", "invariant", "constraint", "must not", "do not use", "ADR"). Capped at 2 such windows per episode, so smooth "green-path" design decisions that never fail a build still reach extraction without eroding compaction. |
 | A device, flash or soak outcome | ±5 steps |
 
 Each episode also gets a **synopsis**: files touched grouped by subsystem, commits, the outcome list, exposures, and every human message verbatim. Windows plus synopsis should roughly halve the extraction payload (§4.4.1). Recall is the risk. B5 lists durable knowledge the extractor missed, and if misses fall outside windows, the window rules widen.
@@ -764,7 +781,7 @@ For each candidate:
 | Situation after exposure | Treatment |
 |---|---|
 | The agent restates or follows the claim; outcomes are consistent but don't test it (e.g. followed an invariant and the build passed) | No `support`. The exposure is recorded as `used` for push-precision metrics only (§10.1). |
-| A new outcome **tests** the claim, i.e. it would have come out differently had the claim been false (e.g. a ruled-out approach retried and failed the same way; a failure signature matched and its fix resolved the error) | `support` is allowed, with the outcome as evidence |
+| A new outcome **tests** the claim, i.e. it would have come out differently had the claim been false (e.g. a ruled-out approach retried and failed the same way; a failure signature matched and its fix resolved the error) | `support` is allowed, with the outcome as evidence, **only if a mechanical precondition holds first:** after the exposure step, the session edited, built, tested or ran something touching at least one of the claim's anchored files or symbols, or ran the claim's `enforced_by` check. An unrelated green build after reading the map never qualifies. The reconciler's judgement that the outcome tests the claim is applied only to candidates that pass the precondition. |
 | An outcome contradicts the claim | `contradict`, handled normally and flagged as high-value: memory was followed and was wrong |
 | A human explicitly confirms or corrects the claim | Counts as human evidence (`confirmed` or a correction). A human message that merely continues the work ("ok, carry on") doesn't. |
 
@@ -895,10 +912,16 @@ Default risky actions (configurable):
 
 | Mode | Behaviour | Default for |
 |---|---|---|
-| `gate-once` | At `PreToolUse`, if the relevant `procedure`/`invariant` claims haven't been delivered this session, return `deny` with a reason containing them (≤ 800 tokens) and an explicit "re-issue the call to proceed". The ledger marks them delivered, so the re-issued call is allowed. Costs one extra round-trip, once per session per claim set. | Flash, release, partition-table edits |
+| `gate-once` | At `PreToolUse`, if the relevant `procedure`/`invariant` claims haven't been delivered this session, return `deny` with a reason containing them (≤ 800 tokens) and an explicit "re-issue the call to proceed". The ledger marks them delivered, so the re-issued call is allowed. Costs one extra round-trip, once per session per claim set. | **Only** destructive, hardware or irreversible actions: flash and upload, release and publish, force push, partition-table edits |
 | `ask` | At `PreToolUse`, return `ask` with the claims as the reason, so the user decides. | Off by default; for teams that want a human in the loop |
 | `next-invocation` | Allow the call; queue the claims for the next `PreInvocation`. No extra round-trip, but delivery comes after the action. | sdkconfig and dependency edits |
 | `anticipate` | Inject at `PreInvocation` when the transcript suggests the action is imminent (e.g. a successful build in a session that has flashed before). | Optional addition to any mode |
+
+`gate-once` costs a model round-trip and has two failure modes, both tested in E9:
+- a denial in the middle of a batch of parallel tool calls can disrupt the batch;
+- a model may read a hook denial as a policy block and stop to ask the user instead of re-issuing.
+
+It is therefore reserved for actions where blocking before execution is mandatory. Warnings about builds and edits are delivered at `PreInvocation` when the related files are touched, which normally precedes the build by at least one turn.
 
 This must coexist with existing gates such as esp32-app-foundation's `flash-tag-gate.py`. Hooks for the same event run in sequence; a `deny` from either stops the call.
 
@@ -916,7 +939,7 @@ The main defence against repeating a dead-end is not an alert at all:
 - A match requires two conditions:
   1. an anchored entity is in play in the session (touched or mentioned);
   2. the claim's `match` terms appear in the text being checked.
-- **At `PreToolUse`**, the hook checks the concrete proposed command or edit. A match against a `verified` or stronger `ruled-out` claim uses `gate-once`: `deny` with "This was tried on <date> and failed because <reason> (clm-…). If your approach differs, re-issue the call." This is the only way to catch the retry *before* it runs.
+- **At `PreToolUse`**, the hook checks the concrete proposed command or edit, and also the current turn's reasoning at the transcript tail (the `thinking` that produced this call), if E3 shows the transcript is current at that point. A match against a `verified` or stronger `ruled-out` claim uses `gate-once`: `deny` with "This was tried on <date> and failed because <reason> (clm-…). If your approach differs, re-issue the call." This is the only way to catch the retry *before* it runs.
 - **At `PreInvocation`**, the hook checks the latest reasoning in the transcript tail. A match queues a ≤ 300-token alert for this invocation. This catches plans that haven't turned into a tool call yet.
 
 **Tier 2: semantic (housekeeping run on the next tick; on Claude Code, an `asyncRewake` hook).**
@@ -961,7 +984,7 @@ Antigravity hooks run synchronously and block the agent loop, and `PreInvocation
 | **No ticks** | Scheduled sidecar not running (Antigravity closed, sidecars disabled, machine without Antigravity and no OS schedule) | Capture (`Stop` copies transcripts), delivery from the last index, déjà-vu tier 1, pull tools (`ask`/`brief` synthesis still runs synchronously). Spooled work waits for the next tick. |
 | **No housekeeping** | `agy` missing, signed out, or quota exhausted | Capture, delivery and pull tools that don't need synthesis. LLM jobs stay queued; the circuit breaker stops retries until `agy` works again. |
 | **No index** | Index missing or corrupt | Map via the `AGENTS.md`/`CLAUDE.md` include; the agent can walk MAP → claim index → claim files (§5.5); pull tools fall back to text search over `.memory/views/` and claim files; hooks no-op. The index can be rebuilt with `repo-memory reindex`. |
-| **Native floor** | No hooks and no tick (e.g. a harness where the plugin's hooks are disabled) | The always-on map include; generated path-scoped subsystem rules (`.claude/rules/` with `paths:` on Claude Code; Glob rules on Antigravity, pending E4/C6); MCP pull tools over the last index |
+| **Native floor** | No hooks and no tick (e.g. a harness where the plugin's hooks are disabled) | The always-on map include; generated path-scoped subsystem rules (`.claude/rules/` with `paths:` on Claude Code; `model_decision` rules on Antigravity, per E4); MCP pull tools over the last index |
 | **Plugin off** | Plugin disabled or not installed (e.g. a collaborator) | `.memory/views/*.md` and claim files remain readable Markdown in the repo; the map include still loads if present, and any agent can follow it to the claim indexes |
 
 ---
@@ -1144,7 +1167,7 @@ Verified against Antigravity's built-in customization docs (`builtin/skills/agy-
 | `Stop` | Capture: spool entry and transcript copy | No `decision`, so the agent is never forced to continue |
 | `PreInvocation` (every model call) | `invocationNum == 0`: task brief (inline, or a spooled request). Every call: read `transcriptPath` from the last cursor and `alerts/`; touch, error and déjà-vu tier-1 delivery; spool tier-2 requests. Exit immediately if `REPO_MEMORY_HOUSEKEEPING` is set. Must meet §7.8. | `injectSteps` → `ephemeralMessage` when something is due; otherwise `{}` |
 | `PreToolUse` (matcher: `run_command\|write_to_file\|replace_file_content\|call_mcp_tool`) | Risky-action gates and déjà-vu tier 1 on the concrete proposed call (§7.5, §7.6) | `allow`, or `deny`/`ask` with a `reason` for `gate-once`/`ask` modes. Never `overwrite`. |
-| `PostToolUse` (matcher: `run_command`) | Detect git merge/checkout/pull/rebase or dependency updates by reading the transcript step at `stepIdx`; spool a re-check | `{}` |
+| `PostToolUse` (matcher: `run_command`) | Detect git merge/checkout/pull/rebase or dependency updates by reading the transcript step at `stepIdx`; spool a re-check. The payload carries no tool call, so the handler confirms the tool from the transcript step and tolerates being called for other tools. | `{}` |
 
 `PostInvocation` is not used.
 
@@ -1152,9 +1175,9 @@ Verified against Antigravity's built-in customization docs (`builtin/skills/agy-
 
 | Sidecar | Schedule | Runs |
 |---|---|---|
-| `repo-memory/tick` | `builtin: schedule`, `* * * * *` | `repo-memory tick` (§4.3, §12.3) |
+| `repo-memory/tick` | `builtin: schedule`, `* * * * *`, `restart_policy: "always"`, with `display_name`, `description` and `agent_permissions` (`access_grants` and `workspace_uris` for the report conversations it starts) | `repo-memory tick` (§4.3, §12.3) |
 
-The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM work only when there is something to process. Sidecars are disabled by default and must be enabled in `config.json`. Only one sidecar is needed. The separate watcher tick from v0.2 is folded into it. Report conversations are started with `agentapi`, which needs the sidecar environment (`projectId`).
+The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM work only when there is something to process. Sidecars are disabled by default. Per Antigravity's own guidance, a plugin must never enable a sidecar itself: `install` tells the user to enable it in the **Automations** dashboard. Scheduled runs inherit global permissions and auto-deny anything not granted, so the report conversations' grants are listed in `agent_permissions` and checked with a test run. Only one sidecar is needed. The separate watcher tick from v0.2 is folded into it. Report conversations are started with `agentapi`, which needs the sidecar environment (`projectId`).
 
 **Other mechanisms:**
 
@@ -1162,7 +1185,7 @@ The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM
 |---|---|---|
 | Pull tools | Stateless stdio MCP server in plugin `mcp_config.json`, reading the SQLite index | Tools are listed in the system prompt of every session; schema tokens are measured (§10.4). `memory.ask` and `memory.brief` may make one synchronous housekeeping run (~13 s). |
 | Always-on map | `@[…](.memory/views/MAP.md)` include in the repo's root `AGENTS.md` | Fallback: `PreInvocation` at `invocationNum == 0`. |
-| Native alternative | Glob and Model Decision rule activation | Described on the public rules page but not in the built-in rules doc. Treat as unverified until tested (E4). |
+| Native alternative | `model_decision` rules (description-led, loaded on demand) | The built-in docs document `always_on` and `model_decision` only; `glob` activation is undocumented there and reportedly deprecated, so it isn't used (E4). |
 
 Plugin layout (installed globally; per-repo data lives in `.memory/`):
 
@@ -1187,16 +1210,17 @@ These unknowns must be settled before P2 builds on them:
 | # | Question | Method |
 |---|---|---|
 | E1 | Does an `ephemeralMessage` persist in the model's context on later turns, and does it appear in `transcript.jsonl`? | Inject a unique marker at invocation N; ask the model about it at N+5; inspect the transcript. Dedupe via the delivery ledger regardless of the answer. |
-| E2 | Do `@[…](path)` includes in a root `AGENTS.md` resolve relative to the workspace, and are they re-read when the file changes? | Include `MAP.md`, change it, start a new session. |
+| E2 | Do `@[…](path)` includes in `GEMINI.md`/`AGENTS.md` resolve relative to the including file, and are they re-read when the target changes? (Known: the 24 KB per-file cap applies after expansion, within the 20k-token always-on budget.) | Include `MAP.md`, change it, start a new session. |
 | E3 | Is `transcript.jsonl` current at the moment `PreInvocation` fires? | Compare the last step index in the file with `initialNumSteps` and the hook's view. |
-| E4 | Are Glob and Model Decision rule activations supported in the installed version? | Minimal rule with each activation mode. |
+| E4 | ~~Are Glob and Model Decision activations supported?~~ **Answered from the built-in docs:** `always_on` and `model_decision` are documented; `glob` isn't, and is reportedly deprecated. The native floor uses `model_decision` rules only. Remaining check: a `model_decision` rule loads when its description matches the task. | Minimal `model_decision` rule. |
 | E5 | Delivery hook latency of the Go binary on macOS and Windows (fast path and injection path) | Benchmark the fast path and the injection path. |
-| E6 | Do scheduled sidecars tick while only the Antigravity CLI is open? What happens on sleep and wake (missed ticks are skipped or caught up)? What happens when a tick is still running when the next one is due? | Observe `sidecar_data/.../logs`. The tick takes `tick.lock` so overlapping ticks exit immediately, as the bug-fixer tick dispatcher does with its slot check. |
+| E6 | Do scheduled sidecars tick while only the Antigravity CLI is open? What happens on sleep and wake? What happens when a tick is still running when the next is due? (Known from the built-in automation guidance: `sidecar.json` fields, `restart_policy`, `agent_permissions`, user enablement via the dashboard.) | Observe `sidecar_data/.../logs`. The tick takes `tick.lock`, so overlapping ticks exit immediately. |
 | E7 | Are housekeeping runs isolated? Does `--project` place them in a separate project? Can `agy --continue` or the CLI's history ever resume or surface them? Do they ever appear in the app/IDE store (e.g. through the shared history)? | Run tagged housekeeping calls, then inspect both `conversation_summaries.db` stores and try `agy -c` from the repo directory. |
 | E8 | Do subagent conversations (e.g. PA workers started with `invoke_subagent`) fire their own `PreInvocation`, `PreToolUse` and `Stop` hooks, with their own `conversationId` and `transcriptPath`? | Spawn a subagent with logging hooks enabled. If not, worker sessions are captured by the sweep only, and workers get their brief through the WORKORDER (§13) rather than through hooks. |
-| E9 | How does `PreToolUse` `deny` + `reason` read to the agent in practice? Does it reliably re-issue the call after a `gate-once` denial, or does it abandon the action? | Scripted sessions against a test gate; tune the reason wording. |
+| E9 | How does `PreToolUse` `deny` + `reason` read to the agent in practice? Does it reliably re-issue the call after a `gate-once` denial? How does a denial behave inside a batch of parallel tool calls? Which reason wording avoids being read as a policy block? Would `overwrite` (whose result is prefixed with a rewrite notice) be a usable non-blocking alternative for non-destructive commands? | Scripted sessions against a test gate; tune the reason wording. |
 | E10 | Can the ~17k-token fixed overhead of a housekeeping run be reduced (a minimal `--agent` definition, fewer global plugins, no skills)? Does repeated use of the same prefix produce cache reads? | Measure `usage` from `agy -p --output-format json` across variants. |
 | E11 | How do housekeeping runs count against the Antigravity subscription quota, and what are the rate limits per model? | Track usage and failures over the first two weeks of P1; set the daily budgets from the results. |
+| E12 | Antigravity transcript file set: are `transcript.jsonl`, `transcript_full.jsonl` and the `chunks/` shards append-only? Which is authoritative per step? Do the chunks fill the step gaps? | Compare the four sources by `step_index` across a sample of conversations; watch one live conversation grow. |
 
 ### 12.2 Claude Code [R2]
 
@@ -1260,7 +1284,7 @@ Claude Code's auto memory is on by default. For esp32-app-foundation it already 
 | C3 | Does an `async: true` hook process survive session end, `/clear`, or the desktop app quitting? | An async hook that writes a marker after 60 s |
 | C4 | Is `asyncRewake` delivery reliable and non-disruptive mid-turn? | Scripted session with a seeded ruled-out claim |
 | C5 | Parser robustness across Claude Code versions | Fixture corpus; re-run on each update |
-| C6 | Does one rule file with both `paths:` and Antigravity glob frontmatter load correctly in both harnesses? | Minimal rule in `.agents/rules/` via the `.claude` symlink |
+| C6 | Does one rule file with Claude Code `paths:` and Antigravity `model_decision` frontmatter load correctly in both harnesses? (Antigravity `glob` isn't used; see E4.) | Minimal rule in `.agents/rules/` via the `.claude` symlink |
 | C7 | Is a Desktop local scheduled task workable as the report surface? | Weekly test task; check permission stalls and catch-up behaviour |
 
 ### 12.3 Tick
@@ -1271,7 +1295,7 @@ Claude Code's auto memory is on by default. For esp32-app-foundation it already 
 - **Git events** are detected by comparing HEAD, `dependencies.lock` and the sdkconfig hashes with the previous tick. No git hooks are installed.
 - **Housekeeping runs** are child processes started with `REPO_MEMORY_HOUSEKEEPING=1`, the working directory `<data-dir>/runs/<repo-id>/`, the configured model and `--print-timeout`. The tick waits for them within its budget; a run still going when the budget ends keeps the tick alive until its timeout, and the next tick skips (`tick.lock`).
 - **Reports** are started with `agentapi new-conversation --title="[repo-memory] …"` and polled on later ticks, as in the bug-fixer tick dispatcher.
-- **Publishing** runs git in the dedicated worktree (`<data-dir>/<repo-id>/worktree/`, branch `memory/pending`), never in the user's checkout.
+- **Publishing** runs git in a dedicated worktree (`<data-dir>/<repo-id>/worktrees/<clone-id>/`, branch `memory/pending`), never in the user's checkout. Each clone of the same repository gets its own publishing worktree.
 
 **`repo-memory run`** is kept as an alias for `tick`, for manual use.
 
@@ -1476,7 +1500,7 @@ All dependencies are pure Go; there is no cgo in Release 1.
 
 | Need | Choice | Note |
 |---|---|---|
-| SQLite (index, jobs, FTS) | A pure-Go SQLite driver (e.g. `modernc.org/sqlite`) | WAL mode; confirm FTS5 support in P0 |
+| SQLite (index, jobs, FTS) | A pure-Go SQLite driver (e.g. `modernc.org/sqlite`) | `journal_mode=WAL` and `busy_timeout` on every connection; hooks open read-only; writers use short transactions. A full index rebuild writes a new versioned file and then switches a small pointer file. It never renames over the live index, because Windows can't rename over a file that readers have open. Confirm FTS5 support in P0. |
 | MCP server | The official MCP Go SDK | Stdio transport |
 | Episode compression | Pure-Go zstd | |
 | Claim files | YAML front matter + Markdown | |
@@ -1575,6 +1599,7 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
   - Data, logs and `agentapi` events go to `sidecar_data/<id>/`.
   - `agentapi new-conversation` / `send-message` start or continue agent conversations.
   - In practice they are periodic ticks. The bug-fixer plugin runs three scheduled sidecars on this model.
+  - The built-in automation guidance says a plugin must never enable a sidecar itself (the user enables it in the Automations dashboard), and scheduled runs auto-deny anything not listed in `agent_permissions`.
 - **Antigravity CLI (`agy`) print mode:**
   - `-p`/`--print` with `--model`, `--json-schema`, `--output-format json|stream-json`, `--input-format stream-json`, `--print-timeout`, `--project`, `--agent`, `--disable-slash-commands`, `--sandbox`.
   - The JSON output includes `conversation_id`, `status`, `response`, `duration_seconds`, `num_turns` and `usage` (input, output, thinking and cache-read tokens).
@@ -1585,7 +1610,7 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
   - Root and directory `AGENTS.md`/`GEMINI.md` files, with `@[label](path)` includes.
   - 24 KB per file; a 20k-token aggregate budget for always-on and global rules, with overflow demoted to pointers.
   - MCP tools and skills count against a separate customization budget.
-  - Model Decision and Glob activation modes appear on the public rules page but not in the built-in doc (experiment E4).
+  - The built-in docs document `always_on` and `model_decision` rule activation; `glob` is undocumented there and reportedly deprecated (E4).
 - **Claude Code** (2.1.284; full detail in `docs/claude_architecture.md`):
   - 32 hook events, including `UserPromptSubmit` (`prompt`), `PreToolUse` (`additionalContext`, `permissionDecision`), `PostToolUse` (`tool_input`, `tool_response`), `PostToolUseFailure`, `PostToolBatch`, `SubagentStart`/`SubagentStop`, `Stop`, and `SessionEnd` (1.5 s budget).
   - `async` and `asyncRewake` command hooks; `prompt` and `agent` hook types.
@@ -1615,6 +1640,22 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
   - approvals as triage signals (§6.4).
 
   Claude-specific notes are kept in `docs/claude_architecture.md` §4.7 for the Release 2 adapter.
+- **Third-party review (GitHub issue #1, 2026-10-01).** Every claim was checked against the built-in Antigravity docs and the transcripts on disk before being adopted.
+  - Adopted:
+    - `truncated_fields`/`transcript_full.jsonl`/`chunks/` resolution (§6.2; E12);
+    - incremental transcript copying (§6.2);
+    - a repo ID that distinguishes template-derived repositories (§4.6);
+    - a mechanical decision-marker signal for salience (§6.4);
+    - a mechanical P13 precondition (§6.6);
+    - `gate-once` restricted to irreversible actions, with E9 widened (§7.5);
+    - tier-1 matching of current-turn reasoning at `PreToolUse` (§7.6);
+    - sidecar `restart_policy` and `agent_permissions`, and user enablement via the dashboard (§12.1);
+    - `model_decision` rather than `glob` for native rules (E4);
+    - SQLite WAL, `busy_timeout` and a Windows-safe index swap (§18.4).
+  - Not adopted:
+    - the claim that `PostToolUse` ignores its matcher (the built-in hooks doc shows a matcher for it; the handler is nonetheless defensive);
+    - the 46 MB transcript figure (the largest full transcript on disk is 3.9 MB);
+    - section and path references that don't match this specification.
 - **docs/claude_architecture.md (2026-09-30):** Claude Code review. All nine proposed changes were adopted in v0.4 (§4.1, §4.4, §6.2, §7.9, §12.2, §15).
 - **External review comments (2026-09-30):**
   - housekeeping cost → §4.4.1 cost model, salience windows, interactive-call levers;
@@ -1648,3 +1689,4 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
 | 0.5 | 2026-09-30 | Harness-neutral techniques from a review of Claude Code auto memory (Claude-specific notes in `docs/claude_architecture.md` §4.7):<br>• Claims gain `relevant_when` (for selection) and `apply` (for action) lines; pushes render `apply`.<br>• Claim index view per subsystem, so agents can walk MAP → index → claim with plain reads; used as the fallback when task linking fails and in degraded modes.<br>• Every pushed claim carries a currency stamp; the hook checks that anchored files exist.<br>• `open-issue` claims carry `closes_when` conditions evaluated by the tick; new `resolved` status; unknown closure means pull-only.<br>• Writes to memory artefacts (PA files, harness-native stores) and approval signals are triage keep rules; written text kept as `note` steps, leads rather than evidence.<br>• Over-budget views are re-synthesised rather than truncated.<br>• Extraction reports referenced `gaps`, which feed coverage. |
 | 0.6 | 2026-09-30 | User decisions:<br>• **Release order:** Release 1 targets Antigravity; Release 2 adds Claude Code (D4). Claude Code-specific text is tagged **[R2]**; build phases split into §15.1 (P0–P5) and §15.2 (R2.1–R2.3), with Release 2 able to start after P2.<br>• **Go** (D1): one cgo-free binary with `hook`, `tick`, `mcp`, `install` and operator subcommands (§18.1); a package layout with an enforced core/adapter boundary (§18.2); harness interfaces and capability-based delivery (§18.3); libraries (§18.4); hook fast path (§18.5); portability rules for Release 1 (§18.6), including a recommended sweep-only copy of Claude Code transcripts from P0.<br>• Plugin files generated by `repo-memory install` with absolute paths; D2 and D3 scoped to Release 1. |
 | 0.7 | 2026-10-01 | From the programme-plan review: repository enrolment (`repo-memory init`/`leave`, registry, hooks no-op within 5 ms outside enrolled workspaces, sweep scoped to enrolled repositories) and a kill switch (`REPO_MEMORY_DISABLED`, `enabled: false`, `enable`/`disable`) in §4.6; machine configuration and registry in §5.6; new subcommands in §18.1; Q24. |
+| 0.8 | 2026-10-01 | Third-party review (issue #1), verified against the runtime:<br>• Antigravity transcript file set and `truncated_fields` resolution (§6.2, E12); incremental transcript copying.<br>• Template-safe repo ID and per-clone publishing worktrees (§4.6, §5.6).<br>• Decision-marker salience windows (§6.4); mechanical P13 precondition (§6.6).<br>• `gate-once` limited to irreversible actions; E9 widened (§7.5); tier-1 reasoning check at `PreToolUse` (§7.6).<br>• Sidecar permissions, dashboard enablement and `model_decision` native rules (§12.1, E2/E4/E6 updated).<br>• SQLite concurrency and Windows-safe index swap (§18.4).<br>• Cost estimates flagged as lower bounds pending full-transcript measurement (§4.4.1). |
