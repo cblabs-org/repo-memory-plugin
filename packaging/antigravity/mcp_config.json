@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "repo-memory": {
+      "command": "<bin>",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
