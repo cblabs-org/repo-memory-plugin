@@ -4,7 +4,7 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Planning (approved) — 0/11 PRs. SPEC v0.7. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Planning — revised after review issue #1 (13 PRs, SPEC v0.8); revised structure awaiting re-approval. 0/13 PRs. |
 
 ## Active Projects
 | Project | Status | Modules | Context |

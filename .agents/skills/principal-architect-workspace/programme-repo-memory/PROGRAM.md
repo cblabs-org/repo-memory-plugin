@@ -1,7 +1,7 @@
 # repo-memory Programme
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
-> **Specification:** [SPEC.md](../../../SPEC.md) (v0.7, 2026-10-01)
+> **Specification:** [SPEC.md](../../../SPEC.md) (v0.8, 2026-10-01)
 > **Status:** Planning
 > **Base branch:** `main`
 
@@ -15,8 +15,8 @@ The system has two invocation paths (event hooks and a scheduled tick), a six-st
 
 | Repository | Programme work |
 |---|---|
-| **repo-memory-plugin** (this repo) | SPEC, the Go binary, Antigravity packaging, CI and releases: PR-01 to PR-11 |
-| **esp32-app-foundation** (pilot) | Enrolment at PR-05 and PA workspace migration at PR-09, each as a PR in that repo |
+| **repo-memory-plugin** (this repo) | SPEC, the Go binary, Antigravity packaging, CI and releases: all PRs. Also the dogfood repository from PR-02b. |
+| **esp32-app-foundation** (pilot) | Enrolment at PR-05b and PA workspace migration at PR-09, each as a PR in that repo |
 | **mm-skills/principal-architect** | PA compatibility-mode change at PR-09, raised through that repo's own process |
 
 ## Architecture Domains
@@ -50,21 +50,23 @@ The system has two invocation paths (event hooks and a scheduled tick), a six-st
 
 ## PR Sequence (linear dependency chain)
 
-See [PROGRAM-PLAN.md](PROGRAM-PLAN.md) for the full dependency graph, experiment gates, scope per PR, human tasks and exit criteria.
+See [PROGRAM-PLAN.md](PROGRAM-PLAN.md) for the full dependency graph, experiments, scope per PR, human tasks and exit criteria.
 
 | # | PR | SPEC Phase | Status | Depends On |
 |---|---|---|---|---|
-| 1 | `pr-01-go-skeleton` (incl. enrolment, kill switch, CI) | P0 (partial) | ☐ Planned | — |
-| 2 | `pr-02-capture` | P0 | ☐ Planned | PR-01; E6 |
-| 3 | `pr-03-episode-search-eval` | P0.5 + §10.3 datasets | ☐ Planned | PR-02 |
-| 4 | `pr-04-entities-claims-events` | P1 (partial) | ☐ Planned | PR-03 |
-| 5 | `pr-05-pipeline` (incl. local publish, pilot OTA/BLE) | P1, **B5 gate** | ☐ Planned | PR-04; E7, E10, E11 |
-| 6 | `pr-06-publish-review-brief` | P1, **B1/B2 gate** | ☐ Planned | PR-05 |
-| 7 | `pr-07-delivery` | P2 | ☐ Planned | PR-06; E1–E5, E9 |
-| 8 | `pr-08-learning-loop` | P3 | ☐ Planned | PR-07 |
-| 9 | `pr-09-pa-integration` (cross-repo) | P4 | ☐ Planned | PR-08; E8 |
-| 10 | `pr-10-backfill` | P5 | ☐ Planned | PR-09 |
-| 11 | `pr-11-experiments` | P0 (E1–E11) | ☐ Planned | PR-01 |
+| 1 | `pr-01-go-skeleton` (incl. enrolment, kill switch, CI, probe hook) | P0 (partial) | ☐ Planned | — |
+| 2 | `pr-01b-experiment-spike` (docs only, E1–E12) | P0 experiments | ☐ Planned | PR-01 |
+| 3 | `pr-02a-transcript-to-episode` | P0 | ☐ Planned | PR-01b |
+| 4 | `pr-02b-capture-runtime` (+ dogfood enrolment) | P0 | ☐ Planned | PR-02a |
+| 5 | `pr-03-episode-search-eval` | P0.5 + §10.3 datasets | ☐ Planned | PR-02b |
+| 6 | `pr-04-entities-claims-events` | P1 (partial) | ☐ Planned | PR-03 |
+| 7 | `pr-05a-pipeline` (incl. local publish) | P1 | ☐ Planned | PR-04 |
+| 8 | `pr-05b-pilot-b5` (milestone, alongside PR-06) | P1, **B5 gate** | ☐ Planned | PR-05a |
+| 9 | `pr-06-publish-review-brief` | P1, **B1/B2 gate** | ☐ Planned | PR-05a |
+| 10 | `pr-07-delivery` | P2 | ☐ Planned | PR-06; P1 gate (PR-05b + PR-06) |
+| 11 | `pr-08-learning-loop` | P3 | ☐ Planned | PR-07 |
+| 12 | `pr-09-pa-integration` (cross-repo) | P4 | ☐ Planned | PR-08 |
+| 13 | `pr-10-backfill` | P5 | ☐ Planned | PR-09 |
 
 ## Human Approval
 
@@ -100,3 +102,29 @@ Review against SPEC found six major misses; five were fixed, one was set aside b
   - Antigravity version fixtures and canaries;
   - human tasks scheduled.
 - **Not changed (user decision, PD10):** no emergency transcript preservation ahead of PR-02.
+
+### 2026-10-01 — Third-party review, GitHub issue #1 (session 3)
+
+Every claim in the review was checked against the built-in Antigravity docs and the transcripts on disk. SPEC moved to v0.8 and the plan to 13 PRs.
+- **Verified and adopted (SPEC v0.8):**
+  - transcript file set and `truncated_fields` resolution (487 of 535 transcripts affected);
+  - incremental transcript copying;
+  - template-safe repo ID and per-clone publishing worktrees;
+  - decision-marker salience windows;
+  - a mechanical P13 precondition;
+  - `gate-once` limited to irreversible actions;
+  - tier-1 reasoning check at `PreToolUse`;
+  - sidecar `restart_policy` and `agent_permissions`, with user enablement in the Automations dashboard;
+  - `model_decision` instead of `glob`;
+  - SQLite concurrency and a Windows-safe index swap;
+  - new experiment E12.
+- **Not adopted:** `PostToolUse` ignoring its matcher (contradicted by the hooks doc); the 46 MB transcript figure (largest on disk: 3.9 MB); section and path citations that don't match the spec.
+- **Plan changes:**
+  - the probe hook folded into PR-01;
+  - experiments became the docs-only PR-01b spike (PD3 revised);
+  - PR-02 split into 02a/02b (PD11);
+  - PR-05 split into 05a/05b, with the pilot as a milestone alongside PR-06 (PD12);
+  - every PR at 4–7 WOs (PD13);
+  - dogfood enrolment of this repo (PD14);
+  - Module Index populated.
+- **The revised PR structure needs re-approval** (Human Approval above).
