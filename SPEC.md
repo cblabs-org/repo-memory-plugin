@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.8 (see Revision history) |
+| **Status** | Draft v0.9 (see Revision history) |
 | **Date** | 2026-09-30 |
 | **Scope** | Repository-level memory for coding agents. **Release 1: Antigravity. Release 2: Claude Code.** Text marked **[R2]** belongs to Release 2; Release 1 is built so that Release 2 is an adapter, not a rewrite (§18.6). |
 | **Implementation** | One Go binary, `repo-memory` (§18) |
@@ -232,7 +232,7 @@ Housekeeping cost has two parts: a **fixed overhead per call** (~17k input token
 
 Session rates since May: ~1.4 top-level and ~7 subagent Antigravity sessions a day, and ~0.9 Claude Code sessions a day.
 
-The Antigravity sizes above were measured on `transcript.jsonl`, which truncates large fields (§6.2). Untruncated sizes are larger, so the estimates below are lower bounds until P0 re-measures them from the merged transcript set.
+The Antigravity sizes above were measured on `transcript.jsonl`, which truncates large fields (§6.2). Untruncated sizes are larger, so the estimates below are lower bounds until P0 re-measures them from `transcript_full.jsonl`.
 
 **Payload per episode, before any overhead.** Compaction keeps dialogue, reasoning and outcome excerpts, and those are 10–30% of a transcript, so compaction should reach 4× or more on Antigravity and 3× on Claude Code. Salience windows (§6.4) should roughly halve that again. A median Antigravity top-level episode then comes out as:
 
@@ -651,7 +651,7 @@ Capture uses both invocation paths (§4.1). The event path captures sessions pro
 **Event path (primary).** The `Stop` hook:
 
 1. writes `{harness, conversation_id, transcript_path, repo_root, branch, head}` to `spool/`;
-2. copies the transcript files into `queue/` **incrementally**: only bytes appended since the last copy. Per-file byte offsets and a hash of the already-copied prefix are kept in `state/`. If the prefix hash no longer matches (the harness rewrote the file), the file is copied in full once. Without this, a long session would re-copy multi-megabyte transcripts on every turn;
+2. copies the primary transcript source (`transcript_full.jsonl`, or its chunks when the monolithic file is absent) into `queue/` **incrementally**: only bytes appended since the last copy. The byte offset and a hash of the already-copied prefix are kept in `state/`. If the prefix hash no longer matches (the harness rewrote the file, reportedly when the user branches or edits an earlier step), the file is copied in full once. Without this, a long session would re-copy multi-megabyte transcripts on every turn;
 3. returns immediately.
 
 It never returns `"decision": "continue"`. `Stop` fires whenever the execution loop ends, so a conversation with several user turns produces several `Stop` events. Each one re-copies the transcript. Processing waits until the conversation has been idle for 15 minutes (checked by the next tick), so the same conversation isn't extracted repeatedly mid-flight.
@@ -665,22 +665,18 @@ It never returns `"decision": "continue"`. `Stop` fires whenever the execution l
   - Anthropic documents the entry format as internal and version-dependent, so the Claude Code parser is version-aware and tolerant (§12.2).
   - As insurance against parser breaks, the Claude Code `Stop` hook also appends the turn's essentials (prompt, tool names, error excerpts, commit commands), taken from hook inputs, to a harness-neutral side-log in the spool.
 
-**Antigravity transcript file set.** Each conversation's `logs/` directory holds four sources:
+**Antigravity transcript file set.** Each conversation's `logs/` directory holds two monolithic files and their chunked copies. Verified across all 537 conversations on the reference machine:
 
-| Source | Content |
-|---|---|
-| `transcript.jsonl` | The compact transcript |
-| `transcript_full.jsonl` | Untruncated content |
-| `chunks/transcript/*.jsonl` and `chunks/transcript_full/*.jsonl` | Numbered shards |
+| Source | Content | Use |
+|---|---|---|
+| `transcript_full.jsonl` | Complete and untruncated; never contains `truncated_fields`; matches `transcript.jsonl` line for line | **Primary** |
+| `chunks/transcript_full/*.jsonl` | The same bytes as `transcript_full.jsonl`, sliced at exact 102,400-byte (100 KiB) offsets | **Fallback 1**, if the monolithic file is absent |
+| `transcript.jsonl` | Large fields truncated and marked `"truncated_fields": ["content", "thinking", "tool_calls"]` (494 of 537 transcripts have such lines) | **Fallback 2**, with truncated steps flagged in the episode |
+| `chunks/transcript/*.jsonl` | The same bytes as `transcript.jsonl`, sliced the same way | Last resort |
 
-Large fields in `transcript.jsonl` are truncated and marked `"truncated_fields": ["content", "thinking", "tool_calls"]`; the untruncated step is in the full variant. This is common: 487 of 535 transcripts on the reference machine contained truncated lines (10,035 lines in total). Truncated fields are exactly the compiler errors, backtraces and reasoning that triage and extraction depend on.
+Chunk files are **byte slices, not line-aligned JSONL.** Every non-final chunk is exactly 102,400 bytes, and a record that straddles a boundary is split between two files. Chunks must be concatenated in lexical filename order into one byte stream (`io.MultiReader`) before splitting on newlines. Parsing chunk files individually fails on both halves of every boundary record, and counting their lines separately double-counts boundary records; that is what made an earlier line-count comparison look as if chunks held extra steps.
 
-The Antigravity parser therefore:
-- reads all four sources and merges them by `step_index`;
-- prefers full variants, resolving every `truncated_fields` entry;
-- records any steps still missing as gaps.
-
-Chunk files sometimes hold more lines than `transcript.jsonl` (225 of 395 sampled differ), so they may fill the step gaps noted below. Their exact relationship is experiment E12.
+The parser therefore reads one source, in the order above, and never merges sources. Step-index gaps (§6.2, transcript completeness) are present identically in both monolithic files, so they are recorded as gaps; their cause remains part of E12.
 
 It copies each changed transcript into the queue. Sessions are attributed to a repo via `conversation_summaries.db` `workspace_uris` for Antigravity and the project directory for Claude Code. This covers:
 
@@ -1220,7 +1216,7 @@ These unknowns must be settled before P2 builds on them:
 | E9 | How does `PreToolUse` `deny` + `reason` read to the agent in practice? Does it reliably re-issue the call after a `gate-once` denial? How does a denial behave inside a batch of parallel tool calls? Which reason wording avoids being read as a policy block? Would `overwrite` (whose result is prefixed with a rewrite notice) be a usable non-blocking alternative for non-destructive commands? | Scripted sessions against a test gate; tune the reason wording. |
 | E10 | Can the ~17k-token fixed overhead of a housekeeping run be reduced (a minimal `--agent` definition, fewer global plugins, no skills)? Does repeated use of the same prefix produce cache reads? | Measure `usage` from `agy -p --output-format json` across variants. |
 | E11 | How do housekeeping runs count against the Antigravity subscription quota, and what are the rate limits per model? | Track usage and failures over the first two weeks of P1; set the daily budgets from the results. |
-| E12 | Antigravity transcript file set: are `transcript.jsonl`, `transcript_full.jsonl` and the `chunks/` shards append-only? Which is authoritative per step? Do the chunks fill the step gaps? | Compare the four sources by `step_index` across a sample of conversations; watch one live conversation grow. |
+| E12 | ~~Antigravity transcript file set~~ **Answered (2026-10-01, issue #1 follow-up, verified on all 537 conversations):** `chunks/` are fixed 100 KiB byte slices of the monolithic files, and `transcript_full.jsonl` matches `transcript.jsonl` line for line with nothing truncated (§6.2). Remaining: confirm append-only growth during normal turns and when `transcript_full.jsonl` is rewritten (reported: only when the user branches or edits an earlier step); explain the step-index gaps, which are present identically in both files. | Watch one live conversation grow; branch or edit an earlier step and diff the file. |
 
 ### 12.2 Claude Code [R2]
 
@@ -1642,7 +1638,7 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
   Claude-specific notes are kept in `docs/claude_architecture.md` §4.7 for the Release 2 adapter.
 - **Third-party review (GitHub issue #1, 2026-10-01).** Every claim was checked against the built-in Antigravity docs and the transcripts on disk before being adopted.
   - Adopted:
-    - `truncated_fields`/`transcript_full.jsonl`/`chunks/` resolution (§6.2; E12);
+    - `truncated_fields` resolution: read `transcript_full.jsonl`; chunks are byte slices to be concatenated, per the reviewer's follow-up, which was verified on all 537 conversations (§6.2; E12 answered);
     - incremental transcript copying (§6.2);
     - a repo ID that distinguishes template-derived repositories (§4.6);
     - a mechanical decision-marker signal for salience (§6.4);
@@ -1690,3 +1686,4 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
 | 0.6 | 2026-09-30 | User decisions:<br>• **Release order:** Release 1 targets Antigravity; Release 2 adds Claude Code (D4). Claude Code-specific text is tagged **[R2]**; build phases split into §15.1 (P0–P5) and §15.2 (R2.1–R2.3), with Release 2 able to start after P2.<br>• **Go** (D1): one cgo-free binary with `hook`, `tick`, `mcp`, `install` and operator subcommands (§18.1); a package layout with an enforced core/adapter boundary (§18.2); harness interfaces and capability-based delivery (§18.3); libraries (§18.4); hook fast path (§18.5); portability rules for Release 1 (§18.6), including a recommended sweep-only copy of Claude Code transcripts from P0.<br>• Plugin files generated by `repo-memory install` with absolute paths; D2 and D3 scoped to Release 1. |
 | 0.7 | 2026-10-01 | From the programme-plan review: repository enrolment (`repo-memory init`/`leave`, registry, hooks no-op within 5 ms outside enrolled workspaces, sweep scoped to enrolled repositories) and a kill switch (`REPO_MEMORY_DISABLED`, `enabled: false`, `enable`/`disable`) in §4.6; machine configuration and registry in §5.6; new subcommands in §18.1; Q24. |
 | 0.8 | 2026-10-01 | Third-party review (issue #1), verified against the runtime:<br>• Antigravity transcript file set and `truncated_fields` resolution (§6.2, E12); incremental transcript copying.<br>• Template-safe repo ID and per-clone publishing worktrees (§4.6, §5.6).<br>• Decision-marker salience windows (§6.4); mechanical P13 precondition (§6.6).<br>• `gate-once` limited to irreversible actions; E9 widened (§7.5); tier-1 reasoning check at `PreToolUse` (§7.6).<br>• Sidecar permissions, dashboard enablement and `model_decision` native rules (§12.1, E2/E4/E6 updated).<br>• SQLite concurrency and Windows-safe index swap (§18.4).<br>• Cost estimates flagged as lower bounds pending full-transcript measurement (§4.4.1). |
+| 0.9 | 2026-10-01 | Review #1 follow-up, verified on all 537 conversations:<br>• `chunks/` are 100 KiB byte slices of the monolithic files.<br>• `transcript_full.jsonl` is complete and matches `transcript.jsonl` line for line.<br>• §6.2 now reads one source in priority order (full → full chunks concatenated as a byte stream → compact), with no merge.<br>• Incremental copy covers the primary source only.<br>• E12 answered except for append-only and rewrite behaviour and the cause of step gaps.<br>• Corrects the v0.8 claim that chunks might fill step gaps. |

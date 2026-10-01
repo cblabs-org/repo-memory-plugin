@@ -1,7 +1,7 @@
 # repo-memory — Programme Plan
 
 > **Programme:** repo-memory
-> **Specification:** [SPEC.md](../../../SPEC.md) v0.8
+> **Specification:** [SPEC.md](../../../SPEC.md) v0.9
 > **Release:** 1 (Antigravity)
 > **Created:** 2026-10-01 · **Revised:** 2026-10-01 (session 2: plan review; session 3: third-party review, GitHub issue #1)
 > **Total PRs:** 13, each with 4–7 work orders
@@ -71,7 +71,7 @@ All experiments run in PR-01b, so every design decision they inform is settled b
 
 | Experiment | Informs | Status before the spike |
 |---|---|---|
-| E12 transcript file set | PR-02a parser | New; `truncated_fields` prevalence already measured (SPEC §6.2) |
+| E12 transcript file set | PR-02a parser, PR-02b incremental copy | Mostly answered (SPEC §6.2): read `transcript_full.jsonl`; chunks are byte slices. Remaining: append-only and rewrite behaviour, and the cause of step gaps. |
 | E6 sidecar behaviour | PR-02b tick | `sidecar.json` format known from built-in guidance; behaviour still to observe |
 | E7 housekeeping isolation | PR-05a executor | Open |
 | E10 overhead reduction | PR-05a packing and budgets | Open |
@@ -125,7 +125,7 @@ All experiments run in PR-01b, so every design decision they inform is settled b
 
 | # | WO | Scope | Complexity |
 |---|---|---|---|
-| 1 | `wo1-transcript-and-hooks` | **E12:** compare `transcript.jsonl`, `transcript_full.jsonl` and `chunks/` by `step_index` across a sample; watch one live conversation grow. Are they append-only? Which source is authoritative? Do chunks fill gaps? **E3:** is the transcript current at `PreInvocation` and at `PreToolUse`? **E1:** does `ephemeralMessage` persist, and does it appear in the transcript? | interactive |
+| 1 | `wo1-transcript-and-hooks` | **E12 (remaining parts):** watch one live conversation grow and confirm `transcript_full.jsonl` is append-only; branch or edit an earlier step and confirm whether the file is rewritten; explain the step-index gaps. **E3:** is the transcript current at `PreInvocation` and at `PreToolUse`? **E1:** does `ephemeralMessage` persist, and does it appear in the transcript? | interactive |
 | 2 | `wo2-delivery-surfaces` | **E2:** include resolution and refresh. **E4:** check that a `model_decision` rule loads when its description matches the task. **E9:** `deny` behaviour, re-issue rate, behaviour inside parallel tool batches, wording that isn't read as a policy block, and whether `overwrite` notices could serve non-destructive commands. **E8:** do subagents fire their own hooks? | interactive |
 | 3 | `wo3-runtime-and-cost` | **E6:** sidecar ticking (CLI-only, sleep/wake, overlap). **E5:** probe-hook start-up latency on macOS and Windows. **E7:** housekeeping isolation (`--project`, `--continue`, history). **E10:** can the ~17k-token overhead be reduced? **E11:** preliminary quota and rate-limit readings. | interactive |
 | 4 | `wo4-spec-reconciliation` | Summarise the results; list every SPEC section confirmed or changed; propose SPEC edits for user approval before PR-02a starts. | standard |
@@ -147,14 +147,14 @@ All experiments run in PR-01b, so every design decision they inform is settled b
 
 | # | WO | Scope | Complexity |
 |---|---|---|---|
-| 1 | `wo1-transcript-parser` | `internal/harness/antigravity/transcript.go`: read `transcript.jsonl`, `transcript_full.jsonl` and `chunks/{transcript,transcript_full}/*.jsonl`; merge by `step_index` preferring full variants; resolve every `truncated_fields` entry; record remaining gaps (per E12). `CHECKPOINT` handling; `source`/`type` classification. Scrubbed fixture corpus under `testdata/fixtures/antigravity/<version>/`, including truncated lines. Canary test that flags drops in parsed-step counts when the Antigravity version changes. | architect |
+| 1 | `wo1-transcript-parser` | `internal/harness/antigravity/transcript.go`: read **one** source in priority order: `transcript_full.jsonl`; else `chunks/transcript_full/*.jsonl` concatenated in lexical order as a byte stream (`io.MultiReader`) before line splitting (chunks are 100 KiB byte slices, never parsed individually); else `transcript.jsonl`, with `truncated_fields` steps flagged. Record step gaps. `CHECKPOINT` handling; `source`/`type` classification. Scrubbed fixture corpus under `testdata/fixtures/antigravity/<version>/`, including a chunked conversation with records straddling chunk boundaries, and a compact-only conversation with truncated lines. Canary test that flags drops in parsed-step counts when the Antigravity version changes. | architect |
 | 2 | `wo2-compaction` | `internal/core/pipeline/compact/`: deterministic compaction per §5.1. Author classification (`human` vs `automation`). Exposure markers. Secret scrubber (pattern + entropy). Target: ≥ 4× reduction, measured on merged full transcripts. | architect |
 | 3 | `wo3-episode-store` | `internal/core/episode/store.go`: `<data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst`. Header including `harness`, `harness_version`, `started_by`, `pipeline_version`. Gap recording. Episodes are never pruned. | standard |
 | 4 | `wo4-commit-linkage` | §6.2: link commits on the session's branch between start and end from `git log`/reflog, confirmed against commit commands in the transcript. Recorded in the episode header. | standard |
 | 5 | `wo5-metrics-skeleton` | `internal/core/metrics/`: JSONL metrics writer. Capture health (sessions seen, captured, skipped, missed), hook execution time, tick duration, budget exhaustion. Re-measure the §4.4.1 transcript sizes from merged full transcripts. | standard |
 
 ### Exit Criteria
-- Fixture conversations, including truncated and chunked ones, produce episodes with no unresolved `truncated_fields`
+- Fixture conversations produce episodes with no unresolved `truncated_fields`; the chunk-only fallback yields byte-identical results to the monolithic file
 - Compaction ratio ≥ 4× measured on full transcripts; §4.4.1 sizes re-measured
 - Zero secrets in a scan of 50 fixture episodes
 - Core tests pass on the `fake` adapter; `internal/core` imports no concrete adapter
@@ -171,7 +171,7 @@ All experiments run in PR-01b, so every design decision they inform is settled b
 
 | # | WO | Scope | Complexity |
 |---|---|---|---|
-| 1 | `wo1-spool-incremental-copy` | Spool entry schema; writer (unique temp name, then rename, with Windows semantics verified); reader for the tick. Incremental transcript copy: per-file byte offsets and prefix hash in `state/`; full re-copy if the prefix changed. Applies to every file in the transcript set. | standard |
+| 1 | `wo1-spool-incremental-copy` | Spool entry schema; writer (unique temp name, then rename, with Windows semantics verified); reader for the tick. Incremental transcript copy of the primary source only (`transcript_full.jsonl`, or its chunks): byte offset and prefix hash in `state/`; full re-copy if the prefix changed. | standard |
 | 2 | `wo2-stop-hook` | `internal/harness/antigravity/hooks.go`: handle `Stop`. Spool entry plus incremental copy. Budget ≤ 200 ms. `REPO_MEMORY_HOUSEKEEPING` guard. Kill-switch and enrolment checks come first. | standard |
 | 3 | `wo3-job-table` | `internal/core/jobs/`: SQLite job table (§4.3) with WAL and `busy_timeout`. Schema: `id`, `kind`, `priority`, `idempotency_key`, `state`, `lease_expires`, `attempts`, `next_attempt_at`, `cost`. State machine and lease recovery. | standard |
 | 4 | `wo4-tick-core` | `internal/core/tick/`: tick loop per §4.3. Portable `tick.lock` (`flock` on Unix, `LockFileEx` on Windows). Spool ingestion → jobs. Lease reclaim. Sweep of enrolled repositories only (Antigravity app and CLI stores, plus the Claude Code raw copy), with incremental copying. Idle promotion (15 min). Budget enforcement. Overlap behaviour per E6. | architect |
@@ -442,7 +442,7 @@ These are the user's tasks. They gate the critical path, so they are scheduled h
 | Risk | Mitigation | Owner |
 |---|---|---|
 | B5 extraction precision < 0.8 at P1 exit | Defined fallback in SPEC §10.3: raise triage threshold, restrict push, review-all, iterate. Episode search keeps the system useful. | PR-05b |
-| Truncated transcript fields hide errors and reasoning | Parser merges the full transcript set and resolves `truncated_fields` (E12, PR-02a) | PR-01b, PR-02a |
+| Truncated transcript fields hide errors and reasoning | Parser reads `transcript_full.jsonl` (verified complete); chunk fallback concatenated as a byte stream (PR-02a) | PR-02a |
 | Housekeeping overhead dominates small calls | E10 results feed into batching and caching strategy. Per-day caps. | PR-01b, then PR-05a/PR-08 |
 | Quota cannot sustain the pipeline | Preliminary E11 in the spike; daily budgets; usage tracked through PR-05b; backfill throttled | PR-01b, PR-05b |
 | Hook latency budget exceeded | Go binary removes interpreter start-up. Probe estimate in the spike; confirmed at PR-07. | PR-01b, PR-07 |
@@ -480,3 +480,4 @@ These are the user's tasks. They gate the critical path, so they are scheduled h
 | PD13 | Merge small WOs so every PR has 4–7 work orders (PR-01, PR-07) | 2026-10-01 | Review issue #1: the PA workflow works best at 4–7 WOs per project. |
 | PD14 | Enrol repo-memory-plugin itself as a dogfood repository from PR-02b | 2026-10-01 | Review issue #1: the programme's own PA and worker sessions form a large real corpus for PR-05 to PR-09. |
 | PD15 | Adopt the verified runtime findings from review issue #1 (transcript file set, sidecar permissions and dashboard enablement, `model_decision` instead of `glob`, SQLite concurrency, template-safe repo ID) | 2026-10-01 | Each was checked against the built-in Antigravity docs or the transcripts on disk; see SPEC v0.8. Claims that didn't check out were not adopted. |
+| PD16 | Read one Antigravity transcript source in priority order; no merge | 2026-10-01 | Review #1 follow-up, verified on all 537 conversations: chunks are 100 KiB byte slices identical to the monolithic files, and `transcript_full.jsonl` is complete. A merge was unnecessary, and per-chunk parsing would have broken on every boundary. |

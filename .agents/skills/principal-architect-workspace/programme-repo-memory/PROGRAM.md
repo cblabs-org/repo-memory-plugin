@@ -1,7 +1,7 @@
 # repo-memory Programme
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
-> **Specification:** [SPEC.md](../../../SPEC.md) (v0.8, 2026-10-01)
+> **Specification:** [SPEC.md](../../../SPEC.md) (v0.9, 2026-10-01)
 > **Status:** Planning
 > **Base branch:** `main`
 
@@ -128,3 +128,12 @@ Every claim in the review was checked against the built-in Antigravity docs and 
   - dogfood enrolment of this repo (PD14);
   - Module Index populated.
 - **The revised PR structure needs re-approval** (Human Approval above).
+
+### 2026-10-01 — Review #1 follow-up (session 4)
+
+The reviewer's follow-up on `chunks/` was verified on all 537 conversations:
+- every non-final chunk is exactly 102,400 bytes;
+- concatenated chunks equal the monolithic file byte for byte;
+- `transcript_full.jsonl` has no truncation and matches `transcript.jsonl` line for line.
+
+The v0.8 four-source merge was dropped in favour of reading one source in priority order (SPEC v0.9 §6.2, PD16). E12 is reduced to append-only and rewrite behaviour and the cause of step gaps. PR-02a wo1, PR-02b wo1 and PR-01b wo1 were updated.
