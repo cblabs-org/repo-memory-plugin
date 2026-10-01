@@ -27,15 +27,23 @@ Answer experiments E1–E12 with the probe hook and a few `agy -p` runs, before 
 
 ## Session Log
 
-### WO1 — Transcript & Hooks (E12, E3, E1)
-- **E12:** Transcript is append-only during normal flow. Step-index gaps caused by internal dispatch steps (never serialized). Out-of-order writes from parallel tool calls. Session resets within the same file.
-- **E03:** Zero lag at both `PreInvocation` and `PreToolUse`. Current turn's `thinking` is flushed before `PreToolUse` fires. `transcriptPath` always points to `transcript_full.jsonl`.
-- **E01:** `ephemeralMessage` is per-invocation transient — not carried to subsequent invocations. `invocationNum` resets per user prompt, not per session. Malformed responses silently ignored. **Architect brief:** task brief via `ephemeralMessage` is unacceptable (4–20k wasted tokens/prompt); need E1b to test `userMessage` persistence, or fall back to pull-only architecture.
+### 2026-10-01T21:19+01:00 — WO1 Complete: Transcript & Hooks (E12, E3, E1)
+**Summary**: Transcript is append-only with zero-lag hook reads; `ephemeralMessage` works but is per-invocation only and not a viable push channel.
+**Findings**:
+- **E12:** Append-only in normal flow. Step-index gaps from internal dispatch steps. Out-of-order writes from parallel tool calls. Session resets within same file.
+- **E03:** Zero lag at both `PreInvocation` and `PreToolUse`. Current turn's `thinking` flushed before `PreToolUse` fires. `transcriptPath` → `transcript_full.jsonl`.
+- **E01:** `ephemeralMessage` per-invocation transient. `invocationNum` resets per user prompt. Malformed responses silently ignored. Architect brief: `ephemeralMessage` is unacceptable (4–20k wasted tokens/prompt).
+**Cross-cutting decisions**: `transcriptPath` always points to `transcript_full.jsonl`; `invocationNum` resets per prompt (not session-scoped); `injectSteps` is the correct format.
+**Surfaced for WO4**: SPEC gaps on `invocationNum` semantics, hook response schema, `EPHEMERAL_MESSAGE` step type, step-index non-contiguity, out-of-order writes. E12 branch/edit behavior untested.
+**Dead ends**: Wrong hook response formats (`ephemeral_message` vs `injectSteps`) silently ignored — silent failure is the dominant failure mode.
 
-### WO2 — Delivery Surfaces (E2, E4, E9, E8)
-- **E02:** `@[label](path)` includes resolve relative to repo root, inline into `user_rules`. 24KB/file cap, 20k-token aggregate budget. Refresh per-session only.
-- **E04:** `trigger: model_decision` rules are pull-based — description shown as pointer, model decides to `view_file`. `activation:` key silently ignored; correct key is `trigger:`.
-- **E09:** `deny`+`reason` delivers reason verbatim; parallel denials isolated; advisory wording → 3 retries, policy → 2. `overwrite` rewrites tool args non-destructively with notice.
-- **E08:** Subagents fire ALL hooks with own `conversationId` and `transcriptPath`. Plugin can inject context into workers directly via hooks.
-- **Cross-cutting:** Silent failure is the default. `{}` for PreToolUse = implicit deny. Hook command paths resolve relative to `hooks.json` directory. `hooks.json` is hot-reloaded mid-session.
+### 2026-10-01T22:34+01:00 — WO2 Complete: Delivery Surfaces (E2, E4, E9, E8)
+**Summary**: Include resolution works repo-root-relative; `model_decision` rules are pull-based; deny+reason is isolated per call; subagents fire ALL hooks with own identity.
+**Findings**:
+- **E02:** `@[label](path)` resolves relative to repo root, inlined into `user_rules`. 24KB/file, 20k-token aggregate. Refresh per-session only.
+- **E04:** `trigger: model_decision` pull-based. `activation:` key silently ignored.
+- **E09:** `deny`+`reason` delivered verbatim; parallel denials isolated; advisory → 3 retries, policy → 2. `overwrite` rewrites args non-destructively.
+- **E08:** Subagents fire ALL hooks with own `conversationId`/`transcriptPath`. Plugin can inject context into workers directly.
+**Cross-cutting decisions**: Includes confirmed as the primary always-on channel; native-floor rules cost a tool call per rule; `overwrite` is a candidate for non-blocking advisory; subagent hook coverage enables per-worker delivery.
+**Surfaced for WO4**: `{}` = implicit deny (undocumented); hook `command` path resolves relative to `hooks.json` dir; `hooks.json` hot-reloaded mid-session; hook exit non-zero = implicit deny; design questions on `overwrite` for déjà-vu and `send_message` gating; `PostInvocation` hook existence untested.
 
