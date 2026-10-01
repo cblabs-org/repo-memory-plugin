@@ -21,6 +21,10 @@ func main() {
 
 func init() {
 	rootCmd.AddCommand(hookCmd)
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(leaveCmd)
+	rootCmd.AddCommand(enableCmd)
+	rootCmd.AddCommand(disableCmd)
 	rootCmd.AddCommand(tickCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(installCmd)
@@ -31,3 +35,4 @@ func init() {
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(doctorCmd)
 }
+
