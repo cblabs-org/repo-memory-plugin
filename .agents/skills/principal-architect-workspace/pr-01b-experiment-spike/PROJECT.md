@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-01b-experiment-spike
 > **Base branch:** `main`
-> **Status:** In Progress (WO3 next)
+> **Status:** In Progress (WO4 next)
 > **SPEC:** [SPEC.md](../../../SPEC.md) v0.9
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 
@@ -17,7 +17,7 @@ Answer experiments E1–E12 with the probe hook and a few `agy -p` runs, before 
 |---|---|---|---|---|
 | 1 | `wo1-transcript-and-hooks` | `pr-01b-experiment-spike/wo1-transcript-and-hooks` | ☑ Complete | interactive |
 | 2 | `wo2-delivery-surfaces` | `pr-01b-experiment-spike/wo2-delivery-surfaces` | ☑ Complete | interactive |
-| 3 | `wo3-runtime-and-cost` | `pr-01b-experiment-spike/wo3-runtime-and-cost` | ☐ Pending | interactive |
+| 3 | `wo3-runtime-and-cost` | `pr-01b-experiment-spike/wo3-runtime-and-cost` | ☑ Complete | interactive |
 | 4 | `wo4-spec-reconciliation` | `pr-01b-experiment-spike/wo4-spec-reconciliation` | ☐ Pending | standard |
 
 ## Exit Criteria
@@ -47,3 +47,17 @@ Answer experiments E1–E12 with the probe hook and a few `agy -p` runs, before 
 **Cross-cutting decisions**: Includes confirmed as the primary always-on channel; native-floor rules cost a tool call per rule; `overwrite` is a candidate for non-blocking advisory; subagent hook coverage enables per-worker delivery.
 **Surfaced for WO4**: `{}` = implicit deny (undocumented); hook `command` path resolves relative to `hooks.json` dir; `hooks.json` hot-reloaded mid-session; hook exit non-zero = implicit deny; design questions on `overwrite` for déjà-vu and `send_message` gating; `PostInvocation` hook existence untested.
 
+### 2026-10-01T22:56+01:00 — WO3 Complete: Runtime & Cost (E6, E5, E7, E10, E11)
+**Summary**: Hook latency is fast for enrolled repos (~3ms p95) but non-enrolled path is slow (~57ms). Sidecars are IDE-only. `--project` flag silently ignored. ~17k token floor with no prefix caching. Zero rate limiting observed.
+**Findings**:
+- **E05:** Enrolled: p50=3ms, p95=6ms. Non-enrolled: p50=57ms ❌ (enrollment DB lookup bottleneck). Kill-switch disabled: 2.8ms. Injection adds negligible overhead.
+- **E06:** Sidecars are IDE-managed child processes. Perfect 60s intervals, zero gaps over 2hrs. CLI does not run sidecars. Sleep/wake and overlap untested (need user interaction).
+- **E07:** CLI and IDE have fully separate DBs and brain directories. `--project` silently ignored — all CLI conversations go to `default-cli-project`. Housekeeping invisible to IDE UI.
+- **E10:** Fixed overhead: ~16.8k tokens (Flash 3.8), ~9.9k (Flash 3.6). No prefix caching (`cache_read=0`). `--agent`/`--disable-slash-commands` have no effect. Wall clock ~11s/call.
+- **E11:** 25+ calls in 15min, zero throttling. CLI latency (~11s) is the natural rate limiter. Pro-tier subscription inferred.
+**Cross-cutting decisions**:
+1. Hook fast-path must use kill-switch first, not enrollment check — non-enrolled at 57ms is unacceptable
+2. Sidecars are IDE-only — housekeeping needs a CLI alternative (hook-triggered deferred or explicit cron)
+3. Conversation reuse (`--conversation <id>`) critical for cost — each `agy -p` creates a new conversation with no prefix caching
+4. Use cheapest available flash model (3.6 Flash is 41% cheaper than 3.8)
+**Surfaced for WO4**: `--project` silently ignored; non-enrolled hook latency; no prefix caching; sidecar log rotation needed; sidecar overlap and sleep/wake untested; CLI overhead dominates wall time.
