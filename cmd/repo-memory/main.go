@@ -7,9 +7,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "repo-memory",
-	Short: "Repository-level memory for coding agents",
+	Use:     "repo-memory",
+	Short:   "Repository-level memory for coding agents",
+	Version: Version,
 }
 
 func main() {

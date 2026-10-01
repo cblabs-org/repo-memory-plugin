@@ -1,6 +1,8 @@
 BINARY_NAME := repo-memory
 OUTPUT_DIR := bin
 
+VERSION ?= dev
+
 TARGETS := \
 	darwin/arm64 \
 	darwin/amd64 \
@@ -19,7 +21,7 @@ $(TARGETS):
 	$(eval OS := $(word 1,$(subst /, ,$@)))
 	$(eval ARCH := $(word 2,$(subst /, ,$@)))
 	$(eval EXT := $(if $(filter windows,$(OS)),.exe,))
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(OUTPUT_DIR)/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) ./cmd/repo-memory
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -ldflags="-X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) ./cmd/repo-memory
 
 test:
 	go test ./...
