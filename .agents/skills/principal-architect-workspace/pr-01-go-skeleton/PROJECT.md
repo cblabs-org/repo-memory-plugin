@@ -11,6 +11,9 @@
 
 Establish the Go module, binary entry point, subcommand wiring, package layout with the enforced core/adapter boundary, the harness interface types, and the `fake` test adapter. Add repository enrolment and the kill switch, so that a global plugin acts only on enrolled repositories. Add CI, the install lifecycle, and the probe hook the experiment spike needs.
 
+## Approvals
+- Work order decomposition approved by human on 2026-10-01.
+
 ## Work Order Ledger
 
 | # | WO | Branch | Status | Worker |
