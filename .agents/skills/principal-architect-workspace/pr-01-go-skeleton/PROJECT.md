@@ -20,8 +20,8 @@ Establish the Go module, binary entry point, subcommand wiring, package layout w
 |---|---|---|---|---|
 | 1 | `wo1-module-layout` | `pr-01-go-skeleton/wo1-module-layout` | ☑ Complete | flash |
 | 2 | `wo2-interfaces-fake` | `pr-01-go-skeleton/wo2-interfaces-fake` | ☑ Complete | flash |
-| 3 | `wo3-config-datadir` | `pr-01-go-skeleton/wo3-config-datadir` | ☐ Pending | — |
-| 4 | `wo4-subcommands-install` | `pr-01-go-skeleton/wo4-subcommands-install` | ☐ Pending | — |
+| 3 | `wo3-config-datadir` | `pr-01-go-skeleton/wo3-config-datadir` | ☑ Complete | flash |
+| 4 | `wo4-subcommands-install` | `pr-01-go-skeleton/wo4-subcommands-install` | ☑ Complete | flash |
 | 5 | `wo5-enrolment-killswitch` | `pr-01-go-skeleton/wo5-enrolment-killswitch` | ☐ Pending | — |
 | 6 | `wo6-ci-release` | `pr-01-go-skeleton/wo6-ci-release` | ☐ Pending | — |
 | 7 | `wo7-probe-hook` | `pr-01-go-skeleton/wo7-probe-hook` | ☐ Pending | — |
@@ -39,3 +39,5 @@ Establish the Go module, binary entry point, subcommand wiring, package layout w
 
 - **WO1 (module-layout):** Initialised `github.com/cblabs-org/repo-memory-plugin`, wired up 10 cobra subcommand stubs (`hook`, `tick`, `mcp`, `install`, `uninstall`, `search`, `report`, `status`, `reindex`, `doctor`), created cross-compile Makefile for 5 targets, scaffolded 23 core/harness package stubs with `doc.go`, and implemented an AST-based boundary test in `internal/core/boundary_test.go` ensuring no concrete adapters leak into core.
 - **WO2 (interfaces-fake):** Defined normalized types (`Event`, `Injection`, `Step`), `Stage` enum, and core harness interfaces (`Harness`, `Capabilities`, `TranscriptSource`, `HookCodec`, `Reporter`, `Housekeeper`) in `internal/harness`. Implemented in-memory fake test adapter with unit test coverage in `internal/harness/fake`. Added core test suite shell in `internal/core/suite_test.go` asserting adapter behavior against fake, and updated `internal/core/boundary_test.go` to permit test files to import the fake adapter while preserving strict adapter prohibitions for production code.
+- **WO3 (config-datadir):** Implemented configuration loading for `MachineConfig` and `RepoConfig`, platform-specific `DataDir` resolution, and idempotent `EnsureStorageLayout` for `.memory/` and `<data-dir>/<repo-id>/`.
+- **WO4 (subcommands-install):** Split and wired all 10 Cobra subcommands in `cmd/repo-memory/`, implemented Antigravity plugin installation and uninstallation with `--harness` and `--purge` flags, packaged JSON templates for `hooks.json`, `mcp_config.json`, `sidecar.json`, and `plugin.json` in `packaging/antigravity/` with Windows path escaping, enforced that sidecars are never auto-enabled, and provided unit test coverage across template generation and installation lifecycles.
