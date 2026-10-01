@@ -1,0 +1,18 @@
+{
+  "builtin": "schedule",
+  "args": [
+    "* * * * *",
+    "<bin>",
+    "tick"
+  ],
+  "restart_policy": "always",
+  "display_name": "Repo Memory Tick",
+  "description": "Advances asynchronous background memory pipeline jobs and scheduled maintenance.",
+  "agent_permissions": {
+    "access_grants": [
+      "command(<bin> tick)",
+      "command(agentapi new-conversation)"
+    ],
+    "workspace_uris": []
+  }
+}
