@@ -1,10 +1,10 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-01T09:05:00Z -->
+<!-- Last updated: 2026-10-01T18:02:00Z -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Planning — revised after review issue #1 (13 PRs, SPEC v0.8); revised structure awaiting re-approval. 0/13 PRs. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Planning — SPEC v0.9, 13 PRs. Awaiting re-approval. 0/13 PRs. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
