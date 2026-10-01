@@ -76,3 +76,59 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 
 ## Completion Report
 <!-- Written by the worker at task completion -->
+
+**Worker**: WO2 Delivery Surface Experiments
+**Date**: 2026-10-01
+**Status**: ✅ COMPLETE — All 4 experiments (E2, E4, E9, E8) executed and documented.
+
+### Deliverables
+
+| Experiment | Report | Key Finding |
+|:---|:---|:---|
+| E02 | `docs/experiments/E02-include-resolution.md` | `@[label](path)` includes in GEMINI.md resolve relative to repo root, inline content into `user_rules`, refresh per-session, 24KB/file cap, 20k-token aggregate budget |
+| E04 | `docs/experiments/E04-rule-activation.md` | `trigger: model_decision` rules use a **pull model** — description shown as pointer, model decides to `view_file`; `activation:` key is silently ignored |
+| E09 | `docs/experiments/E09-deny-behavior.md` | `deny` + `reason` works; parallel call denials are isolated; "re-issue" wording → 3 retries, policy wording → 2 retries; `overwrite` decision rewrites tool args non-destructively |
+| E08 | `docs/experiments/E08-subagent-hooks.md` | Subagents fire ALL hooks with their own `conversationId` and `transcriptPath`; `PreToolUse` catches `send_message` and `invoke_subagent` |
+
+### Cross-Cutting Findings
+
+1. **Silent failure is the default pattern.** Malformed hook responses (`{}` for PreToolUse), wrong frontmatter keys (`activation:` vs `trigger:`), wrong hook response formats (E01's snake_case), and missing include targets all fail silently. No errors, no warnings. The SPEC must document exact schemas.
+
+2. **`PreToolUse` empty response `{}` = implicit deny.** This is undocumented and bit us during E8. The contract requires `{"decision": "allow"}` explicitly.
+
+3. **Hook command path resolution.** Hook `command` paths in `hooks.json` resolve relative to the `hooks.json` file's directory. For `.agents/hooks.json`, the cwd is `.agents/`. Use absolute paths.
+
+4. **hooks.json is hot-reloaded mid-session.** Changes to the file are picked up without restarting the session. Deletion may not be detected (cached config persists).
+
+5. **Hook failures (exit non-zero) block tool execution.** A crashing hook acts as an implicit deny — the tool does not execute and the error is shown to the model.
+
+6. **Include refresh is per-session only.** Updated `@[label](path)` target files are picked up in new sessions but NOT mid-conversation.
+
+7. **`model_decision` rules are pull-based.** Only the description is always-on; the model pays a tool call to read the full content. This preserves the 20k-token budget but costs latency.
+
+### Issues Surfaced (Outside Boundary Box)
+
+1. **SPEC Gap**: The `PreToolUse` contract should document that `{}` is treated as deny. Current docs only show examples with explicit `decision` values.
+
+2. **SPEC Gap**: Hook `command` path resolution relative to `hooks.json` directory is not documented. This caused a 30-minute debugging detour.
+
+3. **Design Question**: Should `overwrite` be used for the déjà-vu advisory pattern? It allows non-blocking modification of tool args (e.g., injecting safety flags or modifying commands) while still executing the tool. The model sees a notice about the rewrite.
+
+4. **Design Question**: `send_message` fires `PreToolUse` — should the plugin gate inter-agent communication? This could be used to inject task context into subagent messages but could also break agent coordination if not carefully handled.
+
+5. **Upstream Question**: Is there a `PostInvocation` hook? The docs mention it but we didn't test it. If available, it could be used to inspect model outputs before they're shown.
+
+### Test Sessions Used
+
+| Session | Experiment | Purpose |
+|:---|:---|:---|
+| `b7d37411` | E02 | Include marker visibility |
+| `4b060579` | E02 | Include refresh (updated marker) |
+| `530432a7` | E04 | Wrong frontmatter key (negative) |
+| `a1492ce4` | E04 | Correct `trigger:` key (positive) |
+| `1d574b9a` | E09 | Deny with re-issue wording |
+| `f5378730` | E09 | Parallel tool call selective deny |
+| `579ab124` | E09 | Policy-sounding deny wording |
+| `41ec4be3` | E09 | Overwrite decision (live in experiment session) |
+| `6cca637b` | E08 | False start (empty PreToolUse response) |
+| `a955bb7f` | E08 | Subagent hook coverage (successful) |
