@@ -4,7 +4,7 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Planning — SPEC v0.9, 13 PRs. Awaiting re-approval. 0/13 PRs. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **1/13 complete** (PR-01). Quota cooldown until ~19:00 UTC. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
