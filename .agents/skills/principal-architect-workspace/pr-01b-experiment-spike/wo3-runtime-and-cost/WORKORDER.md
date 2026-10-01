@@ -75,3 +75,31 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 
 ## Completion Report
 <!-- Written by the worker at task completion -->
+
+### 2026-10-01T22:56+01:00 — WO3 Complete: Runtime and Cost (E6, E5, E7, E10, E11)
+
+**Summary**: Hook latency is fast for enrolled repos (~3ms p95) but slow for non-enrolled (~57ms); sidecars are IDE-only infrastructure; `--project` flag is silently ignored; fixed overhead is ~17k tokens with no prefix caching; no rate limits observed at sequential call rates.
+
+**Experiments Completed**:
+- **E05 (Hook Latency):** Enrolled repos: p50=3ms, p95=6ms. Non-enrolled repos: p50=57ms, p95=59ms. Kill-switch disabled: p50=2.8ms. Process startup baseline: ~2.5ms. Injection adds negligible latency. Non-enrolled path is bottleneck due to enrollment database lookup.
+- **E06 (Sidecar Behavior):** Sidecars are IDE-managed child processes (`language_server multicall schedule`). 119 ticks over 2 hours, perfect 60s intervals, zero gaps. Fixed jitter (~592ms) calculated once at startup. CLI does not run sidecars. Log growth ~460KB/day per sidecar.
+- **E07 (Housekeeping Isolation):** CLI and IDE have fully separate conversation databases and brain directories. `--project` flag is silently ignored — all CLI conversations stored under `default-cli-project`. `--continue` resumes most-recent conversation, not project-tagged ones. Housekeeping conversations invisible to IDE UI.
+- **E10 (Overhead Reduction):** Fixed overhead: ~16.8k tokens (Gemini 3.8 Flash), ~9.9k (Gemini 3.6 Flash). `--agent`, `--disable-slash-commands` have no effect. `--sandbox` adds +783 tokens. No prefix caching: `cache_read_tokens=0` for all runs (new conversation each time). Wall clock: ~11s per call (6-7s CLI overhead + 4-5s API).
+- **E11 (Quota/Rate Limits):** 10 sequential calls (Gemini 3.8 Flash) + 5 (Gemini 3.6 Flash) = 0 rate limit errors. 25+ total calls in 15min window, zero throttling. CLI's ~11s latency acts as natural rate limiter. Pro-tier subscription inferred from model availability.
+
+**Cross-Cutting Decisions**:
+1. **Hook fast-path must use kill-switch, not enrollment check.** Non-enrolled path at 57ms is unacceptable. The disabled/kill-switch path at 2.8ms is the correct fast path. Architecture: check kill-switch → check enrollment cache → run hook logic.
+2. **Sidecars are IDE-only infrastructure.** The housekeeping engine cannot rely solely on sidecars for background processing. CLI-only users need an alternative: hook-triggered deferred processing or explicit cron.
+3. **Conversation reuse is critical for cost.** Each `agy -p` call creates a new conversation (no prefix caching). For housekeeping, use `--conversation <id>` to persist a single housekeeping conversation per workspace.
+4. **Gemini 3.6 Flash is 41% cheaper.** 9.9k vs 16.8k tokens per call. Use the cheapest available flash model for housekeeping.
+
+**Surfaced Issues for WO4**:
+1. **`--project` flag silently ignored** — CLI conversations all go to `default-cli-project`. Either a bug or undocumented behavior. Need alternative isolation strategy.
+2. **Non-enrolled hook latency** — 57ms constant overhead on enrollment check, far exceeding the 5ms target. Must be optimized before production.
+3. **No prefix caching for `agy -p`** — Each call is a new conversation. Consider API-level changes or conversation reuse.
+4. **Sidecar log rotation** — No built-in rotation. ~14MB/month per sidecar. Needs addressing.
+5. **Sidecar overlap behavior untested** — What happens when command duration exceeds tick interval? The scheduler may start concurrent executions.
+6. **Sleep/wake sidecar behavior untested** — Requires user interaction to test. Are missed ticks caught up or skipped?
+7. **CLI overhead dominates wall time** — 6-7s of 11s per call. For high-frequency housekeeping, consider direct API access instead of `agy -p`.
+
+**Boundary Box Compliance**: No Go source code was modified. No SPEC changes made. All outputs are in `docs/experiments/`.
