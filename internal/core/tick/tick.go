@@ -16,15 +16,32 @@ import (
 var ErrLocked = errors.New("tick is already running")
 
 type Ticker struct {
-	dataDir string
-	budget  time.Duration
+	dataDir     string
+	budget      time.Duration
+	attributors []SessionAttributor
 }
 
-func NewTicker(dataDir string, budget time.Duration) *Ticker {
-	return &Ticker{
+// TickerOption allows configuring optional ticker parameters.
+type TickerOption func(*Ticker)
+
+// WithAttributor registers a session attributor for sweeping enrolled repositories.
+func WithAttributor(a SessionAttributor) TickerOption {
+	return func(t *Ticker) {
+		if a != nil {
+			t.attributors = append(t.attributors, a)
+		}
+	}
+}
+
+func NewTicker(dataDir string, budget time.Duration, opts ...TickerOption) *Ticker {
+	t := &Ticker{
 		dataDir: dataDir,
 		budget:  budget,
 	}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }
 
 func (t *Ticker) Run(ctx context.Context) error {
@@ -64,7 +81,7 @@ func (t *Ticker) Run(ctx context.Context) error {
 	}
 
 	// Sweep enrolled repos
-	if err := Sweep(ctx, t.dataDir, enrolledRepos); err != nil {
+	if err := Sweep(ctx, t.dataDir, enrolledRepos, t.attributors...); err != nil {
 		fmt.Fprintf(os.Stderr, "sweep error: %v\n", err)
 	}
 

@@ -2,10 +2,11 @@ package tick
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
@@ -13,120 +14,111 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 )
 
-func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	appBrainDir := filepath.Join(home, ".gemini", "antigravity", "brain")
-	cliBrainDir := filepath.Join(home, ".gemini", "antigravity-cli", "brain")
-	// TODO: raw claude code
-
-	if err := sweepDir(ctx, appBrainDir, memoryDataDir, enrolledRepos); err != nil {
-		fmt.Fprintf(os.Stderr, "sweep app dir err: %v\n", err)
-	}
-	if err := sweepDir(ctx, cliBrainDir, memoryDataDir, enrolledRepos); err != nil {
-		fmt.Fprintf(os.Stderr, "sweep cli dir err: %v\n", err)
-	}
-
-	return nil
+// AttributedSession represents an agent session attributed to an enrolled repository.
+type AttributedSession struct {
+	ConversationID       string    `json:"conversation_id"`
+	ParentConversationID string    `json:"parent_conversation_id,omitempty"`
+	RepoID               string    `json:"repo_id"`
+	RepoRoot             string    `json:"repo_root"`
+	TranscriptPath       string    `json:"transcript_path"`
+	LastModified         time.Time `json:"last_modified"`
+	Idle                 bool      `json:"idle"`
+	Source               string    `json:"source,omitempty"`
 }
 
-func sweepDir(ctx context.Context, brainDir, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry) error {
-	entries, err := os.ReadDir(brainDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+// SessionAttributor discovers and attributes sessions to enrolled repositories.
+type SessionAttributor interface {
+	AttributedSessions(ctx context.Context, enrolledRepos map[string]config.RegistryEntry) ([]AttributedSession, error)
+}
+
+var (
+	defaultAttributorsMu sync.RWMutex
+	defaultAttributors   []SessionAttributor
+)
+
+// RegisterAttributor adds a default session attributor used by Sweep when no explicit attributors are provided.
+func RegisterAttributor(a SessionAttributor) {
+	if a == nil {
+		return
+	}
+	defaultAttributorsMu.Lock()
+	defer defaultAttributorsMu.Unlock()
+	defaultAttributors = append(defaultAttributors, a)
+}
+
+// DefaultAttributors returns a copy of registered default attributors.
+func DefaultAttributors() []SessionAttributor {
+	defaultAttributorsMu.RLock()
+	defer defaultAttributorsMu.RUnlock()
+	copied := make([]SessionAttributor, len(defaultAttributors))
+	copy(copied, defaultAttributors)
+	return copied
+}
+
+// Sweep scans for idle sessions across enrolled repositories using registered or provided attributors,
+// incrementally copies changed transcripts into queue/, and enqueues capture jobs.
+func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry, attributors ...SessionAttributor) error {
+	if len(attributors) == 0 {
+		attributors = DefaultAttributors()
+	}
+	if len(attributors) == 0 {
+		return nil
 	}
 
-	now := time.Now()
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		convID := entry.Name()
-		if convID == "scratch" { // Not a brain
-			continue
-		}
-
-		convDir := filepath.Join(brainDir, convID)
-		
-		// check if idle for 15 mins
-		info, err := os.Stat(convDir)
+	for _, attr := range attributors {
+		sessions, err := attr.AttributedSessions(ctx, enrolledRepos)
 		if err != nil {
-			continue
-		}
-		if now.Sub(info.ModTime()) < 15*time.Minute {
+			fmt.Fprintf(os.Stderr, "attributing sessions error: %v\n", err)
 			continue
 		}
 
-		// determine workspace by looking at the registry mappings
-		// for now, we just find the workspace by parsing the system prompt in the transcript
-		workspace, err := extractWorkspaceFromTranscript(convDir)
-		if err != nil || workspace == "" {
-			continue
-		}
-		
-		var matchingEntry config.RegistryEntry
-		var found bool
-		for root, en := range enrolledRepos {
-			if strings.HasPrefix(workspace, root) {
-				matchingEntry = en
-				found = true
-				break
+		for _, s := range sessions {
+			if !s.Idle {
+				continue
+			}
+			if s.TranscriptPath == "" {
+				continue
+			}
+
+			repoDataDir := filepath.Join(memoryDataDir, s.RepoID)
+			queueDir := filepath.Join(repoDataDir, "queue")
+			stateDir := filepath.Join(repoDataDir, "state")
+			if err := os.MkdirAll(queueDir, 0755); err != nil {
+				continue
+			}
+			if err := os.MkdirAll(stateDir, 0755); err != nil {
+				continue
+			}
+
+			_, err = spool.CopyTranscriptIncremental(s.ConversationID, s.TranscriptPath, queueDir, stateDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "incremental copy err for %s: %v\n", s.ConversationID, err)
+				continue
+			}
+
+			// Enqueue capture job
+			store, err := jobs.Open(filepath.Join(repoDataDir, "jobs.sqlite"))
+			if err == nil {
+				payloadMap := map[string]any{
+					"conversation_id":        s.ConversationID,
+					"parent_conversation_id": s.ParentConversationID,
+					"repo_id":                s.RepoID,
+					"repo_root":              s.RepoRoot,
+					"transcript_path":        s.TranscriptPath,
+					"source":                 s.Source,
+				}
+				payloadBytes, _ := json.Marshal(payloadMap)
+
+				_, _ = store.Enqueue(ctx, &jobs.Job{
+					Kind:           jobs.KindCapture,
+					IdempotencyKey: "sweep-" + s.ConversationID,
+					Priority:       10,
+					Payload:        string(payloadBytes),
+				})
+				_ = store.Close()
 			}
 		}
-		
-		if !found {
-			continue
-		}
-
-		repoDataDir := filepath.Join(memoryDataDir, matchingEntry.RepoID)
-		queueDir := filepath.Join(repoDataDir, "episodes", "queue")
-		stateDir := filepath.Join(repoDataDir, "state")
-		os.MkdirAll(queueDir, 0755)
-		os.MkdirAll(stateDir, 0755)
-
-		_, err = spool.CopyTranscriptIncremental(convID, convDir, queueDir, stateDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "incremental copy err for %s: %v\n", convID, err)
-			continue
-		}
-
-		// Enqueue capture job
-		store, err := jobs.Open(filepath.Join(repoDataDir, "jobs.sqlite"))
-		if err == nil {
-			store.Enqueue(ctx, &jobs.Job{
-				Kind:           "capture",
-				IdempotencyKey: "sweep-" + convID,
-				Priority:       10,
-			})
-			store.Close()
-		}
 	}
+
 	return nil
-}
-
-func extractWorkspaceFromTranscript(convDir string) (string, error) {
-	// this is a stub logic to extract workspace
-	transcriptFile := filepath.Join(convDir, ".system_generated", "logs", "transcript.jsonl")
-	data, err := os.ReadFile(transcriptFile)
-	if err != nil {
-		return "", err
-	}
-
-	content := string(data)
-	idx := strings.Index(content, "->")
-	if idx > 0 {
-		start := strings.LastIndex(content[:idx], "\n")
-		if start == -1 { start = 0 }
-		line := content[start:idx]
-		line = strings.TrimSpace(line)
-		return line, nil
-	}
-	
-	return "", nil
 }

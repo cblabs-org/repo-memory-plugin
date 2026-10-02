@@ -20,9 +20,11 @@ const DefaultHookBudget = 200 * time.Millisecond
 // StopPayload represents the JSON payload received from Google Antigravity on a Stop event.
 type StopPayload struct {
 	ArtifactDirectoryPath string   `json:"artifactDirectoryPath,omitempty"`
-	ConversationID        string   `json:"conversationId,omitempty"`
-	ConversationIDSnake   string   `json:"conversation_id,omitempty"`
-	Error                 string   `json:"error,omitempty"`
+	ConversationID            string   `json:"conversationId,omitempty"`
+	ConversationIDSnake       string   `json:"conversation_id,omitempty"`
+	ParentConversationID      string   `json:"parentConversationId,omitempty"`
+	ParentConversationIDSnake string   `json:"parent_conversation_id,omitempty"`
+	Error                     string   `json:"error,omitempty"`
 	ExecutionNum          int      `json:"executionNum,omitempty"`
 	FullyIdle             bool     `json:"fullyIdle,omitempty"`
 	ModelName             string   `json:"modelName,omitempty"`
@@ -39,6 +41,9 @@ type StopPayload struct {
 func (p *StopPayload) Normalize() {
 	if p.ConversationID == "" && p.ConversationIDSnake != "" {
 		p.ConversationID = p.ConversationIDSnake
+	}
+	if p.ParentConversationID == "" && p.ParentConversationIDSnake != "" {
+		p.ParentConversationID = p.ParentConversationIDSnake
 	}
 	if p.TranscriptPath == "" && p.TranscriptPathSnake != "" {
 		p.TranscriptPath = p.TranscriptPathSnake
@@ -68,28 +73,53 @@ func (p *StopPayload) Normalize() {
 
 // StopResult records the outcome of processing a Stop hook invocation.
 type StopResult struct {
-	Skipped        bool              `json:"skipped"`
-	Reason         string            `json:"reason,omitempty"`
-	ConversationID string            `json:"conversation_id,omitempty"`
-	RepoID         string            `json:"repo_id,omitempty"`
-	RepoRoot       string            `json:"repo_root,omitempty"`
-	Branch         string            `json:"branch,omitempty"`
-	Head           string            `json:"head,omitempty"`
-	SpoolPath      string            `json:"spool_path,omitempty"`
-	SpoolEntry     *spool.Entry      `json:"spool_entry,omitempty"`
-	CopyResult     *spool.CopyResult `json:"copy_result,omitempty"`
-	Duration       time.Duration     `json:"duration_ms"`
+	Skipped              bool              `json:"skipped"`
+	Reason               string            `json:"reason,omitempty"`
+	ConversationID       string            `json:"conversation_id,omitempty"`
+	ParentConversationID string            `json:"parent_conversation_id,omitempty"`
+	RepoID               string            `json:"repo_id,omitempty"`
+	RepoRoot             string            `json:"repo_root,omitempty"`
+	Branch               string            `json:"branch,omitempty"`
+	Head                 string            `json:"head,omitempty"`
+	SpoolPath            string            `json:"spool_path,omitempty"`
+	SpoolEntry           *spool.Entry      `json:"spool_entry,omitempty"`
+	CopyResult           *spool.CopyResult `json:"copy_result,omitempty"`
+	Duration             time.Duration     `json:"duration_ms"`
 }
 
 // HookOptions configures optional overrides for hook execution.
 type HookOptions struct {
-	DataDir           string
-	WorkspaceOverride string
-	Timeout           time.Duration
+	DataDir              string
+	WorkspaceOverride    string
+	Timeout              time.Duration
+	AppDBPath            string
+	CliDBPath            string
+	ParentConversationID string
 }
 
 // HookOption is a functional configuration option.
 type HookOption func(*HookOptions)
+
+// WithHookAppDBPath specifies an explicit conversation summaries DB path.
+func WithHookAppDBPath(p string) HookOption {
+	return func(o *HookOptions) {
+		o.AppDBPath = p
+	}
+}
+
+// WithHookCliDBPath specifies an explicit CLI conversation summaries DB path.
+func WithHookCliDBPath(p string) HookOption {
+	return func(o *HookOptions) {
+		o.CliDBPath = p
+	}
+}
+
+// WithParentConversationID specifies an explicit parent conversation ID override.
+func WithParentConversationID(id string) HookOption {
+	return func(o *HookOptions) {
+		o.ParentConversationID = id
+	}
+}
 
 // WithDataDir specifies an explicit repo-memory data directory override.
 func WithDataDir(dataDir string) HookOption {
@@ -211,6 +241,20 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 			workspace = root
 		}
 	}
+	var convSummary *ConversationSummary
+	if (workspace == "" || payload.ParentConversationID == "") && payload.ConversationID != "" && (opt.AppDBPath != "" || opt.CliDBPath != "") {
+		var attrOpts []AttributionOption
+		if opt.AppDBPath != "" {
+			attrOpts = append(attrOpts, WithAppDBPath(opt.AppDBPath))
+		}
+		if opt.CliDBPath != "" {
+			attrOpts = append(attrOpts, WithCliDBPath(opt.CliDBPath))
+		}
+		convSummary, _ = LookupConversationSummary(payload.ConversationID, attrOpts...)
+		if workspace == "" && convSummary != nil && len(convSummary.WorkspacePaths) > 0 {
+			workspace = convSummary.WorkspacePaths[0]
+		}
+	}
 	if workspace == "" {
 		if wd, err := os.Getwd(); err == nil {
 			workspace = wd
@@ -292,6 +336,14 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 	// 5. Spool entry creation (using packages from WO1)
 	spoolDir := filepath.Join(dataDir, repoID, "spool")
 	captureEntry := spool.NewCaptureEntry("antigravity", convID, transcriptPath, repoRoot, branch, head)
+	parentConvID := opt.ParentConversationID
+	if parentConvID == "" {
+		parentConvID = payload.ParentConversationID
+	}
+	if parentConvID == "" && convSummary != nil {
+		parentConvID = convSummary.ParentConversationID
+	}
+	captureEntry.ParentConversationID = parentConvID
 	spoolPath, err := spool.Write(spoolDir, captureEntry)
 	if err != nil {
 		return nil, fmt.Errorf("writing capture spool entry: %w", err)
@@ -313,16 +365,17 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 
 	duration := time.Since(start)
 	return &StopResult{
-		Skipped:        false,
-		ConversationID: convID,
-		RepoID:         repoID,
-		RepoRoot:       repoRoot,
-		Branch:         branch,
-		Head:           head,
-		SpoolPath:      spoolPath,
-		SpoolEntry:     &captureEntry,
-		CopyResult:     copyResult,
-		Duration:       duration,
+		Skipped:              false,
+		ConversationID:       convID,
+		ParentConversationID: parentConvID,
+		RepoID:               repoID,
+		RepoRoot:             repoRoot,
+		Branch:               branch,
+		Head:                 head,
+		SpoolPath:            spoolPath,
+		SpoolEntry:           &captureEntry,
+		CopyResult:           copyResult,
+		Duration:             duration,
 	}, nil
 }
 
