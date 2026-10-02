@@ -21,7 +21,7 @@ Every Antigravity session in an enrolled repository produces an episode within m
 | 4 | [`wo4-tick-core`](wo4-tick-core/WORKORDER.md) | `pr-02b-capture-runtime/wo4-tick-core` | ✅ Complete | architect | e5c26427 |
 | 5 | [`wo5-session-attribution`](wo5-session-attribution/WORKORDER.md) | `pr-02b-capture-runtime/wo5-session-attribution` | ✅ Complete | standard | 17d10203 |
 | 6 | [`wo6-sidecar-packaging`](wo6-sidecar-packaging/WORKORDER.md) | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ✅ Complete | mechanical | 66f07588 |
-| 7 | [`wo7-claude-raw-copy`](wo7-claude-raw-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo7-claude-raw-copy` | 🔄 In Progress | mechanical | — |
+| 7 | [`wo7-claude-raw-copy`](wo7-claude-raw-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo7-claude-raw-copy` | ✅ Complete | mechanical | f8ee0bc6 |
 
 ## Exit Criteria
 - Every new Antigravity session in an enrolled repository produces an episode within minutes of going idle
@@ -39,3 +39,11 @@ Every Antigravity session in an enrolled repository produces an episode within m
 - **WO4**: `wo4-tick-core` completed. Implemented portable tick lock, the core tick loop, and sweep logic for enrolled repos including idle promotion and incremental copy.
 - **WO5**: `wo5-session-attribution` completed. Implemented mapping of conversations to enrolled repositories using `conversation_summaries.db`, duplicated-conversation resolution between IDE and CLI, and hierarchical subagent linking. Wired attribution into the tick's sweep loop.
 - **WO6**: `wo6-sidecar-packaging` completed. Updated the cron schedule to `*/1 * * * *` and ensured the Automations-dashboard enablement step prints on install.
+- **WO7**: `wo7-claude-raw-copy` completed. `TranscriptCopier` registry added to the tick, scanning and mapping Claude Code project directories to enrolled repo IDs. Copies `raw/claude-code/` transcripts securely without executing arbitrary plugins.
+
+### Project Wrap-Up
+All 7 Work Orders have successfully completed.
+- Spool, Stop hook, job table, tick core loop, session attribution, packaging, and claude raw copy logic are all implemented.
+- Met all exit criteria: the capture pipeline is live and tracking idle sessions.
+- An issue arose in WO2 where a missing binary broke the `PreToolUse` hook and blocked further tool execution, highlighting the risk of global plugin dependencies. Handled by disabling the global hooks temporarily and ignoring the built binary.
+- This PR successfully establishes the reliable foundation necessary for the `repo-memory` program's event-path and time-path processes.
