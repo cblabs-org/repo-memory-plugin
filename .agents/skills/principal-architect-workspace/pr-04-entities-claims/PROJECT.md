@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-04-entities-claims
 > **Base branch:** `main`
-> **Status:** In Progress
+> **Status:** Complete
 > **SPEC:** [SPEC.md](../../../SPEC.md) v0.10
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 
@@ -21,7 +21,7 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 | 4 | `wo4-claim-store` | `pr-04-entities-claims/wo4-claim-store` | ☑ Complete | standard | — |
 | 5 | `wo5-sqlite-index` | `pr-04-entities-claims/wo5-sqlite-index` | ☑ Complete | standard | — |
 | 6 | `wo6-subsystem-config` | `pr-04-entities-claims/wo6-subsystem-config` | ☑ Complete | standard | — |
-| 7 | `wo7-events-store` | `pr-04-entities-claims/wo7-events-store` | ☐ Pending | standard | — |
+| 7 | `wo7-events-store` | `pr-04-entities-claims/wo7-events-store` | ☑ Complete | standard | — |
 
 ## Exit Criteria
 - Entity extractor produces correct entities from test fixtures
@@ -40,3 +40,6 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 - **WO4**: Claim store, month-sharded CRUD operations, and inverse relation index implemented.
 - **WO5**: SQLite index schema, WAL concurrency, write transactions, and the rebuild mechanism added. Added `reindex` CLI command.
 - **WO6**: Subsystem configuration glob matching and unassigned file detection implemented.
+- **WO7**: Events store for human decisions implemented, with replay order documented.
+### Project Wrap-Up
+The PR-04 data model layer has been fully implemented across 7 WOs. All exit criteria are met, and tests pass.

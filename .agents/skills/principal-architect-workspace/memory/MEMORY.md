@@ -9,11 +9,12 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-04-entities-claims | WO7/7 — In Progress | Entities, Claims, Index, Events | [PROJECT.md](../pr-04-entities-claims/PROJECT.md) |
+| pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer built across 7 WOs. |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
 |---|---|---|---|
+| pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer built across 7 WOs. |
 | pr-03-episode-search | 2026-10-02 | FTS Index, Search CLI, PA Import, Eval Harness | FTS5 search, memory.ask fallback, eval harness with B1-B5 datasets. 6/6 WOs. |
 | pr-02b-capture-runtime | 2026-10-02 | Capture Runtime, Spool, Stop Hook, Tick, Sweep | Spool, tick, hooks, and job table implemented. 7/7 WOs. |
 | pr-02a-transcript-episode | 2026-10-02 | Transcript Parser, Compaction, Episode Store | Parser, 5.4× compaction, episode store, commit linkage, metrics. 5/5 WOs. |
