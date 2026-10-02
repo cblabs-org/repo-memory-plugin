@@ -150,6 +150,46 @@ func (h *Header) TotalMissingSteps() int {
 	return total
 }
 
+// RecordCommit appends a commit hash to the header's Commits list if not already present.
+func (h *Header) RecordCommit(sha string) {
+	sha = strings.TrimSpace(sha)
+	if sha == "" {
+		return
+	}
+	for _, c := range h.Commits {
+		if strings.EqualFold(c, sha) {
+			return
+		}
+	}
+	h.Commits = append(h.Commits, sha)
+}
+
+// RecordCommits appends multiple commit hashes to the header's Commits list, ignoring duplicates.
+func (h *Header) RecordCommits(commits []string) {
+	for _, c := range commits {
+		h.RecordCommit(c)
+	}
+}
+
+// HasCommits returns true if any commits are recorded.
+func (h *Header) HasCommits() bool {
+	return len(h.Commits) > 0
+}
+
+// HasCommit returns true if the specific commit hash is recorded in the header.
+func (h *Header) HasCommit(sha string) bool {
+	sha = strings.TrimSpace(sha)
+	if sha == "" {
+		return false
+	}
+	for _, c := range h.Commits {
+		if strings.EqualFold(c, sha) {
+			return true
+		}
+	}
+	return false
+}
+
 // SetParentEpisode sets or clears the parent episode ID.
 func (h *Header) SetParentEpisode(id string) {
 	if id == "" {
@@ -167,12 +207,14 @@ func (h *Header) GetParentEpisode() string {
 	return *h.ParentEpisode
 }
 
-// UnmarshalJSON implements custom JSON unmarshaling for Header to handle flexible timestamp formats.
+// UnmarshalJSON implements custom JSON unmarshaling for Header to handle flexible timestamp formats
+// and flexible commit formats.
 func (h *Header) UnmarshalJSON(data []byte) error {
 	type Alias Header
 	aux := &struct {
 		Started any `json:"started"`
 		Ended   any `json:"ended"`
+		Commits any `json:"commits"`
 		*Alias
 	}{
 		Alias: (*Alias)(h),
@@ -196,6 +238,14 @@ func (h *Header) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("parsing ended timestamp: %w", err)
 		}
 		h.Ended = t
+	}
+
+	if aux.Commits != nil {
+		commits, err := parseCommitsFlexible(aux.Commits)
+		if err != nil {
+			return fmt.Errorf("parsing commits: %w", err)
+		}
+		h.Commits = commits
 	}
 
 	return nil
@@ -238,6 +288,81 @@ func parseTimeFlexible(val any) (time.Time, error) {
 	default:
 		return time.Time{}, fmt.Errorf("unexpected time type %T", val)
 	}
+}
+
+func parseCommitsFlexible(val any) ([]string, error) {
+	if val == nil {
+		return nil, nil
+	}
+	switch v := val.(type) {
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" || v == "null" {
+			return nil, nil
+		}
+		parts := strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\t' || r == '\n'
+		})
+		var result []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				result = append(result, p)
+			}
+		}
+		return result, nil
+	case []any:
+		var result []string
+		for _, item := range v {
+			switch it := item.(type) {
+			case string:
+				it = strings.TrimSpace(it)
+				if it != "" {
+					result = append(result, it)
+				}
+			case map[string]any:
+				for _, key := range []string{"sha", "commit", "hash", "ref"} {
+					if s, ok := it[key].(string); ok {
+						s = strings.TrimSpace(s)
+						if s != "" {
+							result = append(result, s)
+							break
+						}
+					}
+				}
+			}
+		}
+		return result, nil
+	case []string:
+		var result []string
+		for _, s := range v {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				result = append(result, s)
+			}
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unexpected commits type %T", val)
+	}
+}
+
+// ParseHeader parses an episode header from JSON bytes.
+func ParseHeader(data []byte) (*Header, error) {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return nil, errors.New("empty header data")
+	}
+	var header Header
+	if err := json.Unmarshal(data, &header); err != nil {
+		return nil, fmt.Errorf("parsing episode header: %w", err)
+	}
+	return &header, nil
+}
+
+// ParseHeaderLine parses an episode header from a single line string.
+func ParseHeaderLine(line string) (*Header, error) {
+	return ParseHeader([]byte(line))
 }
 
 // DetectGaps inspects steps and returns any missing step index intervals.
@@ -288,6 +413,26 @@ func (e *Episode) AddStep(step harness.Step) {
 // RecordGaps detects and populates step gaps from the episode's steps.
 func (e *Episode) RecordGaps() {
 	e.Header.RecordGaps(e.Steps)
+}
+
+// RecordCommit appends a commit hash to the episode header.
+func (e *Episode) RecordCommit(sha string) {
+	e.Header.RecordCommit(sha)
+}
+
+// RecordCommits appends multiple commit hashes to the episode header.
+func (e *Episode) RecordCommits(commits []string) {
+	e.Header.RecordCommits(commits)
+}
+
+// HasCommits returns true if any commits are recorded in the episode header.
+func (e *Episode) HasCommits() bool {
+	return e.Header.HasCommits()
+}
+
+// HasCommit returns true if the specific commit hash is recorded in the episode header.
+func (e *Episode) HasCommit(sha string) bool {
+	return e.Header.HasCommit(sha)
 }
 
 // ComputeKeptChars calculates the total kept character count for episode steps.

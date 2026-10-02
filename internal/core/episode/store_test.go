@@ -447,3 +447,92 @@ func TestEpisodeStatsComputation(t *testing.T) {
 		t.Errorf("unexpected stats: %+v", ep.Header.Stats)
 	}
 }
+
+func TestHeaderParseAndFlexibleCommits(t *testing.T) {
+	// 1. Array of strings
+	rawArray := `{"session_id":"s1","commits":["c1","c2"]}`
+	h1, err := episode.ParseHeader([]byte(rawArray))
+	if err != nil {
+		t.Fatalf("failed to parse array commits: %v", err)
+	}
+	if len(h1.Commits) != 2 || h1.Commits[0] != "c1" || h1.Commits[1] != "c2" {
+		t.Errorf("unexpected commits: %v", h1.Commits)
+	}
+
+	// 2. Comma-separated string
+	rawStr := `{"session_id":"s2","commits":"c1, c2, c3"}`
+	h2, err := episode.ParseHeaderLine(rawStr)
+	if err != nil {
+		t.Fatalf("failed to parse comma-separated string commits: %v", err)
+	}
+	if len(h2.Commits) != 3 || h2.Commits[0] != "c1" || h2.Commits[2] != "c3" {
+		t.Errorf("unexpected commits: %v", h2.Commits)
+	}
+
+	// 3. Array of objects
+	rawObjects := `{"session_id":"s3","commits":[{"sha":"c1"},{"commit":"c2"},{"hash":"c3"}]}`
+	h3, err := episode.ParseHeader([]byte(rawObjects))
+	if err != nil {
+		t.Fatalf("failed to parse object array commits: %v", err)
+	}
+	if len(h3.Commits) != 3 || h3.Commits[0] != "c1" || h3.Commits[1] != "c2" || h3.Commits[2] != "c3" {
+		t.Errorf("unexpected commits: %v", h3.Commits)
+	}
+
+	// 4. Null commits
+	rawNull := `{"session_id":"s4","commits":null}`
+	h4, err := episode.ParseHeader([]byte(rawNull))
+	if err != nil {
+		t.Fatalf("failed to parse null commits: %v", err)
+	}
+	if len(h4.Commits) != 0 {
+		t.Errorf("expected empty commits for null, got %v", h4.Commits)
+	}
+
+	// 5. Empty header error
+	if _, err := episode.ParseHeader([]byte("")); err == nil {
+		t.Error("expected error for empty header bytes")
+	}
+}
+
+func TestHeaderAndEpisodeCommitHelpers(t *testing.T) {
+	h := &episode.Header{SessionID: "sess-helpers"}
+	if h.HasCommits() {
+		t.Error("expected HasCommits false initially")
+	}
+	if h.HasCommit("sha1") {
+		t.Error("expected HasCommit false initially")
+	}
+
+	h.RecordCommit("sha1")
+	if !h.HasCommits() || !h.HasCommit("sha1") {
+		t.Error("expected HasCommits and HasCommit true after RecordCommit")
+	}
+
+	// Duplicate RecordCommit should not duplicate
+	h.RecordCommit("sha1")
+	h.RecordCommit("SHA1") // case-insensitive check
+	if len(h.Commits) != 1 {
+		t.Errorf("expected 1 commit after duplicate RecordCommit, got %d", len(h.Commits))
+	}
+
+	// RecordCommits
+	h.RecordCommits([]string{"sha2", "sha3", "sha1"})
+	if len(h.Commits) != 3 {
+		t.Errorf("expected 3 commits after RecordCommits, got %d (%v)", len(h.Commits), h.Commits)
+	}
+
+	// Episode helpers
+	ep := episode.NewEpisode(*h)
+	if !ep.HasCommits() || !ep.HasCommit("sha2") {
+		t.Error("expected episode to have commits")
+	}
+
+	ep.RecordCommit("sha4")
+	if !ep.HasCommit("sha4") {
+		t.Error("expected episode to have sha4")
+	}
+	if !ep.Header.HasCommit("sha4") {
+		t.Error("expected episode header to have sha4")
+	}
+}
