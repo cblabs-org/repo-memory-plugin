@@ -7,6 +7,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness/antigravity"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness/claudecode"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,7 @@ var tickCmd = &cobra.Command{
 			config.DataDir(),
 			55*time.Second, // 1 minute tick minus 5s buffer
 			tick.WithAttributor(antigravity.NewSessionAttributor()),
+			tick.WithCopier(claudecode.CopyTranscripts),
 		)
 		return ticker.Run(context.Background())
 	},

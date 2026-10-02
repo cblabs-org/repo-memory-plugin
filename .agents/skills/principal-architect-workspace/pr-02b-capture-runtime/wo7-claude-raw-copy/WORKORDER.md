@@ -19,8 +19,8 @@ Extend the sweep to copy Claude Code transcripts.
 Use `go build` and `go test` to verify changes.
 
 ## Line-Item Instructions
-- [ ] Extend the sweep logic to copy Claude Code transcripts from `~/.claude/projects/` to `<data-dir>/<repo-id>/raw/claude-code/`.
-- [ ] Respect permissions (read only).
+- [x] Extend the sweep logic to copy Claude Code transcripts from `~/.claude/projects/` to `<data-dir>/<repo-id>/raw/claude-code/`.
+- [x] Respect permissions (read only).
 
 ## Verification Requirement
 You must verify it compiles and tests pass. `go build ./cmd/repo-memory` and `go test ./...`. Before committing, ask the user if they are happy with the changes.
@@ -33,8 +33,22 @@ If you discover a defect, surface it in your Completion Report below.
 <!-- Written by the worker at task completion -->
 
 ### Status
+Complete & Approved
+
 ### Changes Made
+- Added `TranscriptCopier` interface/type and registration support in `internal/core/tick/sweep.go` and `internal/core/tick/tick.go` while maintaining strict core/adapter boundary separation.
+- Implemented Claude Code raw transcript copying in `internal/harness/claudecode/copier.go`, scanning `~/.claude/projects/`, matching project directories to enrolled repositories by root path, and copying top-level and subagent (`subagents/*.jsonl`) transcripts into `<data-dir>/<repo-id>/raw/claude-code/` with read-only source permissions and skipping `memory/` directories.
+- Wired `claudecode.CopyTranscripts` in `cmd/repo-memory/cmd_tick.go`.
+- Added unit tests in `internal/harness/claudecode/copier_test.go`.
+
 ### Decisions Made
+- Used a decoupled registration pattern (`tick.RegisterCopier`) to keep `internal/core` free of adapter dependencies.
+
 ### Dead Ends & Warnings
+- None.
+
 ### Out-of-Scope Findings
+- Transcript parsing and compaction are deferred to Release 2 (R2.1) per SPEC §18.6 rule 11.
+
 ### Blockers
+- None.
