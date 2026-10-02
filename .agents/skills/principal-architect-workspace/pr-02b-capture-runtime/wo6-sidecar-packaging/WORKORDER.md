@@ -33,8 +33,21 @@ If you discover a defect, surface it in your Completion Report below.
 <!-- Written by the worker at task completion -->
 
 ### Status
+Complete / Approved
+
 ### Changes Made
+- Updated `packaging/antigravity/sidecar.json` to configure cron schedule `*/1 * * * *`, `builtin:schedule`, `restart_policy:always`, `display_name`, `description`, and `agent_permissions`.
+- Updated unit tests in `packaging/antigravity/templates_test.go` and `cmd/repo-memory/install_test.go` to validate `*/1 * * * *`.
+- Verified install command output prints Automations-dashboard enablement step.
+
 ### Decisions Made
+- Kept cron expression strictly aligned with `*/1 * * * *` per workorder instructions and updated corresponding test expectations.
+
 ### Dead Ends & Warnings
+- None.
+
 ### Out-of-Scope Findings
+- None.
+
 ### Blockers
+- None.

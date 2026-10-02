@@ -111,8 +111,8 @@ func TestGenerateSidecarJSON(t *testing.T) {
 	if !ok || len(args) < 3 {
 		t.Fatalf("expected at least 3 args in sidecar.json, got %v", parsed["args"])
 	}
-	if args[0] != "* * * * *" {
-		t.Errorf("expected cron '* * * * *', got %v", args[0])
+	if args[0] != "*/1 * * * *" {
+		t.Errorf("expected cron '*/1 * * * *', got %v", args[0])
 	}
 	if args[1] != binPath {
 		t.Errorf("expected binary %s, got %v", binPath, args[1])
