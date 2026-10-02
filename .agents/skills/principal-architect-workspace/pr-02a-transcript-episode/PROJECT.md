@@ -18,7 +18,7 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 | 1 | `wo1-transcript-parser` | `pr-02a-transcript-episode/wo1-transcript-parser` | ☑ Complete | architect | a28bf92a |
 | 2 | `wo2-compaction` | `pr-02a-transcript-episode/wo2-compaction` | ☑ Complete | architect | 2d445f95 |
 | 3 | `wo3-episode-store` | `pr-02a-transcript-episode/wo3-episode-store` | ☑ Complete | standard | 75b7ca8e |
-| 4 | `wo4-commit-linkage` | `pr-02a-transcript-episode/wo4-commit-linkage` | ☐ Pending | standard | — |
+| 4 | `wo4-commit-linkage` | `pr-02a-transcript-episode/wo4-commit-linkage` | ☑ Complete | standard | 1a09193a |
 | 5 | `wo5-metrics-skeleton` | `pr-02a-transcript-episode/wo5-metrics-skeleton` | ☐ Pending | standard | — |
 
 ## Exit Criteria
@@ -43,3 +43,8 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 - **Outcome:** Complete.
 - **Key Decisions:** Used pure-Go zstd compression (`klauspost/compress/zstd`) and atomic writes (tmp + rename). Implemented `StepGap` for handling unwritten internal dispatch steps.
 - **Findings:** Successfully added support for flexible timestamp parsing (RFC3339/RFC3339Nano, null).
+
+### WO4: wo4-commit-linkage
+- **Outcome:** Complete.
+- **Key Decisions:** Implemented `CommitLinker` with pluggable `GitRunner` interface (defaulting to system git execution via `ExecGitRunner`). Resolves edit steps (`StepKindEdit`) to their touched commit hashes.
+- **Findings:** Correctly handles candidate commits against transcript commit commands (direct hash, `-m`, sequence matching, etc).
