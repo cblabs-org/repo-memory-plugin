@@ -39,23 +39,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/index/index.go` — Added `Snippet` to `EpisodeRecord` and updated `SearchEpisodes` query to fetch a truncated `snippet()` and use `ORDER BY bm25()`.
+- `cmd/repo-memory/cmd_search.go` — Implemented the `search` subcommand which locates the active repository memory index, executes `idx.SearchEpisodes()`, and prints a formatted, tabulated list of results.
+- `cmd/repo-memory/cmd_search_test.go` — Added basic command testing.
+- `cmd/repo-memory/install_test.go` — Removed `search` stub execution from general test loops since it now relies on a valid repo-memory database.
 
 ### Decisions Made
-<!-- Only non-obvious decisions. Omit this section entirely for mechanical WOs. -->
-- Decision description and rationale
+- Chose to output to a `tabwriter` that explicitly directs to `cmd.OutOrStdout()` to prevent breaking execution loops in Cobra testing.
+- Updated `install_test.go` since the `search` stub now correctly throws an error when invoked outside a valid memory-enabled directory.
 
 ### Dead Ends & Warnings
-<!-- Things that didn't work. Critical for preventing future agents from repeating mistakes. -->
-- What was attempted, why it failed, and what to avoid
+- When writing tests with `cobra.Command`, one must strictly bind any stdout calls (`fmt.Fprintln()`) to `cmd.OutOrStdout()` and set `rootCmd.SetOut(buf)` instead of directly using `os.Stdout`. Otherwise output capture assertions fail.
 
 ### Out-of-Scope Findings
-<!-- Defects, bugs, or concerns outside the boundary box. The PA will triage these. -->
-- Finding description and suggested action
+- None
 
 ### Blockers
-<!-- Empty if status is 'complete'. If partial/blocked, explain what prevents completion. -->
 (none)

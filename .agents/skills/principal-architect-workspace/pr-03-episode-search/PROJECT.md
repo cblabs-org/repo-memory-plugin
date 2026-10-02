@@ -16,11 +16,11 @@ Make captured history searchable before the knowledge pipeline exists, and impor
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
 | 1 | `wo1-fts-index` | `pr-03-episode-search/wo1-fts-index` | ☑ Complete | standard | — |
-| 2 | `wo2-search-cli` | `pr-03-episode-search/wo2-search-cli` | ☐ Pending | standard | — |
-| 3 | `wo3-pa-import` | `pr-03-episode-search/wo3-pa-import` | ☐ Pending | standard | — |
-| 4 | `wo4-ask-fallback` | `pr-03-episode-search/wo4-ask-fallback` | ☐ Pending | standard | — |
-| 5 | `wo5-eval-harness` | `pr-03-episode-search/wo5-eval-harness` | ☐ Pending | standard | — |
-| 6 | `wo6-eval-datasets` | `pr-03-episode-search/wo6-eval-datasets` | ☐ Pending | standard | — |
+| 2 | `wo2-search-cli` | `pr-03-episode-search/wo2-search-cli` | ☑ Complete | standard | — |
+| 3 | `wo3-pa-import` | `pr-03-episode-search/wo3-pa-import` | ☑ Complete | standard | — |
+| 4 | `wo4-ask-fallback` | `pr-03-episode-search/wo4-ask-fallback` | ☑ Complete | standard | — |
+| 5 | `wo5-eval-harness` | `pr-03-episode-search/wo5-eval-harness` | ☑ Complete | standard | — |
+| 6 | `wo6-eval-datasets` | `pr-03-episode-search/wo6-eval-datasets` | ☑ Complete | standard | — |
 
 ## Exit Criteria
 - Can find what was tried, and when, across all captured and imported history
@@ -33,3 +33,8 @@ Make captured history searchable before the knowledge pipeline exists, and impor
 
 - **2026-10-02**: Human approved PR-03 Work Order decomposition (WO1-WO6). Initiating WO1.
 - **2026-10-02**: WO1 completed. SQLite FTS5 index for episodes implemented (`internal/core/index/index.go`) with WAL and read-only readers, along with store population logic (`internal/core/index/populate.go`). Initiating WO2.
+- **2026-10-02**: WO2 completed. `search` CLI subcommand implemented using `tabwriter`, calling `Index.SearchEpisodes` which ranks by `bm25()` and displays a snippet. Initiating WO3.
+- **2026-10-02**: WO3 completed. `import-pa` CLI subcommand implemented to scan PA workspaces and ingest `.md` files as episodes into the store. Initiating WO4.
+- **2026-10-02**: WO4 completed. `memory.ask` MCP tool fallback logic implemented to search episodes when no claims exist. Initiating WO5.
+- **2026-10-02**: WO5 completed. Evaluation runner and result store for B1-B5 built, including B2 baseline test logic. Initiating WO6.
+- **2026-10-02**: WO6 completed. B1, B2, B3 datasets generated in JSON format, and B5 sampling script built. PR-03 stack execution complete.

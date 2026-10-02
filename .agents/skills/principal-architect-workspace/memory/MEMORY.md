@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-03-episode-search | WO2/6 — In Progress | FTS Index, Search CLI, PA Import, Eval Harness | [PROJECT.md](../pr-03-episode-search/PROJECT.md) |
+| pr-03-episode-search | WO6/6 — Complete | FTS Index, Search CLI, PA Import, Eval Harness | [PROJECT.md](../pr-03-episode-search/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
