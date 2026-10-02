@@ -29,68 +29,96 @@ var hookCmd = &cobra.Command{
 	Short: "Execute harness hook event path",
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if hookProbeFlag {
-			event := "unknown"
-			if len(args) >= 2 {
-				event = args[1]
-			} else if len(args) == 1 {
-				if strings.EqualFold(args[0], "antigravity") || strings.EqualFold(args[0], "claudecode") || strings.EqualFold(args[0], "fake") {
-					event = "unknown"
-				} else {
-					event = args[0]
-				}
-			}
-
-			payload, err := io.ReadAll(cmd.InOrStdin())
-			if err != nil {
-				return fmt.Errorf("reading hook payload: %w", err)
-			}
-
-			out, err := handleProbe(event, payload)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(out))
-			return nil
-		}
-
-		harnessName := ""
+		// Determine the event name early for fail-open handling.
 		eventName := ""
 		if len(args) >= 2 {
-			harnessName = args[0]
 			eventName = args[1]
 		} else if len(args) == 1 {
 			eventName = args[0]
 		}
+		isPreToolUse := strings.EqualFold(eventName, "PreToolUse") || strings.EqualFold(eventName, "pre_tool_use")
 
-		if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "stop") {
-			payload, err := io.ReadAll(cmd.InOrStdin())
-			if err != nil {
-				return fmt.Errorf("reading hook payload: %w", err)
-			}
+		// FAIL-OPEN: For PreToolUse, any panic or error must result in
+		// {"decision":"allow"} on stdout and exit 0. A non-zero exit or
+		// empty/invalid output causes an implicit deny that blocks ALL
+		// tool calls across the entire machine.
+		if isPreToolUse {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow","reason":"fail-open: panic recovery"}`)
+				}
+			}()
+		}
 
-			out, err := antigravity.HandleStop(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		// Wrap the real logic so we can catch errors and fail open.
+		err := hookRunE(cmd, args, eventName)
+		if err != nil && isPreToolUse {
+			// Fail open: return allow instead of propagating the error.
+			fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow","reason":"fail-open: `+strings.ReplaceAll(err.Error(), `"`, `'`)+`"}`)
 			return nil
 		}
-
-		valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
-		if err != nil || !valid {
-			// Sub-5ms fast-path: immediately return harness no-op output
-			fmt.Fprintln(cmd.OutOrStdout(), "{}")
-			return nil
-		}
-
-		if len(args) >= 2 {
-			fmt.Fprintf(cmd.OutOrStdout(), "hook subcommand stub: harness=%s event=%s\n", args[0], args[1])
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "hook subcommand stub")
-		}
-		return nil
+		return err
 	},
+}
+
+func hookRunE(cmd *cobra.Command, args []string, eventName string) error {
+	if hookProbeFlag {
+		event := "unknown"
+		if len(args) >= 2 {
+			event = args[1]
+		} else if len(args) == 1 {
+			if strings.EqualFold(args[0], "antigravity") || strings.EqualFold(args[0], "claudecode") || strings.EqualFold(args[0], "fake") {
+				event = "unknown"
+			} else {
+				event = args[0]
+			}
+		}
+
+		payload, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return fmt.Errorf("reading hook payload: %w", err)
+		}
+
+		out, err := handleProbe(event, payload)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	harnessName := ""
+	if len(args) >= 2 {
+		harnessName = args[0]
+	}
+
+	if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "stop") {
+		payload, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return fmt.Errorf("reading hook payload: %w", err)
+		}
+
+		out, err := antigravity.HandleStop(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
+	if err != nil || !valid {
+		// Sub-5ms fast-path: immediately return harness no-op output
+		fmt.Fprintln(cmd.OutOrStdout(), "{}")
+		return nil
+	}
+
+	if len(args) >= 2 {
+		fmt.Fprintf(cmd.OutOrStdout(), "hook subcommand stub: harness=%s event=%s\n", args[0], args[1])
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "hook subcommand stub")
+	}
+	return nil
 }
 
 func init() {
