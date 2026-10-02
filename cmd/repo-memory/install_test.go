@@ -92,7 +92,7 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	if !ok || len(args) < 3 {
 		t.Fatalf("expected sidecar args list with at least 3 items, got %v", sidecarMap["args"])
 	}
-	if args[0] != "* * * * *" || args[1] != binPath || args[2] != "tick" {
+	if args[0] != "*/1 * * * *" || args[1] != binPath || args[2] != "tick" {
 		t.Errorf("unexpected sidecar args: %v", args)
 	}
 

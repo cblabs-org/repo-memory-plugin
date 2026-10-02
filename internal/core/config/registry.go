@@ -213,10 +213,15 @@ func FindRegistryEntry(dataDir, workspacePath string) (*RegistryEntry, bool, err
 	return nil, false, nil
 }
 
-func isSubdir(child, parent string) bool {
+// IsSubdir reports whether child is a subdirectory of parent.
+func IsSubdir(child, parent string) bool {
 	rel, err := filepath.Rel(parent, child)
 	if err != nil {
 		return false
 	}
 	return rel != "." && !strings.HasPrefix(rel, "..") && !strings.HasPrefix(rel, "/") && !strings.HasPrefix(rel, `\`)
+}
+
+func isSubdir(child, parent string) bool {
+	return IsSubdir(child, parent)
 }

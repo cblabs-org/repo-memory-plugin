@@ -311,6 +311,8 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial root commit")
 
 	// 1. Not enrolled: hook must return empty json {}
+	origWorkspace := hookWorkspaceFlag
+	defer func() { hookWorkspaceFlag = origWorkspace }()
 	hookWorkspaceFlag = repoDir
 	var out bytes.Buffer
 	hookCmd.SetOut(&out)
