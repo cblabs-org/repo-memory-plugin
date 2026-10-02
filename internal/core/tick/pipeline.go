@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +41,7 @@ type PipelineExecutor struct {
 	mu          sync.Mutex
 }
 
-func (t *Ticker) processPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
+func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
 	if t.hk == nil {
 		return nil
 	}
@@ -51,7 +52,7 @@ func (t *Ticker) processPipeline(ctx context.Context, store *jobs.Store, repoRoo
 	}
 
 	repoDataDir := filepath.Join(t.dataDir, repoID)
-	epStore := episode.NewStore(repoRoot, filepath.Join(repoDataDir, "episodes"))
+	epStore := episode.NewStore(t.dataDir, repoID)
 	claimStore, err := claimstore.New(filepath.Join(repoDataDir, "claims"))
 	if err != nil {
 		return fmt.Errorf("opening claim store: %w", err)
@@ -182,7 +183,7 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 			continue
 		}
 
-		if tRes, ok := res[epID]; ok && tRes.Keep {
+		if tRes, ok := res[ep.Header.EpisodeID]; ok && tRes.Keep {
 			payload := extractPayload{EpisodeID: epID, Result: tRes}
 			b, _ := json.Marshal(payload)
 			extractJob := &jobs.Job{
@@ -237,7 +238,7 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 				}
 
 				extractor := extract.NewExtractor(p.hk, 16000)
-				triageMap := map[string]triage.TriageResult{payload.EpisodeID: payload.Result}
+				triageMap := map[string]triage.TriageResult{ep.Header.EpisodeID: payload.Result}
 				
 				results, err := extractor.Extract(ctx, []*episode.Episode{ep}, triageMap)
 				if err != nil {
@@ -247,7 +248,9 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 
 				// Enqueue Reconcile jobs
 				for _, res := range results {
-					for _, cand := range res.Candidates {
+					for i := range res.Candidates {
+						cand := res.Candidates[i]
+						cand.EpisodeID = payload.EpisodeID // Force it to be the SessionID
 						cb, _ := json.Marshal(cand)
 						reconcileJob := &jobs.Job{
 							Kind:           jobs.KindReconcile,
@@ -293,9 +296,23 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 			continue
 		}
 
-		ep, err := p.epStore.Read(cand.EpisodeID)
+		sessionID := cand.EpisodeID
+		if sessionID == "" || strings.HasPrefix(sessionID, "ep-") {
+			// Extract from idempotency key: reconcile-pa-filename-ULID-statement
+			// Find the ULID which is 26 uppercase chars and digits
+			parts := strings.Split(job.IdempotencyKey, "-")
+			for i, pPart := range parts {
+				if len(pPart) == 26 && i >= 2 {
+					sessionID = strings.Join(parts[1:i+1], "-")
+					cand.EpisodeID = sessionID
+					break
+				}
+			}
+		}
+
+		ep, err := p.epStore.Read(sessionID)
 		if err != nil {
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to read session %q: %v", sessionID, err), 5*time.Minute)
 			continue
 		}
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
@@ -60,38 +61,23 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 
 	projectArg := fmt.Sprintf("repo-memory-%s", h.RepoID)
 
-	cmd := exec.CommandContext(ctx, "agy", "-p", "",
-		"--model", h.Model,
-		"--output-format", "stream-json", // Using stream-json to match input-format stream-json
-		"--input-format", "stream-json",
-		"--print-timeout", h.Timeout,
-		"--project", projectArg,
-	)
-
-	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
-	cmd.Dir = workDir
-
-	// Prepare stdin
+	// Prepare input string
 	inputBytes, err := json.Marshal(input)
 	if err != nil {
 		return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
 	}
 
-	// Make sure the input has an event field. If it's a map, we inject it.
-	var inputMap map[string]any
-	if err := json.Unmarshal(inputBytes, &inputMap); err == nil {
-		if _, ok := inputMap["event"]; !ok {
-			inputMap["event"] = "request"
-			inputBytes, _ = json.Marshal(inputMap)
-		}
-	} else {
-		// Just wrap it if it wasn't a map
-		inputMap = map[string]any{
-			"event":  "request",
-			"prompt": input,
-		}
-		inputBytes, _ = json.Marshal(inputMap)
-	}
+	cmd := exec.CommandContext(ctx, "agy",
+		"-p", "-",
+		"--model", h.Model,
+		"--output-format", "stream-json",
+		"--print-timeout", h.Timeout,
+		"--project", projectArg,
+		"--dangerously-skip-permissions",
+	)
+
+	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
+	cmd.Dir = workDir
 
 	cmd.Stdin = bytes.NewReader(inputBytes)
 
@@ -115,7 +101,20 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 			if msg.Result.Status == "ERROR" {
 				return result, fmt.Errorf("agy returned error: %s", msg.Result.Error)
 			}
-			result.Payload = msg.Result.Response
+			payload := msg.Result.Response
+			// Strip markdown json block if present
+			if strings.HasPrefix(payload, "```json") {
+				payload = strings.TrimPrefix(payload, "```json")
+				if strings.HasSuffix(strings.TrimSpace(payload), "```") {
+					payload = strings.TrimSuffix(strings.TrimSpace(payload), "```")
+				}
+			} else if strings.HasPrefix(payload, "```") {
+				payload = strings.TrimPrefix(payload, "```")
+				if strings.HasSuffix(strings.TrimSpace(payload), "```") {
+					payload = strings.TrimSuffix(strings.TrimSpace(payload), "```")
+				}
+			}
+			result.Payload = strings.TrimSpace(payload)
 			result.Usage = harness.Usage{
 				InputTokens:     msg.Result.Usage.InputTokens,
 				OutputTokens:    msg.Result.Usage.OutputTokens,
@@ -125,5 +124,8 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		}
 	}
 
+	if result.Payload == "" {
+		return result, fmt.Errorf("agy returned empty payload. Stdout: %s\nStderr: %s", stdout.String(), stderr.String())
+	}
 	return result, nil
 }

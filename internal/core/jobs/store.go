@@ -337,7 +337,7 @@ WHERE (state = 'queued' OR (state = 'failed' AND (next_attempt_at IS NULL OR nex
 	job, err := scanJob(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // No jobs available
+			return nil, ErrNoJobAvailable // No jobs available
 		}
 		return nil, fmt.Errorf("querying eligible job: %w", err)
 	}
@@ -372,7 +372,7 @@ WHERE id = ? AND state = ?;
 	}
 	if rows == 0 {
 		// Concurrently acquired
-		return nil, nil
+		return nil, ErrNoJobAvailable
 	}
 
 	if err := tx.Commit(); err != nil {
