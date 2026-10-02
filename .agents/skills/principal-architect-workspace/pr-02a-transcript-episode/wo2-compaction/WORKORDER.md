@@ -19,11 +19,11 @@ You must only work within `internal/core/pipeline/compact/` and related tests.
 Use `go build ./cmd/repo-memory` and `go test ./...` to verify your changes.
 
 ## Line-Item Instructions
-- [ ] Implement `internal/core/pipeline/compact/` to perform deterministic compaction per SPEC §5.1.
-- [ ] Implement author classification (`human` vs `automation`).
-- [ ] Implement exposure markers (dropping actual memory content but keeping references).
-- [ ] Implement secret scrubber (pattern + entropy) replacing matches with `«secret:type»`.
-- [ ] Write tests ensuring target compaction (≥ 4× reduction) is measured and verified on full transcripts.
+- [x] Implement `internal/core/pipeline/compact/` to perform deterministic compaction per SPEC §5.1.
+- [x] Implement author classification (`human` vs `automation`).
+- [x] Implement exposure markers (dropping actual memory content but keeping references).
+- [x] Implement secret scrubber (pattern + entropy) replacing matches with `«secret:type»`.
+- [x] Write tests ensuring target compaction (≥ 4× reduction) is measured and verified on full transcripts.
 
 ## Verification Requirement
 The worker must verify it compiles/runs according to the Tooling Constraints.
@@ -37,19 +37,26 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 <!-- Written by the worker at task completion -->
 
 ### Status
-(pending)
+Complete
 
 ### Changes Made
-(pending)
+- Implemented `Compactor.Compact()` in `internal/core/pipeline/compact/compact.go` per SPEC 5.1 rules (truncating command output, collapsing identical repeating tasks).
+- Added `classifyAuthor()` to determine if a prompt is from a `human` or `automation` (e.g., scheduled ticks, system messages, agentapi).
+- Stripped actual content text from exposure markers and reads/edits, keeping only reference IDs.
+- Implemented `scrubSecrets()` with regex + basic heuristic to replace AWS keys, UUIDs, Tokens, and high-entropy hex with `«secret:type»`.
+- Included `compact_test.go` checking for proper sequence handling, assertions for correct parsing, and confirming a raw footprint size reduction of >= 4x.
+- Marked all checklists complete.
 
 ### Decisions Made
-(pending)
+- Chose simple heuristic checks for `classifyAuthor` based on keyword analysis of transcript text.
+- Collapsing duplicate identical log lines for device/test outputs ensures major compaction without losing structure.
+- Bounded command excerpt truncation retains failing markers or the last 5-10 lines of output for contexts yielding a non-zero exit code.
 
 ### Dead Ends & Warnings
-(pending)
+(none)
 
 ### Out-of-Scope Findings
-(pending)
+(none)
 
 ### Blockers
 (none)
