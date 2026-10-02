@@ -137,7 +137,7 @@ func TestFakeHousekeeper(t *testing.T) {
 	ctx := context.Background()
 	hk := fake.NewFakeHousekeeper()
 
-	res, err := hk.Run(ctx, harness.StageTriage)
+	res, err := hk.Run(ctx, harness.StageTriage, nil)
 	if err != nil {
 		t.Fatalf("unexpected Run error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestFakeHousekeeper(t *testing.T) {
 	}
 	hk.SetResult(harness.StageExtract, custom)
 
-	resExtract, err := hk.Run(ctx, harness.StageExtract)
+	resExtract, err := hk.Run(ctx, harness.StageExtract, nil)
 	if err != nil {
 		t.Fatalf("unexpected Run error for extract: %v", err)
 	}

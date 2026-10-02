@@ -245,7 +245,7 @@ func NewFakeHousekeeper() *FakeHousekeeper {
 	}
 }
 
-func (f *FakeHousekeeper) Run(ctx context.Context, stage harness.Stage) (harness.Result, error) {
+func (f *FakeHousekeeper) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.RunHistory = append(f.RunHistory, stage)
