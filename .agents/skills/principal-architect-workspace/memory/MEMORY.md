@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-04-entities-claims | WO2/7 — In Progress | Entities, Claims, Index, Events | [PROJECT.md](../pr-04-entities-claims/PROJECT.md) |
+| pr-04-entities-claims | WO3/7 — In Progress | Entities, Claims, Index, Events | [PROJECT.md](../pr-04-entities-claims/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
