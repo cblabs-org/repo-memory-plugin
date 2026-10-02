@@ -72,6 +72,7 @@ type EpisodeRecord struct {
 	FilesTouched string
 	Outcomes     string
 	Date         time.Time
+	Snippet      string
 }
 
 // InsertEpisode inserts a new episode record into the FTS index.
@@ -97,10 +98,10 @@ func (idx *Index) InsertEpisode(ctx context.Context, record EpisodeRecord) error
 // SearchEpisodes performs a full-text search against the episodes FTS table.
 func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]EpisodeRecord, error) {
 	query := `
-	SELECT episode_id, session_id, content, files_touched, outcomes, date 
+	SELECT episode_id, session_id, content, snippet(episodes_fts, 2, '>', '', '...', 64), files_touched, outcomes, date 
 	FROM episodes_fts 
 	WHERE episodes_fts MATCH ?
-	ORDER BY rank
+	ORDER BY bm25(episodes_fts)
 	`
 	rows, err := idx.db.QueryContext(ctx, query, matchQuery)
 	if err != nil {
@@ -112,7 +113,7 @@ func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]Epis
 	for rows.Next() {
 		var r EpisodeRecord
 		var dateStr string
-		if err := rows.Scan(&r.EpisodeID, &r.SessionID, &r.Content, &r.FilesTouched, &r.Outcomes, &dateStr); err != nil {
+		if err := rows.Scan(&r.EpisodeID, &r.SessionID, &r.Content, &r.Snippet, &r.FilesTouched, &r.Outcomes, &dateStr); err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
 		}
 		if d, err := time.Parse(time.RFC3339, dateStr); err == nil {
