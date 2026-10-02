@@ -168,6 +168,14 @@ func (a *SessionAttributor) AttributedSessions(ctx context.Context, enrolledRepo
 		transcriptPath := ResolveTranscriptPath(attr.ConversationID, a.opts.AppBrainDir, a.opts.CliBrainDir)
 		idle := IsConversationIdle(attr.Summary, transcriptPath, now, a.opts.IdleCutoff)
 
+		isHousekeeping := false
+		for _, wsPath := range attr.Summary.WorkspacePaths {
+			if strings.Contains(filepath.ToSlash(wsPath), "/runs/") {
+				isHousekeeping = true
+				break
+			}
+		}
+
 		sessions = append(sessions, tick.AttributedSession{
 			ConversationID:       attr.ConversationID,
 			ParentConversationID: attr.ParentConversationID,
@@ -177,6 +185,7 @@ func (a *SessionAttributor) AttributedSessions(ctx context.Context, enrolledRepo
 			LastModified:         attr.Summary.LastModifiedTime,
 			Idle:                 idle,
 			Source:               "antigravity",
+			IsHousekeeping:       isHousekeeping,
 		})
 	}
 
