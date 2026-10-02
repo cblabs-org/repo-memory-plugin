@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/spf13/cobra"
@@ -31,21 +32,26 @@ var searchCmd = &cobra.Command{
 			return fmt.Errorf("generating repo id: %w", err)
 		}
 
-		dbPath := filepath.Join(config.DataDir(), repoID, "views", "index", "episodes.db")
-		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-			// fallback check inside .memory/views/index? No, layout.go puts it in DataDir()/repoID/views/index ?
-			// Wait, let's verify where it actually is in layout.go.
-			// RepoMemorySubdirectories has "views/index", which is in repoRoot/.memory/
-			dbPath = filepath.Join(repoRoot, ".memory", "views", "index", "episodes.db")
-		}
+		// Build a fresh FTS index from the episode store each time.
+		// PA imports and captured episodes are both in the same store.
+		dataDir := config.DataDir()
+		store := episode.NewStore(dataDir, repoID)
 
-		idx, err := index.NewReadOnlyIndex(dbPath)
+		dbPath := filepath.Join(dataDir, repoID, "episodes_fts.db")
+		// Remove stale index to rebuild fresh
+		os.Remove(dbPath)
+
+		idx, err := index.NewIndex(dbPath)
 		if err != nil {
-			return fmt.Errorf("opening index: %w", err)
+			return fmt.Errorf("creating FTS index: %w", err)
 		}
 		defer idx.Close()
 
 		ctx := context.Background()
+		if err := idx.PopulateFromStore(ctx, store); err != nil {
+			return fmt.Errorf("populating FTS index: %w", err)
+		}
+
 		results, err := idx.SearchEpisodes(ctx, query)
 		if err != nil {
 			return fmt.Errorf("searching episodes: %w", err)
@@ -57,16 +63,21 @@ var searchCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "EPISODE ID\tDATE\tBRANCH\tSNIPPET\tFILES TOUCHED")
+		fmt.Fprintln(w, "EPISODE ID\tDATE\tSESSION\tSNIPPET\tFILES TOUCHED")
 		for _, r := range results {
 			snippet := strings.ReplaceAll(r.Snippet, "\n", " ")
 			if len(snippet) > 80 {
 				snippet = snippet[:77] + "..."
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.EpisodeID, r.Date.Format("2006-01-02"), r.SessionID, snippet, r.FilesTouched)
+			date := ""
+			if !r.Date.IsZero() {
+				date = r.Date.Format("2006-01-02")
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.EpisodeID, date, r.SessionID, snippet, r.FilesTouched)
 		}
 		w.Flush()
 
 		return nil
 	},
 }
+
