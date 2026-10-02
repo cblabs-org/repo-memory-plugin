@@ -17,7 +17,7 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 |---|---|---|---|---|---|
 | 1 | `wo1-entity-types` | `pr-04-entities-claims/wo1-entity-types` | ☑ Complete | standard | — |
 | 2 | `wo2-entity-extractor` | `pr-04-entities-claims/wo2-entity-extractor` | ☑ Complete | architect | — |
-| 3 | `wo3-claim-schema` | `pr-04-entities-claims/wo3-claim-schema` | ☐ Pending | standard | — |
+| 3 | `wo3-claim-schema` | `pr-04-entities-claims/wo3-claim-schema` | ☑ Complete | standard | — |
 | 4 | `wo4-claim-store` | `pr-04-entities-claims/wo4-claim-store` | ☐ Pending | standard | — |
 | 5 | `wo5-sqlite-index` | `pr-04-entities-claims/wo5-sqlite-index` | ☐ Pending | standard | — |
 | 6 | `wo6-subsystem-config` | `pr-04-entities-claims/wo6-subsystem-config` | ☐ Pending | standard | — |
@@ -36,3 +36,4 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 
 - **WO1**: Entity Types complete. Entities, Relations, and Registry interface defined.
 - **WO2**: No-LLM entity extractor implemented successfully (file tree walk, config parsing, C++ symbol scanner, rule-based extraction).
+- **WO3**: Claim schema, ULID generation, and YAML+Markdown parser/writer implemented.
