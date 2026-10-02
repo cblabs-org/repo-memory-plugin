@@ -24,6 +24,7 @@ type AttributedSession struct {
 	LastModified         time.Time `json:"last_modified"`
 	Idle                 bool      `json:"idle"`
 	Source               string    `json:"source,omitempty"`
+	IsHousekeeping       bool      `json:"is_housekeeping,omitempty"`
 }
 
 // SessionAttributor discovers and attributes sessions to enrolled repositories.
@@ -109,6 +110,9 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 				continue
 			}
 			if s.TranscriptPath == "" {
+				continue
+			}
+			if s.IsHousekeeping {
 				continue
 			}
 

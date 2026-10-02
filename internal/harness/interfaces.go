@@ -31,5 +31,5 @@ type Reporter interface {
 
 // Housekeeper executes a pipeline stage using an LLM or deterministic executor.
 type Housekeeper interface {
-	Run(ctx context.Context, stage Stage) (Result, error)
+	Run(ctx context.Context, stage Stage, input any) (Result, error)
 }
