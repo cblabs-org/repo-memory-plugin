@@ -39,26 +39,25 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/pipeline/extract/packer.go` — Implemented batching logic to pack episodes by token cap and session ID, sorting parents before subagents.
+- `internal/core/pipeline/extract/extractor.go` — Added the `Extractor` that invokes the LLM (`Housekeeper`), deserializes candidates, strictly caps output to 20 candidates per episode, and locally enforces P13 by filtering non-human, non-tool evidence.
+- `internal/core/pipeline/extract/extractor_test.go` — Wrote unit tests for packing limits, correct grouping, Candidate limit enforcement, and Evidence Independence (P13).
+- `prompts/extract/prompt.md` — Drafted a basic prompt providing Extractor persona and constraint rules.
 
 ### Decisions Made
-<!-- Only non-obvious decisions. Omit this section entirely for mechanical WOs. -->
-- Decision description and rationale
+- Used heuristic token counting (`bytes / 4`) as standard across the project.
+- P13 checks were hardened directly into `extractor.go` rather than purely relying on the LLM, rejecting any cited evidence that isn't `tool_outcome` or `human`.
 
 ### Dead Ends & Warnings
-<!-- Things that didn't work. Critical for preventing future agents from repeating mistakes. -->
-- What was attempted, why it failed, and what to avoid
+(none)
 
 ### Out-of-Scope Findings
-<!-- Defects, bugs, or concerns outside the boundary box. The PA will triage these. -->
-- Finding description and suggested action
+(none)
 
 ### Blockers
-<!-- Empty if status is 'complete'. If partial/blocked, explain what prevents completion. -->
 (none)
