@@ -1,0 +1,11 @@
+--- internal/core/pipeline/extract/extractor.go
++++ internal/core/pipeline/extract/extractor.go
+@@ -95,8 +95,7 @@
+ func isValidEvidence(ev claims.Evidence, batch []EpisodePayload) bool {
+ 	if ev.Kind != "human" && ev.Kind != "tool_outcome" {
+ 		// P13: cited evidence may only be tool outcomes and human-authored steps
+-		// For simplification, we just check kind if the LLM followed instructions.
++		return false
+ 	}
+ 	// A valid evidence must point to a hard tool outcome or a human step.
+ 	// If ev points to step index, we check it.
