@@ -274,3 +274,22 @@ func (s *Store) GetInverseRelations(id string) InverseRelations {
 
 	return inv
 }
+
+// ListAll returns all claims in the store.
+func (s *Store) ListAll() ([]*claims.Claim, error) {
+	s.mu.RLock()
+	var ids []string
+	for id := range s.claims {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+
+	var out []*claims.Claim
+	for _, id := range ids {
+		c, err := s.Read(id)
+		if err == nil {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
