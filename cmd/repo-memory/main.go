@@ -37,5 +37,6 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(importPACmd)
 }
 
