@@ -375,6 +375,58 @@ The atomic claim format is the wrong granularity for code-modification recall. T
 
 Option 3 is the most promising: it preserves the PA's knowledge quality while adding the pipeline's recall efficiency and coverage. But it is essentially the conversation-injection architecture — and it raises the question of whether the multi-stage pipeline machinery (triage, extract, reconcile, verify) adds any value over simply having the agent write claims directly.
 
+### 6.6 The MCP Tools Approach — Lowest Cost, Highest Quality
+
+A fourth option emerged during review: provide MCP tools that let agents record knowledge **during their workflow**, not after it.
+
+#### Stop Hook Lifecycle (Correction)
+
+The Stop hook fires at **every turn boundary** — each time the agent yields control back to the user — not at session end. In a multi-turn interactive session, Stop fires once per turn. This means incremental distillation per turn is feasible, but a Stop-triggered extraction would fire repeatedly, not just once.
+
+#### Proposed Tools
+
+```
+memory.record_claim     → structured claim (type, title, relevant_when, apply, anchors)
+memory.record_decision  → ADR with reasoning, alternatives considered, rationale
+memory.record_gotcha    → dead end, pitfall, or warning with context
+memory.record_finding   → discovery with evidence and conditions
+```
+
+Each tool call is ~200–300 tokens of structured output. The agent calls them **as part of its natural workflow** — when it makes a decision, hits a dead end, or discovers something worth preserving. No separate distillation step.
+
+#### Cost Comparison
+
+| Approach | Production Cost | Knowledge Quality | Delivery |
+|---|---|---|---|
+| PA completion reports | ~2,400 tok (in-session) | Rich: WHY, dead ends, boundaries | ❌ Bulk file read |
+| Pipeline extraction | ~154,000 tok (agy -p) | Shallow: WHAT only | ✅ Targeted hooks |
+| Pipeline batched | ~33,000 tok (agy -p) | Shallow: WHAT only | ✅ Targeted hooks |
+| **MCP tools** | **~200–300 tok per claim** | **Rich: agent has full context** | **✅ Targeted hooks** |
+
+MCP tools combine:
+- **PA-quality knowledge** — the agent recording the claim has full context (WHY, dead ends, boundaries)
+- **Pipeline delivery** — claims go directly to the store, served via hooks
+- **Lowest cost** — no `agy -p` overhead, no extraction pipeline, ~200 tokens per claim
+- **No post-hoc processing** — no triage, extract, reconcile, verify needed
+- **Incremental** — knowledge is recorded as it's discovered, not batch-extracted later
+
+#### What the Pipeline Retains
+
+With MCP tools as the primary production mechanism, the pipeline would be reduced to:
+- **Deduplication**: mechanical embedding match against existing claims (no LLM)
+- **Views**: regenerate MAP.md and subsystem pages when claims change
+- **Backfill**: process historical transcripts from before the tools were available
+- **Claude Code**: fallback for harnesses that don't support MCP tools
+
+The triage, extraction, and reconciliation stages would no longer be needed for Antigravity sessions — they would only run for legacy/fallback capture paths.
+
+#### Open Questions
+
+1. **Adoption**: Will agents call `memory.record_decision` without being told to? Or does it require rules/skills that instruct them to use the tools?
+2. **Over-recording**: Will agents record too much noise? Need quality thresholds or a lightweight review gate.
+3. **Consistency**: PA completion reports follow a structured template. MCP tool calls may be inconsistent across agents/sessions.
+4. **Retrofit**: Can existing PA WORKORDERs be migrated to claims via the tools, or is that a pipeline job?
+
 ---
 
 ## 7. Solution Evaluation
