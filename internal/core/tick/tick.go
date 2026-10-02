@@ -10,6 +10,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 )
 
@@ -20,6 +21,7 @@ type Ticker struct {
 	budget      time.Duration
 	attributors []SessionAttributor
 	copiers     []TranscriptCopier
+	hk          harness.Housekeeper
 }
 
 // TickerOption allows configuring optional ticker parameters.
@@ -40,6 +42,14 @@ func WithCopier(c TranscriptCopier) TickerOption {
 		if c != nil {
 			t.copiers = append(t.copiers, c)
 		}
+	}
+}
+
+
+// WithHousekeeper registers the LLM harness for pipeline processing.
+func WithHousekeeper(hk harness.Housekeeper) TickerOption {
+	return func(t *Ticker) {
+		t.hk = hk
 	}
 }
 
@@ -118,6 +128,7 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 			Kind:           jobs.Kind(item.Entry.Kind),
 			IdempotencyKey: item.Entry.ID,
 			Priority:       10,
+			Payload:        item.Entry.ID,
 		}
 		if job.IdempotencyKey == "" {
 			job.IdempotencyKey = fmt.Sprintf("ingest-%s-%s", item.Entry.Kind, item.Entry.ConversationID)
