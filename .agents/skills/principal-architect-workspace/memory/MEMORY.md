@@ -1,19 +1,20 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-01T18:02:00Z -->
+<!-- Last updated: 2026-10-01T23:08:00+01:00 -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **1/13 complete** (PR-01). Quota cooldown until ~19:00 UTC. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **1/13 complete** (PR-01). PR-01b complete (docs-only, awaiting SPEC apply + merge). Next: PR-02a. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-01-go-skeleton | WO1/7 — In Progress | Core Infrastructure, Harness Adapters | [PROJECT.md](../pr-01-go-skeleton/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
 |---|---|---|---|
+| pr-01b-experiment-spike | 2026-10-01 | Experiment Docs, SPEC Reconciliation | All 12 experiments answered. 16 SPEC edits proposed. Silent failure is the dominant platform pattern. `ephemeralMessage` per-invocation only; sidecars IDE-only; `--project` ignored; non-enrolled hooks need optimization. |
+| pr-01-go-skeleton | 2026-10-01 | Core Infrastructure, Harness Adapters | Go binary, enrolment, kill switch, probe hook. 7/7 WOs. |
 
 ## Older Projects
 0 completed projects.
