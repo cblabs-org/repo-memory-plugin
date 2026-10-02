@@ -1,0 +1,81 @@
+# repo-memory-plugin subsystem configuration
+# Proposed by PA based on directory structure and module analysis
+
+subsystems:
+  core-infrastructure:
+    description: "Config loading, data directory layout, storage registry, and cross-cutting types"
+    globs:
+      - "internal/core/config/**"
+      - "internal/core/*.go"
+
+  capture-runtime:
+    description: "Transcript spool, Stop hook, job table, tick loop, sweep, and session attribution"
+    globs:
+      - "internal/core/spool/**"
+      - "internal/core/tick/**"
+      - "internal/core/jobs/**"
+      - "internal/harness/antigravity/hooks*.go"
+      - "internal/harness/antigravity/attribution*.go"
+
+  transcript-episode:
+    description: "Transcript parsing, compaction, and episode store"
+    globs:
+      - "internal/harness/antigravity/parser*.go"
+      - "internal/harness/antigravity/transcript*.go"
+      - "internal/core/pipeline/compact/**"
+      - "internal/core/episode/**"
+
+  knowledge-pipeline:
+    description: "Triage, extract, reconcile, verify, and publish stages"
+    globs:
+      - "internal/core/pipeline/triage/**"
+      - "internal/core/pipeline/extract/**"
+      - "internal/core/pipeline/reconcile/**"
+      - "internal/core/pipeline/verify/**"
+      - "internal/core/pipeline/publish/**"
+      - "internal/harness/antigravity/executor*.go"
+      - "prompts/**"
+
+  data-model:
+    description: "Entities, claims, events, and the rebuildable SQLite index"
+    globs:
+      - "internal/core/entities/**"
+      - "internal/core/claims/**"
+      - "internal/core/events/**"
+      - "internal/core/index/**"
+
+  delivery:
+    description: "Search, MCP server, memory.ask, and generated views"
+    globs:
+      - "internal/mcpserver/**"
+      - "internal/core/index/populate*.go"
+      - "internal/eval/**"
+
+  cli:
+    description: "Command-line interface, subcommands, and installation"
+    globs:
+      - "cmd/repo-memory/**"
+
+  harness-adapters:
+    description: "Antigravity and Claude Code harness implementations"
+    globs:
+      - "internal/harness/**"
+      - "internal/harness/antigravity/**"
+      - "internal/harness/claudecode/**"
+      - "internal/harness/fake/**"
+
+  packaging:
+    description: "Plugin templates, sidecar config, CI, and release"
+    globs:
+      - "packaging/**"
+      - ".github/**"
+
+  git-operations:
+    description: "Repo ID, commit linkage, branch detection"
+    globs:
+      - "internal/core/gitops/**"
+
+  metrics:
+    description: "JSONL metrics recording and cost tracking"
+    globs:
+      - "internal/core/metrics/**"
