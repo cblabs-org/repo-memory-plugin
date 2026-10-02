@@ -26,6 +26,8 @@ The knowledge pipeline was run end-to-end on this repository's own development h
 
 **Verdict:** The pipeline produces accurate, machine-searchable knowledge but at prohibitive production cost. The production architecture must change (in-session extraction), but the recall and delivery architecture is sound and 15× more token-efficient than the PA's bulk-loading approach.
 
+> **Review note:** [Appendix C](#appendix-c-review-of-this-evaluation-claude-2026-10-02) checks these findings against the job table and claim store, and against published work on agent memory. It finds the run didn't use real transcripts and departed from SPEC in the places that produced the cost and quality numbers. Read it before acting on this verdict.
+
 ---
 
 ## 2. Pipeline Throughput
@@ -684,3 +686,254 @@ status: active
 | `6fde866` | PR-05b project setup (WO1–WO4 plan, subsystem config) |
 | `4163dd5` | Pipeline wiring: Housekeeper in tick, `cmd_pipeline.go`, executor stdin fix |
 | `960d852` | Reconcile fix: robust JSON extraction, 429 handling, 125 claims committed |
+
+---
+
+## Appendix C: Review of This Evaluation (Claude, 2026-10-02)
+
+An independent check of the findings above against SPEC v0.9, this repo's job table, episode store and `.memory/claims/`, and published work on agent memory up to September 2026.
+
+### C.1 Bottom line
+
+1. **The evaluation's verdict is true of what was run, but what was run wasn't the system.**
+   - The evaluation found the pipeline too expensive, with knowledge too shallow to guide code changes.
+   - That's accurate for the run, but the run didn't use real transcripts: it used summaries the PA had already written.
+   - The implementation also departed from SPEC at exactly the points that produced the bad numbers: no batching, empty claim bodies, no dead-end or fix types, no evidence, and no views.
+   - So most of the cost and the shallowness come from defects, not from the architecture.
+2. **Our design is still heavier than what has worked since we wrote the SPEC.** The products that ship memory converged on something simpler:
+   - one batched consolidation pass over many sessions, run when sessions are idle;
+   - short, anchored records stored in files the agent can read and search;
+   - verification when a memory is used;
+   - delivery only when the agent is likely to need it.
+   
+   Nobody runs a per-item, four-stage LLM pipeline.
+3. **The unanswered question is whether memory helps at all, and the research says it often doesn't.**
+   - The only controlled benchmark of memory systems on real repository coding tasks found 11 of 12 system/solver pairings no better than no memory.
+   - The one strong positive result is GitHub's: memories that cite code locations, checked against the code before each use.
+   - So the next step should be a cheap outcome test (B1), not more building.
+
+---
+
+### C.2 What the evaluation gets right
+
+1. **The cost driver is fixed overhead times the number of calls, and quota is the binding constraint.** The run made 477 calls at about 17k tokens of overhead each, and stalled on quota three times.
+2. **One-line claims lose the why and the fix.** VibeMemBench reached the same conclusion independently. In memory systems that store extracted atomic facts, "a schema without a repair slot collapse[s] the fix into a generic sentence" (§C.4.1).
+3. **The two misses are the most valuable kind of knowledge.** They were how `hooks.json` resolves hook command paths, and the token overhead of each `agy -p` call. Both were found by experiment and can't be read from the code. High precision on code-derivable facts is cheap; the value lies in what isn't derivable.
+4. **Many of the 43 `fact` claims restate the code**, for example "the 'search' CLI subcommand uses tabwriter". The AGENTS.md study shows that repeating what an agent can read costs tokens and doesn't help (§C.4.1).
+5. **Both the PA's real cost and the cost of recall should be measured, not assumed.**
+
+---
+
+### C.3 Where the evaluation is wrong or untested
+
+#### C.3.1 It ran on PA documents, not transcripts
+
+- **The 71 episodes are PA imports**, not conversations: files named `pa-WORKORDER.md-*` and `pa-PROJECT.md-*`, 2.5 KB on average. They are summaries the PA had already written.
+- **The 119 dead triage jobs are not duplicate PA imports.** Each one failed with `episode not found: <conversation-id>`. Capture copied 119 conversations into `queue/`, but no episode was ever built from them. Of the 119:
+  - 78 are real IDE conversations from this repo's development: 16 MB of `transcript_full.jsonl` and 8,615 steps, including the agents' reasoning;
+  - 41 are `agy -p` test prompts from E10/E11 ("Return the word HELLO" and similar).
+- **The claim that "extraction from compressed episodes loses the reasoning" was never tested.** The input had already lost most of it. Our compaction keeps reasoning; what it removes is tool traffic, which is 78% of the bytes.
+- **The recall test is circular.** Its ground truth was taken from the same PA reports the episodes were made from.
+
+#### C.3.2 The implementation departs from SPEC where the bad numbers come from
+
+| SPEC | What ran | Effect |
+|---|---|---|
+| Pack one or more episodes into each extraction call, up to a 60k-token payload. Reconcile one subsystem's candidates per call. "Batching per tick is mandatory" (SPEC §4.4.1, Q14). | One call per episode (71), then one call per candidate (397) | 468 calls where ~10–20 would do; ~85% of tokens spent on overhead |
+| The claim body "keeps the statement and the reason, so an agent that follows the claim ID also gets the why" (SPEC §5.3) | **125 of 125 claims have an empty body** | The why is missing by construction |
+| 8 claim types (SPEC §5.3.1), including `decision` (rationale and alternatives), `ruled-out` (what failed and why) and `failure-signature` (symptom → cause → fix) | 21 free-form type labels; **zero** `ruled-out`, `failure-signature`, `invariant` or `open-issue` claims | Dead ends and fixes had nowhere to go |
+| Every claim is evidence-backed, with a trust ladder and the P13 rules (SPEC §5.3.2, SPEC §6.6) | **0 claims carry evidence**; 6 different status values, 5 of them not on the ladder | Validity checking and P13 can't work |
+| Claims anchored to code | 57 of 125 claims have no anchor, and 15 anchors point to PA documents by absolute path. The evaluation reports "~90%" anchored. | File-touch delivery can't find them |
+| Extraction guided on what is worth keeping | One sentence plus the JSON schema ([extractor.go:77](../internal/core/pipeline/extract/extractor.go:77)); [prompts/extract/prompt.md](../prompts/extract/prompt.md) is six lines | Nothing told the model to prefer reasons, dead ends or fixes |
+| Views: a map and per-subsystem pages (SPEC §5.5) | `MAP.md` has 2 lines; `views/subsystems/` is empty | The "working context" layer the evaluation found missing was never built |
+
+The SPEC estimated 100–200k tokens a day in steady state. This run used about 8M tokens on 71 small inputs.
+
+#### C.3.3 The cost comparisons use different units
+
+- **Conversation injection costs far more than ~1,000 tokens.**
+  - Resuming a conversation re-reads its whole context: a median of 52k tokens for a top-level Antigravity session (SPEC §4.4.1).
+  - It runs on the session's own model.
+  - After hours idle, the prompt cache will be cold.
+  - That is roughly the cost of three `agy -p` calls per session, not a twentieth of one.
+- **MCP record tools cost far more than ~200–300 tokens per claim.**
+  - Each call adds a model step that re-reads the current context, typically tens of thousands of tokens (usually cached).
+  - It also adds a visible pause.
+- **The PA and the pipeline are costed on different bases.**
+  - The PA's `SKILL.md` is counted once per session, although it is re-read on every step.
+  - `agy -p` overhead is counted per call.
+  - The right unit is quota consumption measured from telemetry, but cost recording is still empty (`Cost{}` in `pipeline.go`), so B4 has no data.
+- **"Recall is 15× cheaper" compares unlike things.**
+  - The pipeline side is a 600-token estimate for a delivery layer that hasn't been built (PR-07).
+  - The PA side is a 9,148-token load, but about 4k of that is `SKILL.md`. That's orchestration instructions, not memory.
+
+#### C.3.4 Samples are small, and there is no outcome measure
+
+- **The samples are too small to separate the results.**
+  - 10 of 10 precision has a 95% interval of roughly 72–100%.
+  - 8 of 10 recall has an interval of roughly 49–94%.
+- **B1 wasn't measured.** It asks whether the agent does better work with memory than without. It is the only measure that can choose between the options, and §C.4.1 shows the answer is often no.
+
+#### C.3.5 Garbage collection doesn't rule out episode fragments for us
+
+Our capture already copies `transcript_full.jsonl` incrementally, so the 78 conversations above are safe from Antigravity's garbage collection.
+
+Raw transcript is a poor thing to *inject* (VibeMemBench, §C.4.1). It is still available as evidence, as the source for later distillation, and as an answer to `why` and `history` questions.
+
+#### C.3.6 Side issues found while checking
+
+- The probe hook is still on: 8,227 probe files, about 1.5 GB, in this repo's data directory.
+- `pipeline.go` records empty costs.
+- The E10/E11 test calls were captured as conversations.
+
+---
+
+### C.4 What the field has learned
+
+#### C.4.1 Evidence from coding tasks
+
+| Study | Finding | What it means for us |
+|---|---|---|
+| **VibeMemBench** (Alibaba, Sept 2026): 111 tasks from 90 repositories, with 3,634 earlier task histories from those repositories as the memory source | **Ceiling:** prior experience already shown to help, injected directly, raised resolution by 1.1–4.5 points on 4 of 5 solvers and cut steps on all 5.<br>**Systems:** when Mem0, SimpleMem, MemoryOS and A-MEM built and retrieved their own memory from the same history, 11 of 12 solver/system pairings were at or below the no-memory baseline.<br>**Failure modes:** failures were mostly in the record's form, not retrieval. Systems that store raw transcripts hurt through sheer volume. Systems that store extracted facts lost the fix.<br>**Useful record:** about five lines: bug class, root cause, fix pattern, reusable lesson and an anchor file.<br>**When to inject:** on tasks the solver already solved without memory, even the proven record lowered success in 25.7% of pairings. On tasks the solver failed without memory, an anchored record raised success in 55.2% of pairings, with no observed losses. | Records should be short, anchored and structured, with fields for the fix and its constraints. Push memory only where the agent is likely to struggle. Expect small gains at best. |
+| **Evaluating AGENTS.md** (ETH Zurich, ICLR 2026) | LLM-generated context files changed success by −0.5 to −2 points and raised cost by about 20%. Developer-written files gained about 4 points and cost up to 19% more. Architecture overviews didn't help agents find files. Specific tooling instructions were followed. | Don't push maps or overviews by default. Concrete commands and rules are worth delivering. |
+| **SWE-ContextBench** (Feb 2026) | A summary of the right related task raised resolution from 26.3% to 34.3%. When the agent chose summaries itself, resolution fell to 22.2%, below no memory. | A wrong memory is worse than none. Precision matters more than coverage. |
+| **Coherence debt** (MPI-SWS, Aug 2026) | A fact helps only while it is in context when the agent edits; how long ago it was supplied doesn't matter. "A stale convention file costs more than no file." | Verify a memory before delivering it, and drop it if verification fails. Delivery at task start or file touch both work. |
+| **GitHub Copilot memory** (Jan 2026) | The working agent writes memories that cite code locations, and checks the citations before use. Merge rate rose from 83% to 90% (p < 0.00001). Deliberately false memories were detected and corrected. | The one strong positive result in production. It verifies memories when they're used, instead of curating them offline. |
+
+#### C.4.2 How shipping products build memory
+
+| Product | Who writes memory | When | Stored as | How it's recalled |
+|---|---|---|---|---|
+| **GitHub Copilot** | The working agent, through a memory tool | During the task | Subject, fact, citations, reason | Recent memories loaded at session start; citations checked before use; unused memories expire after 28 days |
+| **OpenAI Codex** | Background work in two phases: per-conversation extraction, then a consolidation agent. Each phase's model is configurable. | After a conversation has been idle; skipped when rate-limit headroom is low | Markdown under `~/.codex/memories/`: a summary, a long-form `MEMORY.md`, per-session summaries and skills | The summary is loaded at start; the agent searches `MEMORY.md` for detail. No vector search. |
+| **Claude Code** | The main agent (auto memory), plus a background consolidation pass ("dream") | Consolidation reportedly after ~24 hours and at least 5 sessions (third-party reports) | A `MEMORY.md` index plus topic files | The index is loaded at start; topic files are read on demand |
+| **Letta Code** | The main agent, plus "dreaming" subagents that read recent transcripts | Every N steps, or when the context is compacted | A git-versioned memory filesystem | Files in context or read on demand |
+| **Devin** | Suggested from user feedback; a human approves each one | During the conversation | Knowledge items with trigger descriptions | Retrieved when the work matches a trigger |
+| **Cursor** | Removed its Memories feature in version 2.1 (2025) | n/a | n/a | Rules only |
+| **Windsurf** | Auto-generated memories | In the background | n/a | Its docs recommend Rules or AGENTS.md for anything that must be reliable |
+| **claude-mem** (open source) | A background worker that compresses every tool call with an LLM | On every tool call | SQLite observations | An index at session start, then three layers of progressive disclosure via MCP |
+
+**The pattern across these products:**
+- memory lives in markdown files that the agent reads and searches with its normal tools;
+- a short index is always loaded, with detail fetched on demand;
+- any background work is one consolidation pass, batched over many sessions, run at a coarse cadence and aware of quota.
+
+None of them runs a per-item, multi-stage pipeline. claude-mem compresses every observation separately, which is the same cost pattern this run hit.
+
+#### C.4.3 Memory-layer services
+
+Mem0, Zep/Graphiti, Hindsight, Cognee, A-MEM and MemoryOS score well on conversational benchmarks. For example, Hindsight reports 91.4% on LongMemEval, and Zep reports up to 18.5% accuracy gains on LongMemEval. Those benchmarks test recall of facts from long conversations, not coding outcomes. On repository work, VibeMemBench found the four systems it tested no better than no memory.
+
+Letta also showed that an agent searching plain files with `grep` scored 74% on LoCoMo, above the 68.5% Mem0 reported.
+
+Two ideas are worth keeping, and we already have both:
+- raw episodes as the non-lossy foundation (Zep);
+- invalidating outdated facts rather than deleting them.
+
+#### C.4.4 Learning from experience
+
+- **ReasoningBank** (Google, ICLR 2026) distils strategies from both successes and failures. Failures supply "preventative lessons", which are our `ruled-out` and `failure-signature` types.
+- **ACE** (ICLR 2026) found that repeatedly rewriting a playbook causes two problems:
+  - *brevity bias*: details are dropped in favour of concise summaries;
+  - *context collapse*: in one case, 18,282 tokens of context collapsed to 122 and accuracy fell from 66.7% to 57.1%.
+  
+  ACE's fix is itemised entries changed by incremental add and update deltas, never whole rewrites.
+- **Useful Memories Become Faulty When Continuously Updated by LLMs** (May 2026) found that consolidated memory first helps, then degrades, sometimes below no memory.
+  - In one case, even consolidating from ground-truth solutions, GPT-5.4 failed 54% of a set of ARC-AGI problems it had previously solved without memory.
+  - The authors recommend keeping raw episodes as first-class evidence and making consolidation a deliberate step rather than automatic after every interaction.
+  - Managing raw episodes alone, with no consolidation, matched or beat forced consolidation.
+- **Agent Workflow Memory** (ICML 2025) induces reusable workflows from trajectories. This supports our `procedure` type.
+
+---
+
+### C.5 What this means for our design
+
+1. **Replace the per-item stages with one batched consolidation pass.** Triage, extract and reconcile become a single `agy -p` call per batch of episodes. That call reads the episodes' salience windows and the existing records for the subsystems they touched, and returns itemised add, update and retire operations.
+2. **Records are short, structured and anchored, and the why is mandatory.** Use the SPEC's eight types with required fields, for example:
+   - `failure-signature`: symptom, cause, fix;
+   - `ruled-out`: what was tried, why it failed, and under what conditions;
+   - `decision`: the choice, why, and the alternatives.
+   
+   Anchors are repo-relative paths or symbols. Evidence points to episode steps. The lint gate rejects anything else.
+3. **Extract non-derivable knowledge first:** decisions with their reasons, ruled-out approaches, failure signatures, behaviour of external systems, and procedures. Tell the extractor not to restate what the code says.
+4. **Update by itemised deltas, and keep raw episodes as evidence.** An LLM never rewrites a whole page. Views are generated deterministically from the records.
+5. **Verify at the point of use, mechanically.** Check anchor fingerprints (SPEC §8) when a record is about to be delivered, and drop it if they fail. This replaces the LLM verify stage (303 jobs in this run).
+6. **Push memory only when it's likely to be needed:**
+   - errors and failing tests;
+   - repeated attempts;
+   - risky actions;
+   - touching a file that has an `invariant` or `ruled-out` record.
+   
+   Keep the task-start brief very small, and don't push maps or overviews. Everything else is pull.
+7. **Make housekeeping aware of quota:** skip a pass when remaining quota is low, as Codex does, and keep a daily cap.
+8. **Measure outcomes (B1) before building further.**
+
+---
+
+### C.6 Options assessed
+
+| Option | Verdict | Why |
+|---|---|---|
+| **A. Batched consolidation pass over real transcripts** | **Primary production path, pending B1** | All three harness vendors converged on this shape. It has full reasoning available from `transcript_full.jsonl`, makes 1–2 calls a day in steady state, and causes no disruption. Quality on real transcripts is still unmeasured; this run never tested it. |
+| **B. PA completion reports as first-class sources** | **Keep** | They are already in-session distillations, so ingesting them adds nothing to the cost where the PA runs. They feed the same records as A. |
+| **C. The working agent writes notes (Copilot style)** | **Selective** | Copilot's +7 points is the best production evidence, but its agents are autonomous cloud agents, and you've flagged the interruptions. Use `memory.note` only for an explicit "remember this", plus an end-of-task note where the workorder template already asks for one. No per-discovery calls. |
+| **D. Retrieval of raw episode spans** | **Pull only** | Return the short span that states the fix through `memory.why` and `memory.history`. Never push raw transcript; VibeMemBench shows volume is what hurts. |
+| **E. External memory service** (Mem0, Zep and others) | **No** | No better than no memory on coding tasks, and it adds a service dependency. |
+| **F. Direct Gemini API** | **Out** (your quota constraint) | Within `agy -p`, Gemini 3.6 Flash cuts the fixed overhead by 41% (E10). Use it for consolidation if quality holds. |
+
+**Rough cost of A on this repo** (estimates to be replaced by telemetry):
+- The 78 transcripts are about 4M raw tokens.
+- Compaction and salience windows bring that to roughly 0.4–0.8M tokens of payload.
+- At up to 60k tokens per call, that's 10–15 calls and about 0.2M tokens of overhead.
+- In total, about 0.6–1M tokens once, against the 8M this run used.
+- Steady state is 1–2 calls a day, about 50–100k tokens.
+
+---
+
+### C.7 Recommended next steps
+
+1. **Fix what broke the run:**
+   - build episodes from captured transcripts (the `episode not found` failure);
+   - turn the probe hook off and delete its 1.5 GB of logs;
+   - record costs from `agy` JSON output.
+2. **Re-run on the 78 real transcripts as Option A.**
+   - Batch the episodes into one consolidation prompt per call.
+   - Use a schema with the eight types, required fields for the why and the fix, repo-relative anchors and evidence steps.
+   - Measure tokens per call from telemetry.
+3. **Do a blind side-by-side comparison.** For the same workorders, a reviewer compares the consolidated records with the PA completion reports, without knowing which is which. The judgement is: which would you rather have before changing this module?
+4. **Run a small B1 by replaying workorders.**
+   - Take 6–8 workorders from PR-02a to PR-05a that have tests.
+   - Check out each one's parent commit and give a worker the workorder text under three conditions: no memory, PA documents, and the new records.
+   - Use one seed per condition, adding seeds where the results differ.
+   - Measure tests passed, steps and tokens.
+   - A run this small only detects large effects. That's enough for a go/no-go decision.
+5. **Decide.**
+   - If the records match or beat the PA documents on B1 at fewer tokens: simplify the SPEC to v1.0. Stages 2–5 collapse into the consolidation pass, verification happens at use, and push delivery is gated on need.
+   - If not: stop building production. Keep the PA, and use targeted delivery of the PA's own content.
+
+---
+
+### C.8 Sources
+
+**Coding-agent evidence**
+- [VibeMemBench: Evaluating Memory Systems for Coding Agents on Real Repository Coding Tasks (arXiv 2609.23570)](https://arxiv.org/abs/2609.23570)
+- [Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for Coding Agents? (arXiv 2602.11988)](https://arxiv.org/html/2602.11988v1)
+- [SWE Context Bench (arXiv 2602.08316)](https://arxiv.org/html/2602.08316v2)
+- [The Working Set of a Coding Agent: Coherence Debt in Repository-Scale Tasks (arXiv 2608.16630)](https://arxiv.org/pdf/2608.16630)
+- [Building an agentic memory system for GitHub Copilot](https://github.blog/ai-and-ml/github-copilot/building-an-agentic-memory-system-for-github-copilot/) and [Copilot memory docs](https://docs.github.com/en/copilot/concepts/agents/copilot-memory)
+
+**Products**
+- [Codex memories (OpenAI docs)](https://learn.chatgpt.com/docs/customization/memories?surface=app) and [How memory works in Codex CLI (Mem0 write-up)](https://mem0.ai/blog/how-memory-works-in-codex-cli)
+- [Letta Code memory](https://docs.letta.com/letta-code/memory), [Context Repositories](https://www.letta.com/blog/context-repositories) and [Benchmarking AI agent memory: is a filesystem all you need?](https://www.letta.com/blog/benchmarking-ai-agent-memory)
+- [Claude Code Auto Dream (third-party write-up)](https://claudefa.st/blog/guide/mechanics/auto-dream)
+- [claude-mem architecture](https://docs.claude-mem.ai/architecture/overview)
+- [Devin Knowledge](https://docs.devin.ai/onboard-devin/knowledge)
+- [Cursor forum: Memories removed](https://forum.cursor.com/t/are-my-memories-gone/144057) and [Windsurf memories](https://docs.windsurf.com/windsurf/cascade/memories.md)
+
+**Research**
+- [ACE: Agentic Context Engineering (arXiv 2510.04618)](https://arxiv.org/abs/2510.04618v2)
+- [ReasoningBank (arXiv 2509.25140)](https://arxiv.org/pdf/2509.25140)
+- [Useful Memories Become Faulty When Continuously Updated by LLMs (arXiv 2605.12978)](https://arxiv.org/abs/2605.12978)
+- [Agent Workflow Memory (arXiv 2409.07429)](https://arxiv.org/pdf/2409.07429)
+- [Zep: A Temporal Knowledge Graph Architecture for Agent Memory](https://themoonlight.io/review/zep-a-temporal-knowledge-graph-architecture-for-agent-memory)
+- [Hindsight (arXiv 2512.12818)](https://arxiv.org/html/2512.12818v1)
