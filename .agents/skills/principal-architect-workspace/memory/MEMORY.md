@@ -4,12 +4,12 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **4/13 complete** (PR-01, PR-01b, PR-02a, PR-02b). |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **4/13 complete** (PR-01, PR-01b, PR-02a, PR-02b). PR-03 in progress. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| (none) | | | |
+| pr-03-episode-search | WO1/6 — In Progress | FTS Index, Search CLI, PA Import, Eval Harness | [PROJECT.md](../pr-03-episode-search/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
