@@ -1,0 +1,119 @@
+package tick
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
+)
+
+var ErrLocked = errors.New("tick is already running")
+
+type Ticker struct {
+	dataDir string
+	budget  time.Duration
+}
+
+func NewTicker(dataDir string, budget time.Duration) *Ticker {
+	return &Ticker{
+		dataDir: dataDir,
+		budget:  budget,
+	}
+}
+
+func (t *Ticker) Run(ctx context.Context) error {
+	deadline := time.Now().Add(t.budget)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+
+	lockPath := filepath.Join(t.dataDir, "tick.lock")
+	if err := os.MkdirAll(t.dataDir, 0755); err != nil {
+		return err
+	}
+
+	l, err := TryLock(lockPath)
+	if err != nil {
+		if errors.Is(err, ErrLocked) {
+			return nil // overlap behavior: just exit
+		}
+		return err
+	}
+	defer l.Unlock()
+
+	reg, err := config.LoadRegistry(t.dataDir)
+	if err != nil {
+		return fmt.Errorf("loading registry: %w", err)
+	}
+
+	// Group registry by repoRoot
+	enrolledRepos := make(map[string]config.RegistryEntry)
+	for _, entry := range reg {
+		enrolledRepos[entry.RootPath] = entry
+	}
+
+	for repoRoot, entry := range enrolledRepos {
+		if err := t.processRepo(ctx, repoRoot, entry.RepoID); err != nil {
+			fmt.Fprintf(os.Stderr, "tick error for repo %s: %v\n", repoRoot, err)
+		}
+	}
+
+	// Sweep enrolled repos
+	if err := Sweep(ctx, t.dataDir, enrolledRepos); err != nil {
+		fmt.Fprintf(os.Stderr, "sweep error: %v\n", err)
+	}
+
+	return nil
+}
+
+func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error {
+	repoDataDir := filepath.Join(t.dataDir, repoID)
+	spoolDir := filepath.Join(repoDataDir, "spool")
+	if err := os.MkdirAll(spoolDir, 0755); err != nil {
+		return err
+	}
+
+	store, err := jobs.Open(filepath.Join(repoDataDir, "jobs.sqlite"))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	// 2. Ingest spool files as jobs
+	reader := spool.NewReader(spoolDir)
+	_, err = reader.Ingest(func(item spool.Item) error {
+		job := &jobs.Job{
+			Kind:           jobs.Kind(item.Entry.Kind),
+			IdempotencyKey: item.Entry.ID,
+			Priority:       10,
+		}
+		if job.IdempotencyKey == "" {
+			job.IdempotencyKey = fmt.Sprintf("ingest-%s-%s", item.Entry.Kind, item.Entry.ConversationID)
+		}
+		_, err := store.Enqueue(ctx, job)
+		if err != nil {
+			// ignore idempotency conflict
+			if err.Error() == "job exists" || err.Error() == "UNIQUE constraint failed" {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// 3. Reclaim expired leases
+	_, err = store.ReclaimExpiredLeases(ctx, time.Now())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

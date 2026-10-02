@@ -37,8 +37,23 @@ If you discover a defect, surface it in your Completion Report below.
 <!-- Written by the worker at task completion -->
 
 ### Status
+Completed.
+
 ### Changes Made
+- Created `internal/core/tick/lock_unix.go` and `lock_windows.go` with OS-specific `tick.lock` implementation.
+- Implemented `internal/core/tick/tick.go` covering spool ingestion and lease reclamation per Section 4.3 limits.
+- Implemented `internal/core/tick/sweep.go` that loops over enrolled repos and conducts sweep and idle promotion (15 minutes).
+- Updated `cmd/repo-memory/cmd_tick.go` to wire the new Ticker logic and budget enforcement.
+
 ### Decisions Made
+- Used `go:build` flags for platform specific `flock` and `LockFileEx` lock mechanisms.
+- Sweep extracts workspaces directly from `transcript.jsonl` files iteratively to map non-spooled runs to their enrolled repos.
+
 ### Dead Ends & Warnings
+None.
+
 ### Out-of-Scope Findings
+Extracting the workspace directly from `transcript.jsonl` files efficiently required light custom parsing as full object unmarshaling can be expensive.
+
 ### Blockers
+None.
