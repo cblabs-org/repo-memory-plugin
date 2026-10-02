@@ -25,8 +25,9 @@ type Entry struct {
 	Kind           EntryKind      `json:"kind,omitempty"`
 	Timestamp      time.Time      `json:"timestamp,omitempty"`
 	Harness        string         `json:"harness,omitempty"`
-	ConversationID string         `json:"conversation_id,omitempty"`
-	SessionID      string         `json:"session_id,omitempty"`
+	ConversationID       string         `json:"conversation_id,omitempty"`
+	ParentConversationID string         `json:"parent_conversation_id,omitempty"`
+	SessionID            string         `json:"session_id,omitempty"`
 	TranscriptPath string         `json:"transcript_path,omitempty"`
 	RepoRoot       string         `json:"repo_root,omitempty"`
 	Branch         string         `json:"branch,omitempty"`
