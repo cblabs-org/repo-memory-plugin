@@ -1,3 +1,0 @@
-failed to parse extraction output: invalid character 'I' looking for beginning of value
-Payload:
-It looks like your message was just a dash (`-`). How can I help you today?

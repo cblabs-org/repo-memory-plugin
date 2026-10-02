@@ -167,6 +167,10 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 		epID := job.Payload
 		ep, err := p.epStore.Read(epID)
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
@@ -179,6 +183,10 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 		triager := triage.NewTriager(p.hk, tcfg, triage.DefaultWindowsConfig())
 		res, err := triager.Process(ctx, []*episode.Episode{ep})
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
@@ -319,6 +327,10 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 		reconciler := reconcile.NewReconciler(p.hk, p.claimStore)
 		actions, err := reconciler.Reconcile(ctx, ep, []extract.Candidate{cand})
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
@@ -413,6 +425,10 @@ func (p *PipelineExecutor) processPublish(ctx context.Context) error {
 		claimID := job.Payload
 		claim, err := p.claimStore.Read(claimID)
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
