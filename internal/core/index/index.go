@@ -56,10 +56,60 @@ func (idx *Index) initSchema() error {
 		outcomes,
 		date UNINDEXED
 	);
+	
+	CREATE TABLE IF NOT EXISTS entities (
+		id TEXT PRIMARY KEY,
+		kind TEXT,
+		name TEXT
+	);
+	
+	CREATE TABLE IF NOT EXISTS claims (
+		id TEXT PRIMARY KEY,
+		type TEXT,
+		title TEXT,
+		status TEXT,
+		relevant_when TEXT,
+		apply TEXT,
+		verified_at TEXT,
+		body TEXT
+	);
+	
+	CREATE TABLE IF NOT EXISTS anchors (
+		claim_id TEXT,
+		kind TEXT,
+		ref TEXT,
+		fp TEXT,
+		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
+	);
+	
+	CREATE TABLE IF NOT EXISTS relations (
+		source_id TEXT,
+		relation_type TEXT,
+		target_id TEXT,
+		FOREIGN KEY(source_id) REFERENCES claims(id) ON DELETE CASCADE
+	);
+	
+	CREATE TABLE IF NOT EXISTS conditions (
+		claim_id TEXT,
+		context TEXT,
+		key TEXT,
+		ref TEXT,
+		state TEXT,
+		target TEXT,
+		result TEXT,
+		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
+	);
+	
+	CREATE TABLE IF NOT EXISTS entity_relations (
+		source_id TEXT,
+		target_id TEXT,
+		kind TEXT,
+		PRIMARY KEY(source_id, target_id, kind)
+	);
 	`
 	_, err := idx.db.Exec(query)
 	if err != nil {
-		return fmt.Errorf("initializing FTS schema: %w", err)
+		return fmt.Errorf("initializing schema: %w", err)
 	}
 	return nil
 }
