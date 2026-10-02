@@ -15,13 +15,13 @@ Every Antigravity session in an enrolled repository produces an episode within m
 
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
-| 1 | `wo1-spool-incremental-copy` | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ☐ Pending | standard | — |
-| 2 | `wo2-stop-hook` | `pr-02b-capture-runtime/wo2-stop-hook` | ☐ Pending | standard | — |
-| 3 | `wo3-job-table` | `pr-02b-capture-runtime/wo3-job-table` | ☐ Pending | standard | — |
-| 4 | `wo4-tick-core` | `pr-02b-capture-runtime/wo4-tick-core` | ☐ Pending | architect | — |
-| 5 | `wo5-session-attribution` | `pr-02b-capture-runtime/wo5-session-attribution` | ☐ Pending | standard | — |
-| 6 | `wo6-sidecar-packaging` | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ☐ Pending | mechanical | — |
-| 7 | `wo7-claude-raw-copy` | `pr-02b-capture-runtime/wo7-claude-raw-copy` | ☐ Pending | mechanical | — |
+| 1 | [`wo1-spool-incremental-copy`](wo1-spool-incremental-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ☐ Pending | standard | — |
+| 2 | [`wo2-stop-hook`](wo2-stop-hook/WORKORDER.md) | `pr-02b-capture-runtime/wo2-stop-hook` | ☐ Pending | standard | — |
+| 3 | [`wo3-job-table`](wo3-job-table/WORKORDER.md) | `pr-02b-capture-runtime/wo3-job-table` | ☐ Pending | standard | — |
+| 4 | [`wo4-tick-core`](wo4-tick-core/WORKORDER.md) | `pr-02b-capture-runtime/wo4-tick-core` | ☐ Pending | architect | — |
+| 5 | [`wo5-session-attribution`](wo5-session-attribution/WORKORDER.md) | `pr-02b-capture-runtime/wo5-session-attribution` | ☐ Pending | standard | — |
+| 6 | [`wo6-sidecar-packaging`](wo6-sidecar-packaging/WORKORDER.md) | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ☐ Pending | mechanical | — |
+| 7 | [`wo7-claude-raw-copy`](wo7-claude-raw-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo7-claude-raw-copy` | ☐ Pending | mechanical | — |
 
 ## Exit Criteria
 - Every new Antigravity session in an enrolled repository produces an episode within minutes of going idle
@@ -32,3 +32,4 @@ Every Antigravity session in an enrolled repository produces an episode within m
 - **repo-memory-plugin enrolled as the dogfood repository**
 
 ## Session Log
+
