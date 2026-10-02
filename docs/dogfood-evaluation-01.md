@@ -210,9 +210,35 @@ Steady-state projection (1–3 episodes/day): 7–20 LLM calls/day — well with
 
 ## 5. Lifecycle Cost: Production + Recall
 
-### 5.1 Recall Cost Per Session
+### 5.1 Production Cost (Corrected)
 
-The production cost tells only half the story. Every time knowledge is recalled, it consumes input tokens:
+The PA's production cost was initially characterised as "near-zero" because distillation happens inside existing sessions. This is misleading. The PA framework charges significant token overhead per session:
+
+| PA Framework Overhead | Tokens | Frequency |
+|---|---|---|
+| SKILL.md loaded into context | ~4,000 input | Every PA/worker session |
+| CHIEF_ARCHITECT.md + references | ~1,700 input | Every PA session |
+| PROJECT.md context paging | ~1,000 input | Every session |
+| WORKORDER.md template | ~1,000 input | Every worker session |
+| Writing completion report | ~500 output | Every worker session |
+| PA reading back WO reports | ~500 × N input | Per PR |
+| PA writing/updating PROJECT.md | ~200 output | Per PR |
+| PA updating MEMORY.md | ~100 output | Per PR |
+
+For this repo (47 work orders across 7 PRs):
+
+| Component | Tokens |
+|---|---|
+| SKILL.md loading (47 sessions × 4,000) | ~188,000 |
+| Completion report writing (47 × 500) | ~23,500 |
+| PA orchestration (7 PRs × ~5,000) | ~35,000 |
+| **Total PA knowledge production** | **~246,000** |
+
+The PA approach is cheaper than the pipeline — but a quarter-million tokens is not free.
+
+### 5.2 Recall Cost Per Session
+
+Every time knowledge is recalled, it consumes input tokens:
 
 | Approach | Tokens Loaded Per Session | Targeting |
 |---|---|---|
@@ -230,24 +256,29 @@ PA recall breakdown:
 
 Pipeline recall: 3–5 relevant claims × 134 tokens = ~400–670 tokens
 
-### 5.2 Total Lifecycle Cost (Production + N × Recall)
+### 5.3 Total Lifecycle Cost (Production + N × Recall)
 
-| Sessions | PA Total | Pipeline (current) | Pipeline (batched) | Pipeline (in-session) |
+Production amortised per episode, then recall per session:
+
+| Sessions | PA Total | Pipeline (current) | Pipeline (batched) | Conversation Injection |
 |---|---|---|---|---|
-| 1 | 11,548 | 154,600 | 33,600 | **1,100** |
-| 5 | 48,140 | 157,000 | 36,000 | **3,500** |
-| 10 | 93,880 | 160,000 | 39,000 | **6,500** |
-| 20 | 185,360 | 166,000 | 45,000 | **12,500** |
-| 50 | 459,800 | 184,000 | 63,000 | **30,500** |
-| 100 | 917,200 | 214,000 | 93,000 | **60,500** |
+| 1 | 12,614 | 154,600 | 33,600 | 1,600 |
+| 5 | 49,206 | 157,000 | 36,000 | 4,000 |
+| 10 | 95,946 | 160,000 | 39,000 | 7,000 |
+| 20 | 189,426 | 166,000 | 45,000 | 13,000 |
+| 50 | 469,866 | 184,000 | 63,000 | 31,000 |
+| 100 | 931,266 | 214,000 | 93,000 | 61,000 |
 
-### 5.3 Break-Even Analysis
+_(PA production amortised: ~246,000 / 71 episodes = ~3,466 per episode)_
 
-| Production Architecture | Breaks Even vs PA | 100-Session Savings |
+### 5.4 Break-Even Analysis
+
+| Production Architecture | Breaks Even vs PA | 100-Session Cost |
 |---|---|---|
-| Current (8.5 `agy -p` calls/episode) | ~18 sessions | 4.3× cheaper |
-| Batched (1 `agy -p` call/episode) | ~4 sessions | 9.9× cheaper |
-| In-session extraction (0 extra calls) | **Immediately** | **15.2× cheaper** |
+| Current pipeline (8.5 `agy -p` calls/episode) | ~18 sessions | 214,000 |
+| Batched pipeline (1 `agy -p` call/episode) | ~4 sessions | 93,000 |
+| Conversation injection (~1,000 tok/episode) | **Immediately** | **61,000** |
+| PA (framework overhead + bulk recall) | Baseline | 931,000 |
 
 ---
 
@@ -346,42 +377,171 @@ Option 3 is the most promising: it preserves the PA's knowledge quality while ad
 
 ---
 
-## 7. Architectural Recommendations
+## 7. Solution Evaluation
 
-### 7.1 Critical: Change the Production Architecture
+Seven approaches to knowledge production were considered during this evaluation. Each is assessed against five dimensions:
+- **Production cost** — tokens spent creating the knowledge
+- **Knowledge quality** — depth, reasoning, dead ends, boundaries (not just WHAT but WHY)
+- **Agent disruption** — does it interrupt the agent's primary workflow?
+- **Recall delivery** — how is knowledge served back to agents?
+- **Survives GC** — Antigravity garbage-collects transcripts; knowledge must be extracted before deletion
 
-The multi-stage `agy -p` pipeline is not viable as the primary production mechanism. The 85% overhead per call makes it 64× more expensive than in-session extraction.
+### Critical Constraint: Transcript Garbage Collection
 
-**Recommended: In-session extraction via conversation injection**
+Antigravity deletes transcripts during garbage collection. The raw source material — including the agent's reasoning, dead ends, and decision context — is **ephemeral**. Any knowledge not extracted before GC is lost permanently. This rules out approaches that rely on accessing full transcripts at recall time.
 
-1. Session completes naturally
-2. On cron/overnight schedule, inject a distillation prompt into idle conversations
-3. The agent (with full original context) produces structured claims
-4. Stop hook collects claims from the transcript
-5. Deduplication via embedding similarity (no LLM needed)
+### 7.1 PA In-Workflow Distillation (Current Baseline)
 
-This eliminates all `agy -p` overhead and produces higher-quality claims (full context vs compressed episode).
+The agent writes a structured completion report (decisions, dead ends, warnings) as part of its work order lifecycle. The PA reads these back and synthesises PROJECT.md summaries.
 
-### 7.2 Retain: The Recall and Delivery Architecture
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~246,000 tokens for 47 WOs** (~5,200/WO). Dominated by SKILL.md loading (~4,000 per session). Not zero. |
+| Knowledge quality | **Excellent.** Rich narrative: WHY, dead ends, boundary constraints, interconnections. |
+| Agent disruption | **Low-moderate.** Completion report is written once at end of WO, structured by template. But the PA framework itself (SKILL.md, references, PROJECT.md) consumes context in every session. |
+| Recall delivery | **Bulk file read.** ~9,148 tokens loaded per session, untargeted. Scales linearly with project size. |
+| Survives GC | **Yes.** Knowledge lives in repo files (WORKORDER.md, PROJECT.md, MEMORY.md). |
 
-The hook-based delivery, claim store, FTS index, and MCP pull tool are sound and should be retained. They are the system's primary value proposition.
+**Pros:** Highest knowledge quality. Rich context for code modification. Proven at scale across this project.  
+**Cons:** Only works for PA-managed sessions. Bulk recall is expensive and untargeted (15× more tokens than pipeline). SKILL.md is a ~4,000 token tax on every session. Doesn't cover debugging, exploration, or ad-hoc sessions. Knowledge gets stale — no auto-update mechanism.
 
-### 7.3 Retain: The `agy -p` Pipeline as Fallback
+### 7.2 Post-Hoc Pipeline (Current Implementation)
 
-Keep the pipeline for:
-- **Claude Code sessions** (no conversation injection available)
-- **Batch backfill** of historical data (one-time cost, amortised over many recalls)
-- **Overnight reconciliation** when quota is available
+Episodes are captured from transcripts, compressed, and processed through triage → extract → reconcile → verify stages using `agy -p` LLM calls.
 
-But batch all LLM work into one call per episode (82% call reduction).
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~7,956,000 tokens for 71 episodes** (~112,000/episode). 85% is `agy -p` fixed overhead. |
+| Knowledge quality | **Shallow.** 100% precision but only WHAT, not WHY. Missing dead ends, boundaries, reasoning. |
+| Agent disruption | **None.** Runs asynchronously in background ticks. |
+| Recall delivery | **Targeted hooks.** ~600 tokens per session, point-of-need injection. |
+| Survives GC | **Yes.** Claims persist in `.memory/claims/`. Episodes persist in episode store. |
 
-### 7.4 Fix: Cost Recording
+**Pros:** Covers all sessions. Zero agent disruption. Targeted recall is 15× cheaper than PA. Machine-searchable. Auto-deduplicates.  
+**Cons:** 64× more expensive than PA at production. Knowledge is too shallow for code modification. Burns through quota (3 resets for 71 episodes). 85% of tokens wasted on `agy -p` overhead. Reconcile stage creates 5.8× call multiplication.
 
-`pipeline.go` currently passes empty `jobs.Cost{}` on every `store.Complete()` call. The executor returns `harness.Result.Usage` with real token counts, but the pipeline ignores them. Must fix for B4 measurement.
+### 7.3 Batched Pipeline (1 `agy -p` Call Per Episode)
 
-### 7.5 Fix: Claim Type Normalization
+Same as 7.2 but combining extract + reconcile + verify into a single `agy -p` call per episode.
 
-The pipeline produced 20 distinct claim types (including `architecture_rule`, `design_decision`, `design_pattern`, `implementation_detail`, `lesson_learned`). The SPEC defines 8 canonical types. The extraction prompt should constrain to the canonical set.
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~1,200,000 tokens for 71 episodes** (~17,000/episode). 82% fewer LLM calls. |
+| Knowledge quality | **Shallow.** Same extraction from compressed episodes — same quality ceiling. |
+| Agent disruption | **None.** |
+| Recall delivery | **Targeted hooks.** ~600 tokens. |
+| Survives GC | **Yes.** |
+
+**Pros:** 6× cheaper than current pipeline. Still covers all sessions. Same targeted recall.  
+**Cons:** Still 5× more expensive than PA at production. Knowledge quality unchanged — still shallow. Still uses `agy -p` overhead (17K per call, just fewer calls). Doesn't solve the fundamental quality gap.
+
+### 7.4 Conversation Injection (Distil Idle Sessions)
+
+After a session goes idle but before transcript GC, inject a distillation prompt into the conversation. The agent resumes with full original context and produces structured claims.
+
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~1,000 tokens per session** (output only — agent is already loaded). |
+| Knowledge quality | **Rich (potentially).** Agent has full context — WHY, dead ends, boundaries. But quality depends on the distillation prompt and the agent's willingness to produce thorough output. |
+| Agent disruption | **None during work.** Distillation happens after session is idle. |
+| Recall delivery | **Targeted hooks.** ~600 tokens if claims are stored in pipeline format. |
+| Survives GC | **Yes.** Claims extracted before GC deletes transcript. |
+
+**Pros:** Cheapest production cost. Agent has full context so quality could match PA. Covers all sessions. No disruption during work.  
+**Cons:** Cannot change the model — uses whatever model the original session ran on (Pro sessions waste expensive tokens on distillation). Timing is tricky — must inject after idle but before GC. Session "wakes up" unexpectedly, which may confuse the user. Quality is unproven — the agent may produce shallow output without a structured template. Depends on Antigravity conversation injection API stability.
+
+### 7.5 In-Session MCP Tools (record_claim, record_decision, etc.)
+
+Provide MCP tools that let agents record knowledge directly to the claim store during their workflow.
+
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~200–300 tokens per claim** (structured tool call arguments). |
+| Knowledge quality | **Rich (potentially).** Agent has full context at time of recording. |
+| Agent disruption | **Moderate-to-high.** Each tool call is visible to the user: thinking pause, tool execution, response. Multiple claims per turn = multiple visible interruptions. Agent's reasoning shifts from task-solving to knowledge-recording. Context gets polluted with memory tool calls. |
+| Recall delivery | **Targeted hooks.** ~600 tokens. |
+| Survives GC | **Yes.** Claims written directly to store. |
+
+**Pros:** Cheapest per-claim production. Full agent context. Direct-to-store (no pipeline needed). Incremental — knowledge recorded as discovered.  
+**Cons:** **Disruptive UX.** User sees tool-call waits at end of every turn. Agent context muddied with memory housekeeping. Agents may not call tools without explicit rules/instructions. Risk of over-recording noise. Inconsistent output without structured templates. The agent spends attention on "what should I remember?" instead of "what should I do?"
+
+### 7.6 Stop Hook Triggered Extraction
+
+Use the Stop hook (fires at turn boundary) to trigger background knowledge extraction from the latest transcript state.
+
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~17,000 tokens per turn** (if using `agy -p` for extraction) or **~200 tokens** (if mechanical/rule-based). |
+| Knowledge quality | **Shallow-to-moderate.** Has access to transcript but not the agent's internal reasoning beyond what was written. |
+| Agent disruption | **None.** Hook runs in background. |
+| Recall delivery | **Targeted hooks.** ~600 tokens. |
+| Survives GC | **Yes.** Extracted before GC. |
+
+**Pros:** Zero agent disruption. Fires automatically. Could extract incrementally per turn.  
+**Cons:** Stop fires at **every turn boundary**, not session end — extraction would run on every turn, most of which produce no new knowledge. If using `agy -p`, the overhead makes per-turn extraction prohibitively expensive. If mechanical/rule-based, quality is low. Need heuristics to detect "was this turn knowledge-worthy?"
+
+### 7.7 Episode-Fragment Recall (Index and Serve Transcript Fragments)
+
+Instead of extracting atomic claims, index episode transcripts richly and serve relevant fragments directly via hooks.
+
+| Dimension | Assessment |
+|---|---|
+| Production cost | **Near-zero.** Just indexing, no extraction. |
+| Knowledge quality | **Rich.** Original transcript contains full reasoning, dead ends, decisions. |
+| Agent disruption | **None.** |
+| Recall delivery | **Targeted fragments.** ~2–8 KB per injection (comparable to PA WORKORDERs). |
+| Survives GC | **❌ NO.** Antigravity GC deletes transcripts. Fragments unavailable after GC. |
+
+**Pros:** Highest fidelity — serves the original decision context. Cheapest production.  
+**Cons:** **Killed by GC.** Transcripts are ephemeral. Cannot be the primary approach. Episode store has compacted copies but these are lossy (the compression removes the reasoning and context that makes fragments valuable).
+
+### 7.8 Direct API Calls (Replace `agy -p` with Gemini API)
+
+Replace the `agy -p` executor with direct `google.golang.org/genai` API calls, eliminating the 85% overhead.
+
+| Dimension | Assessment |
+|---|---|
+| Production cost | **~2,500 tokens per episode** (useful payload only, no system prompt overhead). |
+| Knowledge quality | **Shallow.** Same extraction from compressed episodes — same quality ceiling as pipeline. |
+| Agent disruption | **None.** Background processing. |
+| Recall delivery | **Targeted hooks.** ~600 tokens. |
+| Survives GC | **Yes.** |
+
+**Pros:** Eliminates the dominant cost problem (85% overhead). Fast (<1s per call vs 6–7s). Would make the pipeline cost-competitive with the PA.  
+**Cons:** Requires an API key (the SPEC explicitly avoided this). Separate billing from Antigravity quota. Knowledge quality unchanged — still extracting from compressed episodes. Adds an authentication/billing dependency.
+
+---
+
+### 7.9 Summary Matrix
+
+| Approach | Production Cost (71 ep.) | Quality | Disruption | Recall Cost | Survives GC |
+|---|---|---|---|---|---|
+| **PA distillation** | ~246K | ★★★★★ | Low | ~9,148/session | ✅ |
+| **Pipeline (current)** | ~7,956K | ★★☆☆☆ | None | ~600/session | ✅ |
+| **Pipeline (batched)** | ~1,200K | ★★☆☆☆ | None | ~600/session | ✅ |
+| **Conversation injection** | ~71K | ★★★★☆ | None | ~600/session | ✅ |
+| **MCP tools (active)** | ~20K | ★★★★☆ | **High** | ~600/session | ✅ |
+| **Stop hook extraction** | Variable | ★★★☆☆ | None | ~600/session | ✅ |
+| **Episode fragments** | ~0 | ★★★★★ | None | ~4K/session | ❌ |
+| **Direct API** | ~178K | ★★☆☆☆ | None | ~600/session | ✅ |
+
+### 7.10 Conclusions
+
+1. **No zero-cost, zero-disruption path to rich knowledge exists.** The knowledge quality depends on capturing the agent's reasoning (WHY, dead ends, boundaries), which is only available during the session or from the full transcript. Post-hoc extraction from compressed episodes produces shallow WHAT-only knowledge regardless of cost optimisation.
+
+2. **The PA's real cost is higher than it appears** (~246K tokens for this project), but it produces the richest knowledge and is the only proven approach for code-modification recall. Its main weakness is bulk, untargeted recall at ~9K tokens per session.
+
+3. **Conversation injection is the most promising new approach** — cheapest production, potentially rich quality, zero disruption, targeted recall. But it is unproven and depends on Antigravity API stability, model inflexibility, and distillation prompt quality.
+
+4. **The current pipeline architecture is not viable** for primary production (64× more expensive than PA, shallow quality). Even batched, it remains 5× more expensive with no quality improvement.
+
+5. **The recall and delivery architecture is the system's strongest asset.** Targeted hook injection at ~600 tokens per session is 15× cheaper than PA bulk loading and scales by relevance rather than corpus size. This should be retained regardless of production approach.
+
+6. **A hybrid approach may be optimal:**
+   - PA distillation for structured work (where it already runs)
+   - Conversation injection for unstructured sessions (before GC)
+   - Batched pipeline as fallback for Claude Code and historical backfill
+   - Hook-based targeted delivery for all recall
 
 ---
 
