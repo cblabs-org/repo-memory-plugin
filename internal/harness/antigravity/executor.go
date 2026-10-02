@@ -67,8 +67,20 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
 	}
 
+	var schemaGuide string
+	switch stage {
+	case harness.StageReconcile:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"actions\": [\n    {\"op\": \"create|support|refine|contradict|supersede|promote|discard\", \"candidate\": ..., \"target_id\": \"clm-...\", \"rationale\": \"...\"}\n  ]\n}"
+	case harness.StageVerify:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"consistent\": true,\n  \"rationale\": \"...\"\n}"
+	case harness.StageTriage:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"decisions\": [\n    {\"id\": \"...\", \"keep\": true, \"reason\": \"...\"}\n  ]\n}"
+	}
+
+	prompt := fmt.Sprintf("You are executing the %s pipeline stage. DO NOT call any tools. %s\n\nInput:\n%s", stage, schemaGuide, string(inputBytes))
+
 	cmd := exec.CommandContext(ctx, "agy",
-		"-p", "-",
+		"-p", prompt,
 		"--model", h.Model,
 		"--output-format", "stream-json",
 		"--print-timeout", h.Timeout,
@@ -79,14 +91,15 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
 	cmd.Dir = workDir
 
-	cmd.Stdin = bytes.NewReader(inputBytes)
-
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+			return harness.Result{}, harness.ErrQuotaExhausted
+		}
 		return harness.Result{}, fmt.Errorf("agy execution failed: %v\nStderr: %s", err, stderr.String())
 	}
 
@@ -102,18 +115,14 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 				return result, fmt.Errorf("agy returned error: %s", msg.Result.Error)
 			}
 			payload := msg.Result.Response
-			// Strip markdown json block if present
-			if strings.HasPrefix(payload, "```json") {
-				payload = strings.TrimPrefix(payload, "```json")
-				if strings.HasSuffix(strings.TrimSpace(payload), "```") {
-					payload = strings.TrimSuffix(strings.TrimSpace(payload), "```")
-				}
-			} else if strings.HasPrefix(payload, "```") {
-				payload = strings.TrimPrefix(payload, "```")
-				if strings.HasSuffix(strings.TrimSpace(payload), "```") {
-					payload = strings.TrimSuffix(strings.TrimSpace(payload), "```")
-				}
+			
+			// Find the first { and last }
+			first := strings.Index(payload, "{")
+			last := strings.LastIndex(payload, "}")
+			if first != -1 && last != -1 && last >= first {
+				payload = payload[first : last+1]
 			}
+			
 			result.Payload = strings.TrimSpace(payload)
 			result.Usage = harness.Usage{
 				InputTokens:     msg.Result.Usage.InputTokens,
@@ -129,3 +138,4 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 	}
 	return result, nil
 }
+
