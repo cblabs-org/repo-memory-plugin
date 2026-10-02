@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-02b-capture-runtime | WO6/7 — In Progress | Capture Runtime, Spool, Stop Hook, Tick, Sweep | [PROJECT.md](../pr-02b-capture-runtime/PROJECT.md) |
+| pr-02b-capture-runtime | WO7/7 — In Progress | Capture Runtime, Spool, Stop Hook, Tick, Sweep | [PROJECT.md](../pr-02b-capture-runtime/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |

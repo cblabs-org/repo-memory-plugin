@@ -20,8 +20,8 @@ Every Antigravity session in an enrolled repository produces an episode within m
 | 3 | [`wo3-job-table`](wo3-job-table/WORKORDER.md) | `pr-02b-capture-runtime/wo3-job-table` | ✅ Complete | standard | 9df91b8 |
 | 4 | [`wo4-tick-core`](wo4-tick-core/WORKORDER.md) | `pr-02b-capture-runtime/wo4-tick-core` | ✅ Complete | architect | e5c26427 |
 | 5 | [`wo5-session-attribution`](wo5-session-attribution/WORKORDER.md) | `pr-02b-capture-runtime/wo5-session-attribution` | ✅ Complete | standard | 17d10203 |
-| 6 | [`wo6-sidecar-packaging`](wo6-sidecar-packaging/WORKORDER.md) | `pr-02b-capture-runtime/wo6-sidecar-packaging` | 🔄 In Progress | mechanical | — |
-| 7 | [`wo7-claude-raw-copy`](wo7-claude-raw-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo7-claude-raw-copy` | ☐ Pending | mechanical | — |
+| 6 | [`wo6-sidecar-packaging`](wo6-sidecar-packaging/WORKORDER.md) | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ✅ Complete | mechanical | 66f07588 |
+| 7 | [`wo7-claude-raw-copy`](wo7-claude-raw-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo7-claude-raw-copy` | 🔄 In Progress | mechanical | — |
 
 ## Exit Criteria
 - Every new Antigravity session in an enrolled repository produces an episode within minutes of going idle
@@ -38,3 +38,4 @@ Every Antigravity session in an enrolled repository produces an episode within m
 - **WO3**: `wo3-job-table` completed. SQLite job table with WAL mode implemented using pure-Go modernc.org/sqlite driver. Verified correct handling of idempotency, scheduling, and leases.
 - **WO4**: `wo4-tick-core` completed. Implemented portable tick lock, the core tick loop, and sweep logic for enrolled repos including idle promotion and incremental copy.
 - **WO5**: `wo5-session-attribution` completed. Implemented mapping of conversations to enrolled repositories using `conversation_summaries.db`, duplicated-conversation resolution between IDE and CLI, and hierarchical subagent linking. Wired attribution into the tick's sweep loop.
+- **WO6**: `wo6-sidecar-packaging` completed. Updated the cron schedule to `*/1 * * * *` and ensured the Automations-dashboard enablement step prints on install.
