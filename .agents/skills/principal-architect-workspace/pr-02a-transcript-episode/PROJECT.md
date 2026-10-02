@@ -16,7 +16,7 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
 | 1 | `wo1-transcript-parser` | `pr-02a-transcript-episode/wo1-transcript-parser` | ☑ Complete | architect | a28bf92a |
-| 2 | `wo2-compaction` | `pr-02a-transcript-episode/wo2-compaction` | ☐ Pending | architect | — |
+| 2 | `wo2-compaction` | `pr-02a-transcript-episode/wo2-compaction` | ☑ Complete | architect | 2d445f95 |
 | 3 | `wo3-episode-store` | `pr-02a-transcript-episode/wo3-episode-store` | ☐ Pending | standard | — |
 | 4 | `wo4-commit-linkage` | `pr-02a-transcript-episode/wo4-commit-linkage` | ☐ Pending | standard | — |
 | 5 | `wo5-metrics-skeleton` | `pr-02a-transcript-episode/wo5-metrics-skeleton` | ☐ Pending | standard | — |
@@ -33,3 +33,8 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 - **Outcome:** Complete.
 - **Key Decisions:** Used `bufio.Scanner` with a generous 50MB buffer on top of an `io.MultiReader` to ensure lexical chunks straddling JSON boundaries can be parsed correctly.
 - **Findings:** Found that `cat`'s EOF behavior on newlines broke chunking, which the worker mitigated with strict byte continuity via `printf`.
+
+### WO2: wo2-compaction
+- **Outcome:** Complete. Target >= 4x compaction achieved.
+- **Key Decisions:** Collapsing duplicate identical log lines for device/test outputs ensures major compaction without losing structure. Bounded command excerpt truncation retains failing markers or the last 5-10 lines of output for non-zero exit codes.
+- **Findings:** Stripped actual content text from exposure markers keeping only reference IDs. Secret scrubber replaces AWS keys, UUIDs, Tokens with `«secret:type»`.
