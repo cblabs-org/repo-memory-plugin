@@ -26,6 +26,7 @@ var tickCmd = &cobra.Command{
 			55*time.Second, // 1 minute tick minus 5s buffer
 			tick.WithAttributor(antigravity.NewSessionAttributor()),
 			tick.WithCopier(claudecode.CopyTranscripts),
+			tick.WithHousekeeper(antigravity.NewHousekeeper(config.DataDir(), "default", "", "")),
 		)
 		return ticker.Run(context.Background())
 	},

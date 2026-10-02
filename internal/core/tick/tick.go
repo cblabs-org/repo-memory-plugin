@@ -153,5 +153,10 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 		return err
 	}
 
+	// 4. Run pipeline
+	if err := t.ProcessPipeline(ctx, store, repoRoot, repoID); err != nil {
+		fmt.Fprintf(os.Stderr, "pipeline error for repo %s: %v\n", repoID, err)
+	}
+
 	return nil
 }

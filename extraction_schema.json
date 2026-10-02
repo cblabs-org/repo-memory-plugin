@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/extract/extraction-result",
+  "$ref": "#/$defs/ExtractionResult",
+  "$defs": {
+    "Anchor": {
+      "properties": {
+        "Kind": {
+          "type": "string"
+        },
+        "Ref": {
+          "type": "string"
+        },
+        "FP": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Kind",
+        "Ref",
+        "FP"
+      ]
+    },
+    "Candidate": {
+      "properties": {
+        "episode_id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "statement": {
+          "type": "string"
+        },
+        "relevant_when": {
+          "type": "string"
+        },
+        "apply": {
+          "type": "string"
+        },
+        "anchors": {
+          "items": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "type": "array"
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "type": "array"
+        },
+        "closes_when": {
+          "$ref": "#/$defs/ClosesWhen"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "type": "array"
+        },
+        "proposed_status": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "echo_of": {
+          "type": "string"
+        },
+        "match": {
+          "$ref": "#/$defs/Match"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "episode_id",
+        "type",
+        "statement",
+        "proposed_status",
+        "rationale"
+      ]
+    },
+    "ClosesWhen": {
+      "properties": {
+        "Unknown": {
+          "type": "boolean"
+        },
+        "Any": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Unknown",
+        "Any"
+      ]
+    },
+    "Condition": {
+      "properties": {
+        "Kind": {
+          "type": "string"
+        },
+        "Ref": {
+          "type": "string"
+        },
+        "State": {
+          "type": "string"
+        },
+        "Target": {
+          "type": "string"
+        },
+        "Result": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Kind",
+        "Ref",
+        "State",
+        "Target",
+        "Result"
+      ]
+    },
+    "Evidence": {
+      "properties": {
+        "Kind": {
+          "type": "string"
+        },
+        "Ref": {
+          "type": "string"
+        },
+        "Steps": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "Outcome": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Kind",
+        "Ref",
+        "Steps",
+        "Outcome"
+      ]
+    },
+    "ExtractionResult": {
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "type": "array"
+        },
+        "gaps": {
+          "items": {
+            "$ref": "#/$defs/Gap"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "candidates",
+        "gaps"
+      ]
+    },
+    "Gap": {
+      "properties": {
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "description"
+      ]
+    },
+    "Match": {
+      "properties": {
+        "Any": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "AllInWindow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "Source": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Any",
+        "AllInWindow",
+        "Source"
+      ]
+    },
+    "Provenance": {
+      "properties": {
+        "Pipeline": {
+          "type": "string"
+        },
+        "ExtractorModel": {
+          "type": "string"
+        },
+        "ReconcilerModel": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "Pipeline",
+        "ExtractorModel",
+        "ReconcilerModel"
+      ]
+    }
+  }
+}
