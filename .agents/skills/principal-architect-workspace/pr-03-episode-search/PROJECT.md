@@ -30,3 +30,5 @@ Make captured history searchable before the knowledge pipeline exists, and impor
 - B2 baseline (episode search) measured
 
 ## Session Log
+
+- **2026-10-02**: Human approved PR-03 Work Order decomposition (WO1-WO6). Initiating WO1.
