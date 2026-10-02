@@ -15,8 +15,8 @@ Every Antigravity session in an enrolled repository produces an episode within m
 
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
-| 1 | [`wo1-spool-incremental-copy`](wo1-spool-incremental-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ☐ Pending | standard | — |
-| 2 | [`wo2-stop-hook`](wo2-stop-hook/WORKORDER.md) | `pr-02b-capture-runtime/wo2-stop-hook` | ☐ Pending | standard | — |
+| 1 | [`wo1-spool-incremental-copy`](wo1-spool-incremental-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ✅ Complete | standard | bc516ac3 |
+| 2 | [`wo2-stop-hook`](wo2-stop-hook/WORKORDER.md) | `pr-02b-capture-runtime/wo2-stop-hook` | 🔄 In Progress | standard | — |
 | 3 | [`wo3-job-table`](wo3-job-table/WORKORDER.md) | `pr-02b-capture-runtime/wo3-job-table` | ☐ Pending | standard | — |
 | 4 | [`wo4-tick-core`](wo4-tick-core/WORKORDER.md) | `pr-02b-capture-runtime/wo4-tick-core` | ☐ Pending | architect | — |
 | 5 | [`wo5-session-attribution`](wo5-session-attribution/WORKORDER.md) | `pr-02b-capture-runtime/wo5-session-attribution` | ☐ Pending | standard | — |
@@ -33,3 +33,4 @@ Every Antigravity session in an enrolled repository produces an episode within m
 
 ## Session Log
 
+- **WO1**: `wo1-spool-incremental-copy` completed. The spool schema, writer (with Windows atomic rename support), reader, and incremental transcript copier were verified and committed.
