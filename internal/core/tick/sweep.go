@@ -34,7 +34,13 @@ type SessionAttributor interface {
 var (
 	defaultAttributorsMu sync.RWMutex
 	defaultAttributors   []SessionAttributor
+
+	defaultCopiersMu     sync.RWMutex
+	defaultCopiers       []TranscriptCopier
 )
+
+// TranscriptCopier defines a function type for copying raw harness transcripts across enrolled repositories during sweep.
+type TranscriptCopier func(ctx context.Context, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry) error
 
 // RegisterAttributor adds a default session attributor used by Sweep when no explicit attributors are provided.
 func RegisterAttributor(a SessionAttributor) {
@@ -55,13 +61,39 @@ func DefaultAttributors() []SessionAttributor {
 	return copied
 }
 
+// RegisterCopier adds a default transcript copier used by Sweep when no explicit copiers are provided.
+func RegisterCopier(c TranscriptCopier) {
+	if c == nil {
+		return
+	}
+	defaultCopiersMu.Lock()
+	defer defaultCopiersMu.Unlock()
+	defaultCopiers = append(defaultCopiers, c)
+}
+
+// DefaultCopiers returns a copy of registered default copiers.
+func DefaultCopiers() []TranscriptCopier {
+	defaultCopiersMu.RLock()
+	defer defaultCopiersMu.RUnlock()
+	copied := make([]TranscriptCopier, len(defaultCopiers))
+	copy(copied, defaultCopiers)
+	return copied
+}
+
 // Sweep scans for idle sessions across enrolled repositories using registered or provided attributors,
-// incrementally copies changed transcripts into queue/, and enqueues capture jobs.
+// incrementally copies changed transcripts into queue/, enqueues capture jobs, and runs transcript copiers.
 func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry, attributors ...SessionAttributor) error {
+	copiers := DefaultCopiers()
+	for _, copier := range copiers {
+		if err := copier(ctx, memoryDataDir, enrolledRepos); err != nil {
+			fmt.Fprintf(os.Stderr, "transcript copier error: %v\n", err)
+		}
+	}
+
 	if len(attributors) == 0 {
 		attributors = DefaultAttributors()
 	}
-	if len(attributors) == 0 {
+	if len(attributors) == 0 && len(copiers) == 0 {
 		return nil
 	}
 

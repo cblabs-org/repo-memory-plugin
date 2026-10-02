@@ -19,6 +19,7 @@ type Ticker struct {
 	dataDir     string
 	budget      time.Duration
 	attributors []SessionAttributor
+	copiers     []TranscriptCopier
 }
 
 // TickerOption allows configuring optional ticker parameters.
@@ -29,6 +30,15 @@ func WithAttributor(a SessionAttributor) TickerOption {
 	return func(t *Ticker) {
 		if a != nil {
 			t.attributors = append(t.attributors, a)
+		}
+	}
+}
+
+// WithCopier registers a transcript copier for sweeping enrolled repositories.
+func WithCopier(c TranscriptCopier) TickerOption {
+	return func(t *Ticker) {
+		if c != nil {
+			t.copiers = append(t.copiers, c)
 		}
 	}
 }
