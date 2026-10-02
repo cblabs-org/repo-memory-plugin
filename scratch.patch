@@ -1,0 +1,66 @@
+--- internal/core/index/index.go
++++ internal/core/index/index.go
+@@ -4,6 +4,8 @@
+ 	"context"
+ 	"database/sql"
+ 	"fmt"
+ 	"time"
+ 
++	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
+ 	_ "modernc.org/sqlite"
+ )
+ 
+@@ -148,3 +150,50 @@
+ 	}
+ 	return results, rows.Err()
+ }
++
++// InsertClaim inserts or updates a claim and its related tables in the index.
++func (idx *Index) InsertClaim(ctx context.Context, claim *claims.Claim) error {
++	tx, err := idx.db.BeginTx(ctx, nil)
++	if err != nil {
++		return err
++	}
++	defer tx.Rollback()
++
++	query := `INSERT OR REPLACE INTO claims (id, type, title, status, relevant_when, apply, verified_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
++	_, err = tx.ExecContext(ctx, query, claim.ID, claim.Type, claim.Title, claim.Status, claim.RelevantWhen, claim.Apply, claim.VerifiedAt, claim.Body)
++	if err != nil {
++		return err
++	}
++
++	_, err = tx.ExecContext(ctx, `DELETE FROM anchors WHERE claim_id = ?`, claim.ID)
++	if err != nil {
++		return err
++	}
++	for _, a := range claim.Anchors {
++		_, err = tx.ExecContext(ctx, `INSERT INTO anchors (claim_id, kind, ref, fp) VALUES (?, ?, ?, ?)`, claim.ID, a.Kind, a.Ref, a.FP)
++		if err != nil {
++			return err
++		}
++	}
++
++	_, err = tx.ExecContext(ctx, `DELETE FROM relations WHERE source_id = ?`, claim.ID)
++	if err != nil {
++		return err
++	}
++	for _, r := range claim.Relations {
++		_, err = tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, r.Type, r.To)
++		if err != nil {
++			return err
++		}
++	}
++
++	_, err = tx.ExecContext(ctx, `DELETE FROM conditions WHERE claim_id = ?`, claim.ID)
++	if err != nil {
++		return err
++	}
++	for _, c := range claim.Conditions {
++		_, err = tx.ExecContext(ctx, `INSERT INTO conditions (claim_id, context, key, ref, state, target, result) VALUES (?, ?, ?, ?, ?, ?, ?)`, claim.ID, c.Context, string(c.Key), c.Ref, string(c.State), c.Target, c.Result)
++		if err != nil {
++			return err
++		}
++	}
++
++	return tx.Commit()
++}
