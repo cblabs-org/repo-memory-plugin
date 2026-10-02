@@ -4,7 +4,7 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **1/13 complete** (PR-01). PR-01b complete (docs-only, awaiting SPEC apply + merge). Next: PR-02a. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **2/13 complete** (PR-01, PR-01b). Next: PR-02a (SQLite store + transcript reader). SPEC-CHANGES.md pending user approval before apply. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
