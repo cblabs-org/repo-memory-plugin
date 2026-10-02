@@ -14,6 +14,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness/antigravity"
 )
 
 var (
@@ -46,6 +47,29 @@ var hookCmd = &cobra.Command{
 			}
 
 			out, err := handleProbe(event, payload)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+			return nil
+		}
+
+		harnessName := ""
+		eventName := ""
+		if len(args) >= 2 {
+			harnessName = args[0]
+			eventName = args[1]
+		} else if len(args) == 1 {
+			eventName = args[0]
+		}
+
+		if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "stop") {
+			payload, err := io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				return fmt.Errorf("reading hook payload: %w", err)
+			}
+
+			out, err := antigravity.HandleStop(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
 			if err != nil {
 				return err
 			}

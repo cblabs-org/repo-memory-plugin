@@ -1,10 +1,19 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness/antigravity"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness/claudecode"
 	"github.com/spf13/cobra"
 )
+
+func init() {
+	tick.RegisterAttributor(antigravity.NewSessionAttributor())
+}
 
 var tickCmd = &cobra.Command{
 	Use:     "tick",
@@ -12,7 +21,12 @@ var tickCmd = &cobra.Command{
 	Short:   "Advance asynchronous background jobs (time path)",
 	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("tick subcommand stub")
-		return nil
+		ticker := tick.NewTicker(
+			config.DataDir(),
+			55*time.Second, // 1 minute tick minus 5s buffer
+			tick.WithAttributor(antigravity.NewSessionAttributor()),
+			tick.WithCopier(claudecode.CopyTranscripts),
+		)
+		return ticker.Run(context.Background())
 	},
 }
