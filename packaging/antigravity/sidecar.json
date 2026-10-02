@@ -1,7 +1,7 @@
 {
   "builtin": "schedule",
   "args": [
-    "* * * * *",
+    "*/1 * * * *",
     "<bin>",
     "tick"
   ],
