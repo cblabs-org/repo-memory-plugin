@@ -16,8 +16,8 @@ Every Antigravity session in an enrolled repository produces an episode within m
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
 | 1 | [`wo1-spool-incremental-copy`](wo1-spool-incremental-copy/WORKORDER.md) | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ✅ Complete | standard | bc516ac3 |
-| 2 | [`wo2-stop-hook`](wo2-stop-hook/WORKORDER.md) | `pr-02b-capture-runtime/wo2-stop-hook` | 🔄 In Progress | standard | — |
-| 3 | [`wo3-job-table`](wo3-job-table/WORKORDER.md) | `pr-02b-capture-runtime/wo3-job-table` | ☐ Pending | standard | — |
+| 2 | [`wo2-stop-hook`](wo2-stop-hook/WORKORDER.md) | `pr-02b-capture-runtime/wo2-stop-hook` | ✅ Complete | standard | 870043d |
+| 3 | [`wo3-job-table`](wo3-job-table/WORKORDER.md) | `pr-02b-capture-runtime/wo3-job-table` | 🔄 In Progress | standard | — |
 | 4 | [`wo4-tick-core`](wo4-tick-core/WORKORDER.md) | `pr-02b-capture-runtime/wo4-tick-core` | ☐ Pending | architect | — |
 | 5 | [`wo5-session-attribution`](wo5-session-attribution/WORKORDER.md) | `pr-02b-capture-runtime/wo5-session-attribution` | ☐ Pending | standard | — |
 | 6 | [`wo6-sidecar-packaging`](wo6-sidecar-packaging/WORKORDER.md) | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ☐ Pending | mechanical | — |
@@ -34,3 +34,4 @@ Every Antigravity session in an enrolled repository produces an episode within m
 ## Session Log
 
 - **WO1**: `wo1-spool-incremental-copy` completed. The spool schema, writer (with Windows atomic rename support), reader, and incremental transcript copier were verified and committed.
+- **WO2**: `wo2-stop-hook` completed. Stop hook added with kill-switch, enrolment, and housekeeping guards. Bounded to 200ms budget. Added `repo-memory` to `.gitignore` after encountering a global exit-127 hook lockup due to missing binary.
