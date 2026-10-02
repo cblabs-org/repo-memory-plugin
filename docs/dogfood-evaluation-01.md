@@ -253,39 +253,96 @@ Pipeline recall: 3–5 relevant claims × 134 tokens = ~400–670 tokens
 
 ## 6. Comparative Assessment
 
-### 6.1 Dimension-by-Dimension
+### 6.1 Token Efficiency
 
 | Dimension | PA | Pipeline (in-session) | Winner |
 |---|---|---|---|
 | Production cost | ~2,400 tok/session | ~500 tok/session | **Pipeline** (5×) |
-| Recall cost | ~9,148 tok/session | ~600 tok/session | **Pipeline** (15×) |
-| Recall quality | Untargeted bulk load | Targeted hook injection | **Pipeline** |
-| Recall timing | Session boot only | Point-of-need | **Pipeline** |
-| Precision | ~100% (human-curated) | 100% (LLM-verified) | Tie |
-| Recall of own sessions | ~100% | 80% | **PA** |
-| Coverage of all sessions | PA sessions only | All sessions | **Pipeline** |
-| Knowledge density | ~4 KB narrative per item | 537 bytes atomic per item | **PA** |
+| Recall cost per session | ~9,148 tok/session | ~600 tok/session | **Pipeline** (15×) |
 | Context window impact | ~9K tokens occupied | ~600 tokens occupied | **Pipeline** (15×) |
-| Staleness | Gets stale, no auto-update | Auto-reconciled on new evidence | **Pipeline** |
+| Recall timing | Session boot only | Point-of-need | **Pipeline** |
+| Coverage of all sessions | PA sessions only | All sessions | **Pipeline** |
 | Machine-searchable | ❌ | ✅ FTS + MCP tool | **Pipeline** |
-| Machine-readable | ❌ Free text | ✅ Typed, anchored, scored | **Pipeline** |
 
-### 6.2 The PA's Advantage
+On pure token economics, the pipeline wins. It loads less, targets better, and covers more sessions.
 
-The PA produces richer, more contextual knowledge — 4 KB of narrative context per work order vs 537 bytes of atomic claim. For the specific projects the PA manages, its knowledge is deeper and more nuanced.
+**But token efficiency is not the whole story.**
 
-However, this depth comes at a recall cost: the entire corpus must be loaded into context, consuming 5–10% of the context window with bulk, untargeted knowledge.
+### 6.2 Knowledge Quality for Code Modification — The Critical Gap
 
-### 6.3 The Pipeline's Advantage
+When an agent is about to modify a module, it needs **working context**: why decisions were made, what was tried and failed, where the architectural boundaries are, and how the pieces interconnect. This is the primary recall use case.
 
-The pipeline's value is not cheaper production — it's **targeted delivery**:
+The PA's WORKORDER completion reports are distillations written by the agent that did the work. They contain rich narrative context. The pipeline's claims are atomic facts extracted from compressed episodes. Here is a direct comparison for the transcript parser module:
 
-1. **Coverage**: Captures knowledge from ALL sessions (debugging, exploration, ad-hoc), not just PA-managed work
-2. **Recall efficiency**: 15× fewer tokens loaded per session
-3. **Delivery timing**: Point-of-need injection via hooks (déjà-vu, task briefs)
-4. **Context economy**: <0.5% of context window vs 5–10% for PA
-5. **Searchability**: Machine-queryable via FTS and MCP pull tool
-6. **Freshness**: Auto-reconciled when new evidence arrives
+**PA distillation (from WO1 completion report):**
+```
+### Decisions Made
+- Used bufio.Scanner with a generous 50MB buffer on top of an
+  io.MultiReader to ensure lexical chunks straddling JSON boundaries
+  can seamlessly parse into unified lines before being evaluated.
+
+### Dead Ends & Warnings
+- cat's EOF behavior on newlines broke the chunked test initially.
+  Fixed using printf to ensure strict byte continuity over chunks
+  without injection of newlines.
+```
+One file, 80 lines. The agent reads it and knows: the design intent (WHY 50MB, WHY MultiReader), what will break if changed (cat vs printf), the boundary box (internal/harness only, never internal/core), and how this feeds into the episode store.
+
+**Pipeline claims (39 transcript-related claims, representative sample):**
+```yaml
+title: bufio.Scanner configured with a 50MB buffer over an io.MultiReader
+title: Transcript priority order: transcript_full.jsonl, chunks, transcript.jsonl
+title: Step indices have gaps from internal dispatch steps
+title: Use printf rather than cat for chunk test fixtures
+title: Tool traffic constitutes 78% of transcript footprint
+```
+39 atomic facts, ~21 KB total. Each is accurate. But they are **WHAT** statements — reference facts, not working context. Missing:
+- **WHY** the 50MB buffer (because chunks straddle JSON boundaries)
+- **WHY** printf instead of cat (cat's EOF newline injection broke tests)
+- **BOUNDARY** constraints (parser lives in internal/harness, must not leak to internal/core)
+- **INTERCONNECTIONS** (parser → episode store → claim pipeline)
+- **DEAD ENDS** (what approaches were tried and abandoned)
+- **SCOPE** (this was architect-complexity work for a reason)
+
+### 6.3 Recall Efficacy Verdict
+
+| Dimension | PA Distillations | Pipeline Claims | Winner |
+|---|---|---|---|
+| **Token cost of recall** | ~9,148 tokens (bulk) | ~600 tokens (targeted) | **Pipeline** (15×) |
+| **Working context for modification** | Rich: WHY, dead ends, boundaries | Shallow: WHAT only | **PA** |
+| **Decision reasoning** | Explicit narrative | Usually absent | **PA** |
+| **Dead ends and warnings** | Explicit section | Rarely captured | **PA** |
+| **Boundary constraints** | Explicit in scope definition | Not in claims | **PA** |
+| **Interconnections** | Implicit in narrative | Not in claims | **PA** |
+| **Precision** | ~100% (human-curated) | 100% (LLM-extracted) | Tie |
+| **Fact recall** | 100% of own sessions | 80% | **PA** |
+| **Non-PA session capture** | None | 100% | **Pipeline** |
+| **Staleness** | Gets stale, no auto-update | Auto-reconciled | **Pipeline** |
+
+**The pipeline is not yet competitive with PA distillations for the code-modification use case.** It is cheaper at recall (15× fewer tokens) but the knowledge it delivers is too shallow to safely guide code changes. An agent armed with PA distillations will make better decisions and fewer mistakes than an agent armed with atomic claims.
+
+The PA's approach — having the agent that did the work write a narrative completion report — produces fundamentally richer knowledge. The pipeline's extraction from compressed episodes loses the reasoning, the dead ends, and the interconnections.
+
+### 6.4 Where the Pipeline Could Win
+
+The pipeline's strengths are in scenarios the PA doesn't cover:
+
+1. **Non-PA sessions**: Debugging, exploration, bug-fixing — sessions that produce knowledge but have no PA to distil it. The pipeline captures something; the PA captures nothing.
+2. **Point-of-need delivery**: Hook injection at the moment an agent is about to make a mistake (déjà-vu). The PA has no delivery mechanism beyond file reading.
+3. **Cross-session search**: An agent can query "what do we know about hook latency?" via the MCP pull tool. The PA requires scanning multiple WORKORDERs.
+4. **Scale**: As the project grows, the PA's bulk-load approach scales linearly (more WOs = more tokens). The pipeline's targeted injection scales by relevance.
+
+### 6.5 What Would Make the Pipeline Competitive
+
+The atomic claim format is the wrong granularity for code-modification recall. To match the PA's efficacy, the pipeline would need one of:
+
+1. **Richer distillations**: Instead of atomic claims, produce completion-report-style documents with reasoning, dead ends, and boundaries. But this is essentially what the PA already does — and it requires the original session context, not a compressed episode.
+
+2. **Synthesised module briefs**: A view layer that aggregates atomic claims into per-module working context (boundaries, key decisions with reasoning, known gotchas, interconnections). This is what the SPEC's views (MAP.md, subsystem pages) were intended to be, but they require an additional LLM pass to synthesise.
+
+3. **In-session distillation**: Have the agent that did the work produce the distillation (as the PA does), but store it in the claim format for machine delivery. This combines the PA's quality with the pipeline's delivery mechanism.
+
+Option 3 is the most promising: it preserves the PA's knowledge quality while adding the pipeline's recall efficiency and coverage. But it is essentially the conversation-injection architecture — and it raises the question of whether the multi-stage pipeline machinery (triage, extract, reconcile, verify) adds any value over simply having the agent write claims directly.
 
 ---
 
