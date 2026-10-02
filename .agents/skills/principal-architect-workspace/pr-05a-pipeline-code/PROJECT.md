@@ -15,8 +15,8 @@ The knowledge pipeline: triage, extract, reconcile and verify, plus the local pu
 
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
-| 1 | `wo1-executors` | `pr-05a-pipeline-code/wo1-executors` | ☐ Pending | standard | — |
-| 2 | `wo2-triage` | `pr-05a-pipeline-code/wo2-triage` | ☐ Pending | architect | — |
+| 1 | `wo1-executors` | `pr-05a-pipeline-code/wo1-executors` | ☑ Complete | standard | Execution Worker |
+| 2 | `wo2-triage` | `pr-05a-pipeline-code/wo2-triage` | ☑ Complete | architect | Execution Worker |
 | 3 | `wo3-extract` | `pr-05a-pipeline-code/wo3-extract` | ☐ Pending | architect | — |
 | 4 | `wo4-reconcile` | `pr-05a-pipeline-code/wo4-reconcile` | ☐ Pending | architect | — |
 | 5 | `wo5-verify` | `pr-05a-pipeline-code/wo5-verify` | ☐ Pending | standard | — |
@@ -30,3 +30,7 @@ The knowledge pipeline: triage, extract, reconcile and verify, plus the local pu
 - Decision-marker windows and P13 precondition covered by fixture tests
 
 ## Session Log
+
+- **WO1 (Executors)**: Complete. Implemented `Housekeeper` using `agy -p` and a `RecordedHousekeeper` for testing. Excluded housekeeping runs from capture sweep.
+  - **Dead end/Finding**: `agy` rejected `--output-format json` when `--input-format stream-json` was used; the worker used `--output-format stream-json` instead. The CLI also ignores some input event names in stream-json mode, which may need investigation later.
+- **WO2 (Triage)**: Complete. Implemented rule-based triage, keep/skip rules, salience windows, synopsis generation, and the `Housekeeper` LLM fallback for ambiguous episodes.
