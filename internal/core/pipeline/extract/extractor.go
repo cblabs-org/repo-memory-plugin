@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
@@ -60,26 +61,51 @@ func (e *Extractor) Extract(ctx context.Context, episodes []*episode.Episode, tr
 	batches := packer.Pack(episodes, triageResults)
 	
 	var allResults []ExtractionResult
-	
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var firstErr error
+
 	for _, batch := range batches {
-		input := ExtractInput{Episodes: batch}
-		
-		res, err := e.Housekeeper.Run(ctx, harness.StageExtract, input)
-		if err != nil {
-			return nil, fmt.Errorf("extraction error: %w", err)
-		}
-		
-		var output ExtractionResult
-		if err := json.Unmarshal([]byte(res.Payload), &output); err != nil {
-			return nil, fmt.Errorf("failed to parse extraction output: %w", err)
-		}
-		
-		// Enforce P13 and other rules locally as well
-		output = e.enforceRules(output, batch)
-		
-		allResults = append(allResults, output)
+		wg.Add(1)
+		go func(b []EpisodePayload) {
+			defer wg.Done()
+			
+			input := ExtractInput{Episodes: b}
+			
+			res, err := e.Housekeeper.Run(ctx, harness.StageExtract, input)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("extraction error: %w", err)
+				}
+				mu.Unlock()
+				return
+			}
+			
+			var output ExtractionResult
+			if err := json.Unmarshal([]byte(res.Payload), &output); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("failed to parse extraction output: %w", err)
+				}
+				mu.Unlock()
+				return
+			}
+			
+			output = e.enforceRules(output, b)
+			
+			mu.Lock()
+			allResults = append(allResults, output)
+			mu.Unlock()
+		}(batch)
 	}
-	
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
 	return allResults, nil
 }
 
