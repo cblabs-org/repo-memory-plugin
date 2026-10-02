@@ -34,3 +34,12 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 ## Completion Report
 <!-- Written by the worker at task completion -->
+
+### Implementation Details
+- `RepoConfig.Subsystems` parsing already handled by standard YAML mapping.
+- Added `AssignSubsystem(filePath)` using standard `filepath.Match` in `internal/core/config/subsystem.go`.
+- Added `UnassignedFiles(files)` to detect unmatched files.
+- Verified parsing and assignments with unit tests (`go test ./internal/core/config`).
+
+### Out-of-Boundary Issues Surfaced
+- Standard `filepath.Match` does not cross directory boundaries with `*`. A `**` standard is common for this type of path globbing but not natively supported without bringing in a third-party module like `github.com/bmatcuk/doublestar/v4`. For now, `filepath.Match` is used as standard library dependency.
