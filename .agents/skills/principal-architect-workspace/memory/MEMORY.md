@@ -4,11 +4,12 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.9, 13 PRs. **2/13 complete** (PR-01, PR-01b). Next: PR-02a (SQLite store + transcript reader). SPEC-CHANGES.md pending user approval before apply. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **2/13 complete** (PR-01, PR-01b). PR-02a in progress. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
+| pr-02a-transcript-episode | WO1/5 — In Progress | Transcript Parser, Compaction, Episode Store | [PROJECT.md](../pr-02a-transcript-episode/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
