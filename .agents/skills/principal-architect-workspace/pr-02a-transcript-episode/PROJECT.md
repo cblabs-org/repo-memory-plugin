@@ -15,7 +15,7 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
-| 1 | `wo1-transcript-parser` | `pr-02a-transcript-episode/wo1-transcript-parser` | ☐ Pending | architect | — |
+| 1 | `wo1-transcript-parser` | `pr-02a-transcript-episode/wo1-transcript-parser` | ☑ Complete | architect | a28bf92a |
 | 2 | `wo2-compaction` | `pr-02a-transcript-episode/wo2-compaction` | ☐ Pending | architect | — |
 | 3 | `wo3-episode-store` | `pr-02a-transcript-episode/wo3-episode-store` | ☐ Pending | standard | — |
 | 4 | `wo4-commit-linkage` | `pr-02a-transcript-episode/wo4-commit-linkage` | ☐ Pending | standard | — |
@@ -28,3 +28,8 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 - Core tests pass on the `fake` adapter; `internal/core` imports no concrete adapter
 
 ## Session Log
+
+### WO1: wo1-transcript-parser
+- **Outcome:** Complete.
+- **Key Decisions:** Used `bufio.Scanner` with a generous 50MB buffer on top of an `io.MultiReader` to ensure lexical chunks straddling JSON boundaries can be parsed correctly.
+- **Findings:** Found that `cat`'s EOF behavior on newlines broke chunking, which the worker mitigated with strict byte continuity via `printf`.
