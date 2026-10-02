@@ -17,7 +17,7 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 |---|---|---|---|---|---|
 | 1 | `wo1-transcript-parser` | `pr-02a-transcript-episode/wo1-transcript-parser` | ☑ Complete | architect | a28bf92a |
 | 2 | `wo2-compaction` | `pr-02a-transcript-episode/wo2-compaction` | ☑ Complete | architect | 2d445f95 |
-| 3 | `wo3-episode-store` | `pr-02a-transcript-episode/wo3-episode-store` | ☐ Pending | standard | — |
+| 3 | `wo3-episode-store` | `pr-02a-transcript-episode/wo3-episode-store` | ☑ Complete | standard | 75b7ca8e |
 | 4 | `wo4-commit-linkage` | `pr-02a-transcript-episode/wo4-commit-linkage` | ☐ Pending | standard | — |
 | 5 | `wo5-metrics-skeleton` | `pr-02a-transcript-episode/wo5-metrics-skeleton` | ☐ Pending | standard | — |
 
@@ -38,3 +38,8 @@ Turn an Antigravity conversation's transcript file set into a compacted, scrubbe
 - **Outcome:** Complete. Target >= 4x compaction achieved.
 - **Key Decisions:** Collapsing duplicate identical log lines for device/test outputs ensures major compaction without losing structure. Bounded command excerpt truncation retains failing markers or the last 5-10 lines of output for non-zero exit codes.
 - **Findings:** Stripped actual content text from exposure markers keeping only reference IDs. Secret scrubber replaces AWS keys, UUIDs, Tokens with `«secret:type»`.
+
+### WO3: wo3-episode-store
+- **Outcome:** Complete.
+- **Key Decisions:** Used pure-Go zstd compression (`klauspost/compress/zstd`) and atomic writes (tmp + rename). Implemented `StepGap` for handling unwritten internal dispatch steps.
+- **Findings:** Successfully added support for flexible timestamp parsing (RFC3339/RFC3339Nano, null).
