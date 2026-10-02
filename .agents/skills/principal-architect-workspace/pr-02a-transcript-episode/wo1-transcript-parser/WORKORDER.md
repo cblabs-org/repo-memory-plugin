@@ -37,19 +37,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 <!-- Written by the worker at task completion -->
 
 ### Status
-(pending)
+Completed
 
 ### Changes Made
-(pending)
+- Implemented `ParseTranscript` in `internal/harness/antigravity/transcript.go` that prioritizes reading `transcript_full.jsonl`, chunked `transcript_full/*.jsonl`, and fallback `transcript.jsonl`.
+- Added `Step` struct that supports identifying `CHECKPOINT` rows and logging gap locations via `IsGap` / `GapSize`.
+- Added source/type classification method `Classification() (actor string, action string)` to `Step`.
+- Wrote robust unit tests and a suite of fixtures representing standard, chunked, and truncated transcript structures under `testdata/fixtures/antigravity/v1/`.
+- Added a canary test to flag when parsed step counts change due to an unexpected format bump (e.g., `v2`).
 
 ### Decisions Made
-(pending)
+- Used `bufio.Scanner` with a generous 50MB buffer on top of an `io.MultiReader` to ensure lexical chunks that straddle a single JSON line can seamlessly parse into unified lines before being evaluated.
 
 ### Dead Ends & Warnings
-(pending)
+- `cat`'s EOF behavior on newlines broke the chunked test initially. Fixed using `printf` to ensure strict byte continuity over chunks without injection of newlines.
 
 ### Out-of-Scope Findings
-(pending)
+None.
 
 ### Blockers
 (none)
