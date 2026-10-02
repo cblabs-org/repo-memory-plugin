@@ -32,3 +32,4 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 - A review event recorded against a claim still applies after re-projection
 
 ## Session Log
+- **2026-10-02**: Human approved the Work Order decomposition for PR-04.
