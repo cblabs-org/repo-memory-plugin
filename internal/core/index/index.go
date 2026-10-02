@@ -1,0 +1,125 @@
+package index
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+// Index provides SQLite FTS indexing over episodes.
+type Index struct {
+	db *sql.DB
+}
+
+// NewIndex opens or creates a new Index backed by SQLite at dbPath.
+// It configures WAL mode for better concurrency.
+func NewIndex(dbPath string) (*Index, error) {
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("opening index database: %w", err)
+	}
+
+	idx := &Index{db: db}
+	if err := idx.initSchema(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return idx, nil
+}
+
+// NewReadOnlyIndex opens an Index backed by SQLite at dbPath in read-only mode.
+func NewReadOnlyIndex(dbPath string) (*Index, error) {
+	dsn := fmt.Sprintf("file:%s?mode=ro", dbPath)
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("opening read-only index database: %w", err)
+	}
+	return &Index{db: db}, nil
+}
+
+// Close closes the underlying database connection.
+func (idx *Index) Close() error {
+	return idx.db.Close()
+}
+
+func (idx *Index) initSchema() error {
+	query := `
+	CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(
+		episode_id,
+		session_id,
+		content,
+		files_touched,
+		outcomes,
+		date UNINDEXED
+	);
+	`
+	_, err := idx.db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("initializing FTS schema: %w", err)
+	}
+	return nil
+}
+
+// EpisodeRecord represents a row in the episodes FTS table.
+type EpisodeRecord struct {
+	EpisodeID    string
+	SessionID    string
+	Content      string
+	FilesTouched string
+	Outcomes     string
+	Date         time.Time
+	Snippet      string
+}
+
+// InsertEpisode inserts a new episode record into the FTS index.
+func (idx *Index) InsertEpisode(ctx context.Context, record EpisodeRecord) error {
+	query := `
+	INSERT INTO episodes_fts (episode_id, session_id, content, files_touched, outcomes, date)
+	VALUES (?, ?, ?, ?, ?, ?)
+	`
+	_, err := idx.db.ExecContext(ctx, query,
+		record.EpisodeID,
+		record.SessionID,
+		record.Content,
+		record.FilesTouched,
+		record.Outcomes,
+		record.Date.Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("inserting episode to index: %w", err)
+	}
+	return nil
+}
+
+// SearchEpisodes performs a full-text search against the episodes FTS table.
+func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]EpisodeRecord, error) {
+	query := `
+	SELECT episode_id, session_id, content, snippet(episodes_fts, 2, '>', '', '...', 64), files_touched, outcomes, date 
+	FROM episodes_fts 
+	WHERE episodes_fts MATCH ?
+	ORDER BY bm25(episodes_fts)
+	`
+	rows, err := idx.db.QueryContext(ctx, query, matchQuery)
+	if err != nil {
+		return nil, fmt.Errorf("searching episodes: %w", err)
+	}
+	defer rows.Close()
+
+	var results []EpisodeRecord
+	for rows.Next() {
+		var r EpisodeRecord
+		var dateStr string
+		if err := rows.Scan(&r.EpisodeID, &r.SessionID, &r.Content, &r.Snippet, &r.FilesTouched, &r.Outcomes, &dateStr); err != nil {
+			return nil, fmt.Errorf("scanning search result: %w", err)
+		}
+		if d, err := time.Parse(time.RFC3339, dateStr); err == nil {
+			r.Date = d
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
