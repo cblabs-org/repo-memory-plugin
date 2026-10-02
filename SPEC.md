@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.9 (see Revision history) |
+| **Status** | Draft v0.10 (see Revision history) |
 | **Date** | 2026-09-30 |
 | **Scope** | Repository-level memory for coding agents. **Release 1: Antigravity. Release 2: Claude Code.** Text marked **[R2]** belongs to Release 2; Release 1 is built so that Release 2 is an adapter, not a rewrite (§18.6). |
 | **Implementation** | One Go binary, `repo-memory` (§18) |
@@ -129,7 +129,7 @@ Nothing runs continuously. Two paths start all work, and each has a strictly sep
 
 | | **Event path: hooks** | **Time path: scheduled tick** |
 |---|---|---|
-| Fired by | Agent, model, tool and session events in the harness | Cron, every minute (Antigravity plugin sidecar, `builtin: schedule`). **[R2]** On Claude Code, harness-run `async: true` hooks also start it (§12.2). Elsewhere, the OS scheduler running `repo-memory tick`. |
+| Fired by | Agent, model, tool and session events in the harness | Cron, every minute (Antigravity plugin sidecar, `builtin: schedule`, active while the IDE is running; see E6). In CLI-only environments, the OS scheduler running `repo-memory tick`. **[R2]** On Claude Code, harness-run `async: true` hooks also start it (§12.2). |
 | Knows | Exactly which conversation, transcript, workspace and step just changed | Discovers state from the spool, the job table, transcripts and git |
 | Constraint | Synchronous and blocking the agent loop, so it must finish in milliseconds | A time budget per tick (default 50 s); never overlaps itself (`tick.lock`) |
 | Does | Reads the index and `alerts/`; injects; writes spool files | All asynchronous work: ingest the spool, advance jobs, run LLM steps, sweep, calendar jobs |
@@ -150,10 +150,10 @@ The cost is that asynchronous LLM results arrive at tick granularity: up to abou
 
 | Work | Event path | Time path |
 |---|---|---|
-| Capture a finished session | `Stop`: write a spool entry and copy the transcript | Sweep catches sessions with no `Stop` (crash, kill, sessions from before install, subagents per E8); promotes idle sessions to processing |
+| Capture a finished session | `Stop`: write a spool entry and copy the transcript (fires for top-level and subagent sessions; E8) | Sweep catches sessions with no `Stop` (crash, kill, sessions from before install); promotes idle sessions to processing |
 | Process episodes (stages 1–6) | none | Jobs advanced each tick within budget |
 | System map | Loaded by the `AGENTS.md`/`CLAUDE.md` include | Regenerated when claims change |
-| Task brief | `PreInvocation` (`invocationNum == 0`) inline from the index. If lexical linking fails, spool a brief request. | Next tick runs it as a housekeeping run; the next `PreInvocation` delivers it. The agent can also call `memory.brief` synchronously. |
+| Task brief | Always-on map include; on-demand refresh via pull tool `memory.brief`. `PreInvocation` (`invocationNum == 0`) provides a ≤ 200-token pointer/summary nudge (E1). If lexical linking fails, spool a brief request. | Next tick runs it as a housekeeping run; the next `PreInvocation` delivers it. The agent can also call `memory.brief` synchronously. |
 | Touch, error delivery | `PreInvocation` inline | none |
 | Risky action | `PreToolUse` gate modes; `PreInvocation` injection (§7.5) | none |
 | Déjà-vu tier 1 (lexical) | `PreToolUse` on the concrete call; `PreInvocation` on the latest reasoning | none |
@@ -248,9 +248,9 @@ The Antigravity sizes above were measured on `transcript.jsonl`, which truncates
 |---|---|---|---|
 | Backfill: surviving transcripts (~14M raw tokens) plus the PA archive (~1.2M tokens) | ~4–6M tokens one-off, throttled by the daily budget over days | Payload | Compaction, triage, salience windows, packing episodes to the 60k payload cap |
 | Steady-state extraction, triage, reconcile and verify | ~100–200k tokens a day | Payload and overhead roughly equal | Pack a parent session with its subagents into one call; reconcile per subsystem batch |
-| Interactive small calls (LLM brief fallback, déjà-vu tier 2, pull-tool synthesis) | ~17–20k tokens **each**, ~85% of it overhead; 5–15 a day ≈ 100–300k tokens | **Fixed overhead** | Deterministic paths first; batch all pending tier-2 checks into one call per tick; cache briefs by entity set; per-day caps; E10 |
+| Interactive small calls (LLM brief fallback, déjà-vu tier 2, pull-tool synthesis) | ~17–20k tokens each on Gemini 3.8 Flash (~10k on Gemini 3.6 Flash; E10), ~85% of it overhead; 5–15 a day ≈ 75–250k tokens | **Fixed overhead** | Deterministic paths first; batch all pending tier-2 checks into one call per tick; use Gemini 3.6 Flash for simple stages (41% overhead reduction); per-day caps |
 
-The fixed overhead matters most for the small, interactive calls, not for extraction. E10 (reducing the overhead) and E11 (how usage counts against the quota) therefore gate how freely those features are enabled. The P1 exit reports cost per stage from the `agy` usage output.
+The fixed overhead matters most for the small, interactive calls, not for extraction. E10 confirmed that fixed overhead cannot be reduced with CLI flags and prefix caching is inactive across distinct calls (`cache_read_tokens = 0`), but model selection (Gemini 3.6 Flash) cuts overhead by 41%. E11 showed sequential calls hit zero rate limits due to the natural 10–14s wall-clock latency of `agy -p`.
 
 **Packing targets per call:**
 - triage: 20 episode synopses;
@@ -259,9 +259,9 @@ The fixed overhead matters most for the small, interactive calls, not for extrac
 - reconciliation: one subsystem's candidates.
 
 **Isolating housekeeping runs:**
-- They run with the working directory `<data-dir>/runs/<repo-id>/`, not the repository, so workspace rules and hooks don't load. They use a dedicated `--project` (E7).
+- They run with the working directory `<data-dir>/runs/<repo-id>/`, not the repository, so workspace rules and hooks don't load. (Note: `--project` is silently ignored by `agy -p`, so isolation relies strictly on the isolated working directory and environment variables; E7).
 - They set `REPO_MEMORY_HOUSEKEEPING=1`. Hooks inherit `agy`'s environment, so this plugin's own hooks exit immediately inside housekeeping runs.
-- Capture excludes them by project and workspace URI.
+- Capture excludes them by working directory URI and `REPO_MEMORY_HOUSEKEEPING=1`.
 - `agy --continue` must never resume one (E7).
 - **[R2]** On Claude Code, `claude -p --safe-mode --no-session-persistence` loads no plugins or hooks and writes no transcript, so there is nothing to exclude and recursion is impossible.
 
@@ -301,7 +301,7 @@ The plugin is installed globally, so its hooks fire in every workspace the harne
 
 | Component | Behaviour |
 |---|---|
-| Hooks | The first thing every hook does is map the workspace path to the registry (a small file, cached by modification time). If the workspace isn't enrolled, the hook returns the harness's no-op output at once: within 5 ms of process start. |
+| Hooks | The first thing every hook does is check the fast kill switch (`REPO_MEMORY_DISABLED=1`, ~2.8ms; E5), then map the workspace path against the registry. To meet the ≤ 5 ms non-enrolled target (unoptimized disk lookups cost ~55ms; E5), hooks check for a local `.memory/` directory marker or cached in-process registry before parsing disk state. Non-enrolled sessions return no-op output immediately. |
 | Capture sweep | Copies only transcripts whose workspace matches an enrolled root or one of its worktrees. Sessions in other workspaces are never read or copied. |
 | Tick | Processes enrolled repositories only. |
 | Worktrees | Share the repo ID; sessions are attributed by path prefix. |
@@ -334,7 +334,7 @@ Location: `<data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst`. Here `<
   "started": "2026-09-22T19:04:11Z", "ended": "…",
   "head_start": "<sha>", "head_end": "<sha>",
   "commits": ["<sha>", …],            // linked by the sweep from git log/reflog (§6.2)
-  "step_gaps": [[812, 820]],          // missing step indices, if any
+  "step_gaps": [[812, 820]],          // unwritten internal dispatch steps (standard; E12)
   "model": "…",
   "harness_version": "…",             // e.g. Claude Code 2.1.284; parser selection (§12.2)
   "started_by": "human" | "automation", // automation: agentapi reports, bug-fixer ticks,
@@ -371,6 +371,11 @@ Location: `<data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst`. Here `<
 | Subagent tree | Tool schemas and system prompts |
 | Text written to memory artefacts (§6.4), as `note` steps, up to 2k tokens per write | Edit bodies of every other file |
 | Who wrote each `user` step (`human` or `automation`) | **Memory content the session received** (hook injections, pull-tool results, reads of `.memory/**`): replaced by `exposure` steps listing claim IDs. The content itself is never kept. |
+
+**Transcript ordering and gaps (E12):**
+- Step indices in raw JSONL transcripts contain gaps (typically delta=2 after tool calls) representing internal dispatch steps that the harness never serializes. Parsers must not treat gaps as dropped data.
+- Parallel tool executions result in child tool results being appended before the parent `PLANNER_RESPONSE` is written to disk, producing non-monotonic step indices in raw JSONL. Compaction sorts steps by `step_index`.
+- Conversations reused across multiple prompts or reset sessions restart `step_index` at 0 while appending to the same file. Compaction splits episodes on prompt boundaries.
 
 **Author classification.** A `user` step is `human` only if a person typed it:
 
@@ -651,7 +656,7 @@ Capture uses both invocation paths (§4.1). The event path captures sessions pro
 **Event path (primary).** The `Stop` hook:
 
 1. writes `{harness, conversation_id, transcript_path, repo_root, branch, head}` to `spool/`;
-2. copies the primary transcript source (`transcript_full.jsonl`, or its chunks when the monolithic file is absent) into `queue/` **incrementally**: only bytes appended since the last copy. The byte offset and a hash of the already-copied prefix are kept in `state/`. If the prefix hash no longer matches (the harness rewrote the file, reportedly when the user branches or edits an earlier step), the file is copied in full once. Without this, a long session would re-copy multi-megabyte transcripts on every turn;
+2. copies the primary transcript source (`transcript_full.jsonl`, or its chunks when the monolithic file is absent) into `queue/` **incrementally**: only bytes appended since the last copy. The byte offset and a hash of the already-copied prefix are kept in `state/`. If the prefix hash no longer matches (verified append-only during normal flow via MD5; rewrites occur on branching or session resets; E12), the file is copied in full once. Without this, a long session would re-copy multi-megabyte transcripts on every turn;
 3. returns immediately.
 
 It never returns `"decision": "continue"`. `Stop` fires whenever the execution loop ends, so a conversation with several user turns produces several `Stop` events. Each one re-copies the transcript. Processing waits until the conversation has been idle for 15 minutes (checked by the next tick), so the same conversation isn't extracted repeatedly mid-flight.
@@ -676,18 +681,18 @@ It never returns `"decision": "continue"`. `Stop` fires whenever the execution l
 
 Chunk files are **byte slices, not line-aligned JSONL.** Every non-final chunk is exactly 102,400 bytes, and a record that straddles a boundary is split between two files. Chunks must be concatenated in lexical filename order into one byte stream (`io.MultiReader`) before splitting on newlines. Parsing chunk files individually fails on both halves of every boundary record, and counting their lines separately double-counts boundary records; that is what made an earlier line-count comparison look as if chunks held extra steps.
 
-The parser therefore reads one source, in the order above, and never merges sources. Step-index gaps (§6.2, transcript completeness) are present identically in both monolithic files, so they are recorded as gaps; their cause remains part of E12.
+The parser therefore reads one source, in the order above, and never merges sources. Step-index gaps are present identically in both monolithic files and reflect unwritten internal dispatch steps rather than missing transcript content (E12).
 
 It copies each changed transcript into the queue. Sessions are attributed to a repo via `conversation_summaries.db` `workspace_uris` for Antigravity and the project directory for Claude Code. This covers:
 
 - crashed or killed sessions where `Stop` never fired;
-- subagent sessions, if they don't fire their own `Stop` hooks (experiment E8);
+- subagent sessions, if their process is killed before `Stop` fires (subagents fire their own `Stop` hooks under normal completion; E8);
 - sessions from before installation (backfill of whatever still survives);
 - long sessions: a session still in progress is re-copied each tick, and processing waits until it has been idle for 15 minutes.
 
 **Commit linkage.** This happens in the tick, not in hooks. Commits made on the session's branch between session start and end are matched from `git log` and reflog, and confirmed against commit commands in the transcript. No hook records tool outcomes for capture: the transcript already has them. (`PostToolUse` is used only to detect git operations that trigger re-checks, §4.2.)
 
-**Recursion guard.** Housekeeping runs (§4.4) are excluded from capture entirely, identified by their dedicated project and working directory. Report conversations (`[repo-memory]` title prefix) are captured, but only the human's messages in them count as evidence. Other autonomous sessions, such as bug-fixer loop conversations and their trajectory reviews, are captured normally. They are a rich source of failure signatures.
+**Recursion guard.** Housekeeping runs (§4.4) are excluded from capture entirely, identified by their isolated working directory (`runs/<repo-id>/`) and `REPO_MEMORY_HOUSEKEEPING=1` (since `--project` is ignored by the CLI; E7). Report conversations (`[repo-memory]` title prefix) are captured, but only the human's messages in them count as evidence. Other autonomous sessions, such as bug-fixer loop conversations and their trajectory reviews, are captured normally. They are a rich source of failure signatures.
 
 **Transcript completeness.** Antigravity inserts `CHECKPOINT` steps into long transcripts. In a sample of 566 transcripts, 340 had checkpoints and 257 had small gaps in their step indices (at most a few dozen steps out of 1,000+). The sweep records the gaps in the episode header; it doesn't treat them as errors.
 
@@ -827,7 +832,7 @@ Auto-merged ops are still visible in the PR history, and any of them can be reve
 - **Small model** for triage, extract and behavioural verify. **Stronger model** for reconcile and view synthesis only.
 - **Executor:** housekeeping runs via `agy -p` on the user's Antigravity quota, or (**[R2]**) via `claude -p --safe-mode` on Claude Code-only machines (§4.4, D2). No API key and no batch API. The cost model is in §4.4.1.
 - **Model per stage**, chosen in `config.yaml` from `agy models`. Defaults:
-  - `gemini-3.8-flash-low` for triage and verify;
+  - `gemini-3.6-flash-low` (or `gemini-3.8-flash-low`) for triage and verify (Gemini 3.6 Flash incurs 41% less fixed overhead: ~9.9k vs ~16.8k tokens; E10);
   - `gemini-3.8-flash-medium` for extraction;
   - `gemini-3.1-pro-low` for reconcile and view synthesis.
 - **Every LLM stage is a pure function:** deterministic context assembly, one `agy -p` call with `--json-schema`, then the result is written. No tool use inside housekeeping runs. That makes stages batchable, retryable, idempotent and replayable during re-projection.
@@ -845,7 +850,7 @@ Auto-merged ops are still visible in the PR history, and any of them can be reve
 | Channel | Budget | Dedup |
 |---|---|---|
 | Always-on (system map) | ≤ 2k tokens | n/a |
-| Task brief | ≤ 8k tokens | once per session |
+| Task brief | ≤ 8k tokens (pull via `memory.brief` / MAP include; ≤ 200 tokens if nudged via `ephemeralMessage`; E1) | once per session |
 | File-touch injection | ≤ 600 tokens per event | per claim per session |
 | Error injection | ≤ 600 tokens per event | per signature per session |
 | Risky-action injection | ≤ 800 tokens per event | per claim per session |
@@ -869,12 +874,12 @@ Before injecting, the hook checks that each claim's anchored files still exist. 
 ### 7.2 Task start
 
 1. Always-on: `MAP.md`, loaded by the harness's own instruction file. The repo's root `AGENTS.md` (Antigravity) and `CLAUDE.md` (Claude Code) each include it: `@[memory map](.memory/views/MAP.md)` and `@.memory/views/MAP.md` respectively. This costs ~2k of the 20k rules budget and is cached with the system prompt. Fallback, if include semantics don't work as expected (P0 experiment E2): inject at `PreInvocation` with `invocationNum == 0`.
-2. At the first model invocation, the delivery hook reads the task text (first user message) and branch from the transcript.
+2. At the first model invocation of a task (`invocationNum == 0`, which fires on every prompt; E1), the delivery hook reads the task text and branch from the transcript.
 3. The hook links the task to entities using the local index:
    - lexical match on entity names, paths, symbols and error strings;
    - plus files already open or mentioned;
-   - if lexical matching yields nothing, the hook injects the map-level summary with a one-line pointer to the claim indexes (§5.5), so the agent can choose the relevant subsystems itself at once. It also spools a brief request. The next tick prepares the brief in a housekeeping run, and the next `PreInvocation` picks it up from `alerts/` (typically within ~75 s). If it needs the brief sooner, the agent can call `memory.brief` synchronously (~13 s). An LLM is never called inside a hook.
-4. It renders the **task brief**, in priority order:
+   - if lexical matching yields nothing, the hook injects a concise pointer (≤ 200 tokens via `ephemeralMessage`) to the relevant claim indexes (§5.5). Because `ephemeralMessage` context drops after one turn (E1), full task briefs are delivered via `memory.brief` pull or MAP views rather than massive ephemeral payloads.
+4. When generated, the **task brief** prioritizes:
    1. invariants of the involved subsystems;
    2. open issues and in-flight work;
    3. ruled-out approaches;
@@ -913,9 +918,11 @@ Default risky actions (configurable):
 | `next-invocation` | Allow the call; queue the claims for the next `PreInvocation`. No extra round-trip, but delivery comes after the action. | sdkconfig and dependency edits |
 | `anticipate` | Inject at `PreInvocation` when the transcript suggests the action is imminent (e.g. a successful build in a session that has flashed before). | Optional addition to any mode |
 
-`gate-once` costs a model round-trip and has two failure modes, both tested in E9:
-- a denial in the middle of a batch of parallel tool calls can disrupt the batch;
-- a model may read a hook denial as a policy block and stop to ask the user instead of re-issuing.
+`gate-once` costs a model round-trip. E9 validated its mechanics and resolved its failure modes:
+- **Parallel tool call isolation:** Denying one tool call in a parallel batch does *not* disrupt the other calls; each call is evaluated and returned independently (E9).
+- **Reason wording sensitivity:** Advisory wording ("This action failed previously... If your approach differs, re-issue the call") encourages 2–3 retries with command variations. Policy wording ("Action not permitted by repository policy") causes immediate pivoting to other tools or abandonment. `gate-once` uses advisory wording; hard blocks use policy wording.
+- **`overwrite` capability:** PreToolUse can return `{"decision": "allow", "overwrite": {...}}` to non-destructively rewrite command arguments with an explicit harness warning notice (E9).
+- **Strict contract:** `PreToolUse` hooks must explicitly return `{"decision": "allow"}`. An empty `{}` response or hook process crash (exit != 0) is treated by the harness as an implicit deny (E8, E9).
 
 It is therefore reserved for actions where blocking before execution is mandatory. Warnings about builds and edits are delivered at `PreInvocation` when the related files are touched, which normally precedes the build by at least one turn.
 
@@ -968,7 +975,7 @@ Antigravity hooks run synchronously and block the agent loop, and `PreInvocation
 
 - **Delivery hook fast path.** Check the conversation's `alerts/` directory and read the transcript from the last cursor (tail only). If nothing new matches, exit. Target: p95 ≤ 60 ms, p50 ≤ 30 ms.
 - **Delivery hook with injection.** Local SQLite read-only queries plus formatting. Target: p95 ≤ 150 ms.
-- **Implementation.** Hooks run the compiled Go binary (§18), so start-up costs milliseconds. E5 confirms the fast-path budget on macOS and Windows.
+- **Implementation.** Hooks run the compiled Go binary (§18), starting in ~2.5ms. Enrolled repos easily meet targets (p50 ~3ms, p95 ~6.1ms; E5). Non-enrolled repos require an in-memory or directory marker cache to avoid the ~57ms disk scan penalty. E5 confirmed macOS Apple Silicon; Windows to be verified.
 - **Measurement.** Cumulative hook time per session is recorded (§10.4) and reported against a session budget (default ≤ 2% of wall-clock time).
 - **Failure behaviour.** No LLM calls and no network in hooks. If the index is missing or locked, the hook exits with an empty injection. Memory must never block or break work.
 
@@ -977,10 +984,10 @@ Antigravity hooks run synchronously and block the agent loop, and `PreInvocation
 | Level | Condition | What still works |
 |---|---|---|
 | **Full** | Sidecars running, index current | Everything |
-| **No ticks** | Scheduled sidecar not running (Antigravity closed, sidecars disabled, machine without Antigravity and no OS schedule) | Capture (`Stop` copies transcripts), delivery from the last index, déjà-vu tier 1, pull tools (`ask`/`brief` synthesis still runs synchronously). Spooled work waits for the next tick. |
+| **No ticks** | Scheduled sidecar not running (CLI-only session, Antigravity closed, sidecars disabled, or machine without Antigravity and no OS schedule; E6) | Capture (`Stop` copies transcripts), delivery from the last index, déjà-vu tier 1, pull tools (`ask`/`brief` synthesis still runs synchronously). Spooled work waits for the next tick. |
 | **No housekeeping** | `agy` missing, signed out, or quota exhausted | Capture, delivery and pull tools that don't need synthesis. LLM jobs stay queued; the circuit breaker stops retries until `agy` works again. |
 | **No index** | Index missing or corrupt | Map via the `AGENTS.md`/`CLAUDE.md` include; the agent can walk MAP → claim index → claim files (§5.5); pull tools fall back to text search over `.memory/views/` and claim files; hooks no-op. The index can be rebuilt with `repo-memory reindex`. |
-| **Native floor** | No hooks and no tick (e.g. a harness where the plugin's hooks are disabled) | The always-on map include; generated path-scoped subsystem rules (`.claude/rules/` with `paths:` on Claude Code; `model_decision` rules on Antigravity, per E4); MCP pull tools over the last index |
+| **Native floor** | No hooks and no tick (e.g. a harness where the plugin's hooks are disabled) | The always-on map include; generated path-scoped subsystem rules (`.claude/rules/` with `paths:` on Claude Code; `trigger: model_decision` rules on Antigravity pulling on match via `view_file`, per E4); MCP pull tools over the last index |
 | **Plugin off** | Plugin disabled or not installed (e.g. a collaborator) | `.memory/views/*.md` and claim files remain readable Markdown in the repo; the map include still loads if present, and any agent can follow it to the claim indexes |
 
 ---
@@ -1161,8 +1168,8 @@ Verified against Antigravity's built-in customization docs (`builtin/skills/agy-
 | Hook | Used for | Returns |
 |---|---|---|
 | `Stop` | Capture: spool entry and transcript copy | No `decision`, so the agent is never forced to continue |
-| `PreInvocation` (every model call) | `invocationNum == 0`: task brief (inline, or a spooled request). Every call: read `transcriptPath` from the last cursor and `alerts/`; touch, error and déjà-vu tier-1 delivery; spool tier-2 requests. Exit immediately if `REPO_MEMORY_HOUSEKEEPING` is set. Must meet §7.8. | `injectSteps` → `ephemeralMessage` when something is due; otherwise `{}` |
-| `PreToolUse` (matcher: `run_command\|write_to_file\|replace_file_content\|call_mcp_tool`) | Risky-action gates and déjà-vu tier 1 on the concrete proposed call (§7.5, §7.6) | `allow`, or `deny`/`ask` with a `reason` for `gate-once`/`ask` modes. Never `overwrite`. |
+| `PreInvocation` (every model call) | `invocationNum == 0`: task brief nudge (≤ 200 tokens; E1). Every call: read `transcriptPath` from the last cursor and `alerts/`; touch, error and déjà-vu tier-1 delivery; spool tier-2 requests. Exit immediately if `REPO_MEMORY_HOUSEKEEPING` is set. Must meet §7.8. | `{"injectSteps": [{"ephemeralMessage": "..."}]}` when due; otherwise `{}`. Malformed payloads silently ignored (E1). |
+| `PreToolUse` (matcher: `run_command\|write_to_file\|replace_file_content\|call_mcp_tool`) | Risky-action gates and déjà-vu tier 1 on the concrete proposed call (§7.5, §7.6) | MUST return `{"decision": "allow"}` to proceed (`{}` acts as implicit deny; E8). Returns `deny`/`ask` with `reason`, or `overwrite` for argument steering (E9). |
 | `PostToolUse` (matcher: `run_command`) | Detect git merge/checkout/pull/rebase or dependency updates by reading the transcript step at `stepIdx`; spool a re-check. The payload carries no tool call, so the handler confirms the tool from the transcript step and tolerates being called for other tools. | `{}` |
 
 `PostInvocation` is not used.
@@ -1171,7 +1178,7 @@ Verified against Antigravity's built-in customization docs (`builtin/skills/agy-
 
 | Sidecar | Schedule | Runs |
 |---|---|---|
-| `repo-memory/tick` | `builtin: schedule`, `* * * * *`, `restart_policy: "always"`, with `display_name`, `description` and `agent_permissions` (`access_grants` and `workspace_uris` for the report conversations it starts) | `repo-memory tick` (§4.3, §12.3) |
+| `repo-memory/tick` | `builtin: schedule`, `* * * * *`, `restart_policy: "always"`, with `display_name`, `description` and `agent_permissions` | `repo-memory tick` (§4.3, §12.3). Runs only while Antigravity IDE is open (child of `language_server multicall schedule`; E6). Fixed jitter ~592ms (+26s). Logs grow ~14MB/mo; requires rotation. |
 
 The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM work only when there is something to process. Sidecars are disabled by default. Per Antigravity's own guidance, a plugin must never enable a sidecar itself: `install` tells the user to enable it in the **Automations** dashboard. Scheduled runs inherit global permissions and auto-deny anything not granted, so the report conversations' grants are listed in `agent_permissions` and checked with a test run. Only one sidecar is needed. The separate watcher tick from v0.2 is folded into it. Report conversations are started with `agentapi`, which needs the sidecar environment (`projectId`).
 
@@ -1181,15 +1188,15 @@ The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM
 |---|---|---|
 | Pull tools | Stateless stdio MCP server in plugin `mcp_config.json`, reading the SQLite index | Tools are listed in the system prompt of every session; schema tokens are measured (§10.4). `memory.ask` and `memory.brief` may make one synchronous housekeeping run (~13 s). |
 | Always-on map | `@[…](.memory/views/MAP.md)` include in the repo's root `AGENTS.md` | Fallback: `PreInvocation` at `invocationNum == 0`. |
-| Native alternative | `model_decision` rules (description-led, loaded on demand) | The built-in docs document `always_on` and `model_decision` only; `glob` activation is undocumented there and reportedly deprecated, so it isn't used (E4). |
+| Native alternative | `model_decision` rules (description-led, loaded on demand) | Requires frontmatter `trigger: model_decision` (`activation:` is silently ignored; E4). Mechanism is pull: description is exposed in system prompt; model calls `view_file` on match. |
 
 Plugin layout (installed globally; per-repo data lives in `.memory/`):
 
 ```
 ~/.gemini/config/plugins/repo-memory/
 ├── plugin.json
-├── hooks.json                   # generated by `repo-memory install`: Stop, PreInvocation,
-│                                #   PreToolUse, PostToolUse → `<bin> hook antigravity <event>`
+├── hooks.json                   # generated by `repo-memory install` with ABSOLUTE paths (paths resolve
+│                                #   relative to hooks.json dir; E9) → `<bin> hook antigravity <event>`
 ├── mcp_config.json              # generated: stdio MCP server → `<bin> mcp`
 ├── sidecars/
 │   └── tick/sidecar.json        # generated: builtin: schedule → `<bin> tick`
@@ -1205,18 +1212,18 @@ These unknowns must be settled before P2 builds on them:
 
 | # | Question | Method |
 |---|---|---|
-| E1 | Does an `ephemeralMessage` persist in the model's context on later turns, and does it appear in `transcript.jsonl`? | Inject a unique marker at invocation N; ask the model about it at N+5; inspect the transcript. Dedupe via the delivery ledger regardless of the answer. |
-| E2 | Do `@[…](path)` includes in `GEMINI.md`/`AGENTS.md` resolve relative to the including file, and are they re-read when the target changes? (Known: the 24 KB per-file cap applies after expansion, within the 20k-token always-on budget.) | Include `MAP.md`, change it, start a new session. |
-| E3 | Is `transcript.jsonl` current at the moment `PreInvocation` fires? | Compare the last step index in the file with `initialNumSteps` and the hook's view. |
-| E4 | ~~Are Glob and Model Decision activations supported?~~ **Answered from the built-in docs:** `always_on` and `model_decision` are documented; `glob` isn't, and is reportedly deprecated. The native floor uses `model_decision` rules only. Remaining check: a `model_decision` rule loads when its description matches the task. | Minimal `model_decision` rule. |
-| E5 | Delivery hook latency of the Go binary on macOS and Windows (fast path and injection path) | Benchmark the fast path and the injection path. |
-| E6 | Do scheduled sidecars tick while only the Antigravity CLI is open? What happens on sleep and wake? What happens when a tick is still running when the next is due? (Known from the built-in automation guidance: `sidecar.json` fields, `restart_policy`, `agent_permissions`, user enablement via the dashboard.) | Observe `sidecar_data/.../logs`. The tick takes `tick.lock`, so overlapping ticks exit immediately. |
-| E7 | Are housekeeping runs isolated? Does `--project` place them in a separate project? Can `agy --continue` or the CLI's history ever resume or surface them? Do they ever appear in the app/IDE store (e.g. through the shared history)? | Run tagged housekeeping calls, then inspect both `conversation_summaries.db` stores and try `agy -c` from the repo directory. |
-| E8 | Do subagent conversations (e.g. PA workers started with `invoke_subagent`) fire their own `PreInvocation`, `PreToolUse` and `Stop` hooks, with their own `conversationId` and `transcriptPath`? | Spawn a subagent with logging hooks enabled. If not, worker sessions are captured by the sweep only, and workers get their brief through the WORKORDER (§13) rather than through hooks. |
-| E9 | How does `PreToolUse` `deny` + `reason` read to the agent in practice? Does it reliably re-issue the call after a `gate-once` denial? How does a denial behave inside a batch of parallel tool calls? Which reason wording avoids being read as a policy block? Would `overwrite` (whose result is prefixed with a rewrite notice) be a usable non-blocking alternative for non-destructive commands? | Scripted sessions against a test gate; tune the reason wording. |
-| E10 | Can the ~17k-token fixed overhead of a housekeeping run be reduced (a minimal `--agent` definition, fewer global plugins, no skills)? Does repeated use of the same prefix produce cache reads? | Measure `usage` from `agy -p --output-format json` across variants. |
-| E11 | How do housekeeping runs count against the Antigravity subscription quota, and what are the rate limits per model? | Track usage and failures over the first two weeks of P1; set the daily budgets from the results. |
-| E12 | ~~Antigravity transcript file set~~ **Answered (2026-10-01, issue #1 follow-up, verified on all 537 conversations):** `chunks/` are fixed 100 KiB byte slices of the monolithic files, and `transcript_full.jsonl` matches `transcript.jsonl` line for line with nothing truncated (§6.2). Remaining: confirm append-only growth during normal turns and when `transcript_full.jsonl` is rewritten (reported: only when the user branches or edits an earlier step); explain the step-index gaps, which are present identically in both files. | Watch one live conversation grow; branch or edit an earlier step and diff the file. |
+| E1 | **Resolved:** `ephemeralMessage` delivers via `{"injectSteps":[{"ephemeralMessage":"..."}]}` but is per-invocation transient only; `invocationNum` resets to 0 per prompt; malformed format silently ignored. Capped at ≤ 200 tokens. | Verified via marker injection. Follow-up E1b to test `userMessage`. |
+| E2 | **Resolved:** `@[label](path)` inlines content relative to `GEMINI.md` (repo root) into `user_rules`; refreshes per new session; missing targets silently ignored; 24 KB / 20k token caps confirmed. | Verified in live session. |
+| E3 | **Resolved:** Zero lag at `PreInvocation` (`initialNumSteps` matches line count) and `PreToolUse` (reasoning flushed before hook fires); payload points to `transcript_full.jsonl`. | Verified with logging hooks. |
+| E4 | **Resolved:** Frontmatter MUST use `trigger: model_decision` (`activation:` is silently ignored). Mechanism is pull: description placed as conditional pointer; model reads rule via `view_file` on match. | Verified with positive and negative prompt tests. |
+| E5 | **Resolved:** Enrolled repos pass (p50 ~3ms, p95 ~6.1ms ≤ 60ms) and kill switch is fast (~2.8ms). Non-enrolled repos take ~57ms (failing ≤ 5ms target); requires cached registry or directory marker. | Benchmarked across 20 iterations. |
+| E6 | **Resolved:** Sidecars are IDE-only (child of IDE language server; CLI does not tick). 60s ticking is rock-solid in IDE; fixed jitter ~592ms (+26s); log grows ~14MB/mo; overlap requires `tick.lock`. | Observed over 119 ticks / 2 hours. |
+| E7 | **Resolved:** `--project` is silently ignored by `agy -p` (all CLI calls share `default-cli-project`). CLI and IDE DBs are separate. Isolation relies on dedicated run dir and `REPO_MEMORY_HOUSEKEEPING=1`. | Tested with tagged calls and DB inspection. |
+| E8 | **Resolved:** Subagents fire ALL 4 lifecycle hooks with unique `conversationId` and `transcriptPath`. Returning `{}` from `PreToolUse` is an implicit deny; must return `{"decision": "allow"}`. | Verified in multi-agent test session. |
+| E9 | **Resolved:** Deny+reason delivers verbatim; parallel tool call denials are isolated; advisory wording prompts retries vs policy wording prompts pivot; `overwrite` allows argument steering; exit != 0 is implicit deny. | Scripted test sessions with parallel and overwrite hooks. |
+| E10 | **Resolved:** Overhead irreducible via CLI flags (~16.8k tokens for Gemini 3.8 Flash), but Gemini 3.6 Flash uses ~9.9k tokens (41% lower). No prefix caching across fresh CLI calls. 10–14s wall time. | Measured across 5 configurations. |
+| E11 | **Resolved (preliminary):** 0 rate limits across 25+ rapid calls in 15m; CLI wall-clock latency acts as natural rate limiter; Pro-tier OAuth subscription confirmed. Full tracking continues in PR-05b. | Rapid sequential calls. |
+| E12 | **Resolved:** Monolithic `transcript_full.jsonl` is append-only during normal flow (verified by MD5 prefix hash). Step-index gaps are unwritten internal dispatch steps. Parallel tools produce out-of-order JSONL records. | MD5 prefix tracking and conversation analysis. |
 
 ### 12.2 Claude Code [R2]
 
@@ -1306,7 +1313,7 @@ Claude Code's auto memory is on by default. For esp32-app-foundation it already 
 | PA hand-writes "Framework Facts Workers Need" per project | WORKORDERs embed or reference a generated **task brief**. |
 | PA maintains MEMORY.md, PROJECT_INDEX.md, MODULE_INDEX.md | Coordination state (active projects) stays; knowledge indexes are replaced by generated views. |
 | Abandoned work orders lose dead-ends | Branch-abandonment promotion (§6.7) keeps `ruled-out` claims. |
-| Workers learn only what the WORKORDER tells them | Workers get the generated brief in the WORKORDER in every case. On Claude Code, `SubagentStart` also injects it, and hooks inside subagents give workers touch, error, risky-action and déjà-vu delivery. On Antigravity the same depends on E8. |
+| Workers learn only what the WORKORDER tells them | Workers get the generated brief in the WORKORDER in every case. On both Claude Code and Antigravity, subagents fire lifecycle hooks with dedicated conversation IDs and transcript paths, enabling dynamic touch, error, risky-action and déjà-vu delivery inside workers (E8). |
 
 ---
 
@@ -1368,17 +1375,17 @@ Release 2 can start once P2 is complete: the normalised event model and capabili
 | Q2 | Narrative quality of generated subsystem pages | Check against the existing design spec sections in P1. |
 | Q3 | Where episodes live if more developers join | Default private. An opt-in shared episode store (scrubbed) is possible later. The `team` review profile covers the shared lane. |
 | Q4 | ~~Antigravity raw transcript format~~ | **Resolved.** `brain/<id>/.system_generated/logs/transcript.jsonl` (§6.2). |
-| Q5 | `ephemeralMessage` / `additionalContext` persistence semantics | E1 (Antigravity), C2 (Claude Code). Dedupe via the ledger regardless. |
+| Q5 | `ephemeralMessage` persistence semantics | **Resolved (Antigravity):** Per-invocation only; drops out of context on next turn; `invocationNum` resets per prompt (E1). Capped at ≤ 200 tokens. Follow-up E1b for `userMessage`. |
 | Q6 | Symbol fingerprinting for C/C++ with macros and conditional compilation | Release 1 stays cgo-free: a lightweight brace-aware scanner, optional universal-ctags if installed, and file-window hashing as fallback (§18.4). Validate on the esp32 codebase in P1; adopt tree-sitter (cgo) only if anchor quality demands it. |
 | Q7 | Cost of the pipeline vs. current PA distillation | Cost model in §4.4.1; B4 broken down by PA activity tier. |
 | Q8 | Memory-PR review fatigue | Two-lane publish and review profiles (§6.8). Review load is measured (§10.4). |
 | Q9 | Claims that span repositories (framework vs. consumer apps) | Out of scope for v1. Consumer repos can import framework views read-only later. |
 | Q10 | ~~LLM backend for the pipeline~~ | **Resolved.** Subscription CLIs only: `agy -p` by default, `claude -p --safe-mode` on Claude Code-only machines; `agentapi` and Desktop scheduled tasks only for IDE-visible reports (§4.4, D2). |
-| Q11 | Cumulative hook latency, especially on Windows | Budgets in §7.8, measured per session (E5). The compiled Go binary (D1) removes interpreter start-up. |
-| Q12 | Scheduled sidecars only tick while Antigravity is running | Claude Code async-hook ticks and the optional OS scheduler cover other machines. Without any tick, only the backstop and calendar jobs are lost (§7.9). |
+| Q11 | Cumulative hook latency | **Resolved (macOS):** Enrolled repos pass easily (p50 ~3ms, p95 ~6.1ms); kill switch takes ~2.8ms. Non-enrolled repos require in-memory/marker caching to avoid ~57ms disk scan (E5). Windows to be measured in PR-07. |
+| Q12 | Scheduled sidecars only tick while Antigravity is running | **Resolved:** Sidecars are IDE-only child processes of `language_server` (E6). CLI-only environments use the OS scheduler (`repo-memory schedule install`). |
 | Q13 | Claim file count at scale | Hundreds from backfill, low thousands after years (§5.3). Month sharding keeps directories browsable. |
-| Q14 | Fixed overhead of ~17k input tokens and ~13 s per housekeeping run | Dominates the small interactive calls rather than extraction (§4.4.1). Mitigated by packing, batching tier-2 checks per tick, caching briefs, per-day caps, E10 and C1; quota impact from E11. |
-| Q15 | Hook coverage of subagents | **Claude Code: resolved** (`SubagentStart`, hooks carry `agent_id`). Antigravity: E8. The WORKORDER brief is the fallback. |
+| Q14 | Fixed overhead of ~17k input tokens and ~13 s per housekeeping run | **Resolved:** Irreducible via CLI flags, but Gemini 3.6 Flash reduces overhead by 41% to ~9.9k tokens (E10). Natural 10–14s CLI latency prevents rate limits (E11). Batching per tick is mandatory. |
+| Q15 | Hook coverage of subagents | **Resolved on both harnesses:** Claude Code (`SubagentStart`, `agent_id`) and Antigravity (all 4 lifecycle hooks fire with dedicated `conversationId` and `transcriptPath`; E8). |
 | Q16 | Concurrent sessions and overlapping ticks | Uniquely named spool files (write then rename); only the tick writes the job table; `tick.lock` prevents overlap from any trigger (sidecar, async hook, OS scheduler); job leases recover after crashes. |
 | Q17 | Report noise in the IDE | Reports only start when there is something to review. Default: at most one review report a week plus one-off milestone notices, with a cap on open report conversations. |
 | Q18 | Claude Code transcript format changes between releases | Versioned tolerant parser, fixture corpus, canary on update, `Stop` side-log (§12.2.1). |
@@ -1387,7 +1394,7 @@ Release 2 can start once P2 is complete: the normalised event model and capabili
 | Q21 | Overlap with Claude Code auto memory | Import as evidence; steer via `CLAUDE.md`; never write into it (§12.2.2). |
 | Q22 | Work status goes stale on events rather than code changes (e.g. the June OTA record, A.1) | `closes_when` on every `open-issue`, evaluated by the tick; `resolved` status; `unknown` closure means pull-only (§5.3.1, §8). |
 | Q23 | Does the agent use the claim index when automatic linking fails? | Reads of `.memory/views/index/` are exposures, so they're measured (§10.4). If agents ignore the pointer, the spooled brief remains the fallback. |
-| Q24 | ~~Which repositories does a global plugin act on?~~ | **Resolved.** Only explicitly enrolled repositories (§4.6); hooks no-op within 5 ms elsewhere; kill switch for the whole machine or one repository. |
+| Q24 | ~~Which repositories does a global plugin act on?~~ | **Resolved.** Only explicitly enrolled repositories (§4.6); kill switch exits in ~2.8ms; fast marker/cache check needed to hit ≤ 5ms on non-enrolled paths (E5). |
 
 ---
 
@@ -1508,9 +1515,10 @@ All dependencies are pure Go; there is no cgo in Release 1.
 ### 18.5 Hooks in Go
 
 - **Invocation.** `hooks.json` entries call `<absolute path>/repo-memory hook antigravity <Event>`, written by `install`, so they work under `sh -c` and `cmd /c` without `PATH`.
+- **Path resolution:** Paths in `hooks.json` resolve relative to the directory containing `hooks.json` (i.e. `.agents/`), not the repo root. All generated hook entries must use absolute paths (E9).
 - **Fast path.** The hook reads a per-conversation cursor (a byte offset into the transcript), reads only new bytes, checks `alerts/`, and opens SQLite read-only only when there is something to look up.
-- **Budget.** p95 ≤ 60 ms on the fast path (§7.8), confirmed by E5 on macOS and Windows.
-- **Failure behaviour.** On any error, the hook returns the harness's no-op output and logs the error. It never blocks the agent.
+- **Budget.** p95 ≤ 60 ms on the fast path (§7.8), confirmed for enrolled repos (p95 ~6.1ms; E5). To satisfy the ≤ 5ms target on non-enrolled repos, hooks check for local repository markers before parsing disk state.
+- **Failure behaviour.** On any error, the hook logs the error and returns the harness's permissive output (`{"decision": "allow"}` for `PreToolUse`, `{}` for others). Note that returning `{}` or exiting non-zero from `PreToolUse` is treated by the harness as an implicit deny (E8, E9).
 
 ### 18.6 Portability rules for Release 1
 
