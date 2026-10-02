@@ -1,0 +1,34 @@
+# PR-02b: Capture Runtime
+
+> **Programme:** repo-memory
+> **PR:** pr-02b-capture-runtime
+> **Base branch:** `main`
+> **Status:** In Progress
+> **SPEC:** [SPEC.md](../../../SPEC.md) v0.10
+> **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
+
+## Objective
+
+Every Antigravity session in an enrolled repository produces an episode within minutes of going idle. The `Stop` hook copies transcripts incrementally; the tick sidecar ingests the spool, runs the job table, sweeps, and builds episodes with PR-02a. This repository is enrolled as the dogfood repository.
+
+## Work Order Ledger
+
+| # | WO | Branch | Status | Complexity | Worker |
+|---|---|---|---|---|---|
+| 1 | `wo1-spool-incremental-copy` | `pr-02b-capture-runtime/wo1-spool-incremental-copy` | ☐ Pending | standard | — |
+| 2 | `wo2-stop-hook` | `pr-02b-capture-runtime/wo2-stop-hook` | ☐ Pending | standard | — |
+| 3 | `wo3-job-table` | `pr-02b-capture-runtime/wo3-job-table` | ☐ Pending | standard | — |
+| 4 | `wo4-tick-core` | `pr-02b-capture-runtime/wo4-tick-core` | ☐ Pending | architect | — |
+| 5 | `wo5-session-attribution` | `pr-02b-capture-runtime/wo5-session-attribution` | ☐ Pending | standard | — |
+| 6 | `wo6-sidecar-packaging` | `pr-02b-capture-runtime/wo6-sidecar-packaging` | ☐ Pending | mechanical | — |
+| 7 | `wo7-claude-raw-copy` | `pr-02b-capture-runtime/wo7-claude-raw-copy` | ☐ Pending | mechanical | — |
+
+## Exit Criteria
+- Every new Antigravity session in an enrolled repository produces an episode within minutes of going idle
+- Sessions from non-enrolled workspaces are never read or copied
+- Long sessions don't re-copy whole transcripts on each turn (incremental copy verified)
+- Subagents linked to parents; app/CLI duplicates removed; commits linked
+- `tick.lock` verified on macOS and Windows
+- **repo-memory-plugin enrolled as the dogfood repository**
+
+## Session Log
