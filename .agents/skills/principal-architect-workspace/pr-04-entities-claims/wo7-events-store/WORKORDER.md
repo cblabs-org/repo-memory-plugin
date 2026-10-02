@@ -35,3 +35,13 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 ## Completion Report
 <!-- Written by the worker at task completion -->
+
+### Summary of Work
+- Created `internal/core/events/models.go` defining `ReviewEvent` and `AnswerEvent` schemas.
+- Created `internal/core/events/store.go` implementing `WriteReview`, `ReadReviews`, `WriteAnswer`, `ReadAnswers`, `GetReviewByHash`, and `GetAnswerByHash`.
+- Implemented content hashing mechanism to ensure duplicate events are not written (returning `ErrAlreadyExists`).
+- Documented replay order constraints for PR-10 in `internal/core/events/doc.go`.
+- Validated with unit tests in `internal/core/events/store_test.go` and verified successful compilation of `./cmd/repo-memory`.
+
+### Issues Surfaced
+- None discovered outside the boundary box.
