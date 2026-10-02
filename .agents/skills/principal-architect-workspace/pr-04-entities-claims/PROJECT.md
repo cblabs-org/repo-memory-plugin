@@ -19,7 +19,7 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 | 2 | `wo2-entity-extractor` | `pr-04-entities-claims/wo2-entity-extractor` | ☑ Complete | architect | — |
 | 3 | `wo3-claim-schema` | `pr-04-entities-claims/wo3-claim-schema` | ☑ Complete | standard | — |
 | 4 | `wo4-claim-store` | `pr-04-entities-claims/wo4-claim-store` | ☑ Complete | standard | — |
-| 5 | `wo5-sqlite-index` | `pr-04-entities-claims/wo5-sqlite-index` | ☐ Pending | standard | — |
+| 5 | `wo5-sqlite-index` | `pr-04-entities-claims/wo5-sqlite-index` | ☑ Complete | standard | — |
 | 6 | `wo6-subsystem-config` | `pr-04-entities-claims/wo6-subsystem-config` | ☐ Pending | standard | — |
 | 7 | `wo7-events-store` | `pr-04-entities-claims/wo7-events-store` | ☐ Pending | standard | — |
 
@@ -38,3 +38,4 @@ Build the data model layer: entity extraction from the repository (no LLM), the 
 - **WO2**: No-LLM entity extractor implemented successfully (file tree walk, config parsing, C++ symbol scanner, rule-based extraction).
 - **WO3**: Claim schema, ULID generation, and YAML+Markdown parser/writer implemented.
 - **WO4**: Claim store, month-sharded CRUD operations, and inverse relation index implemented.
+- **WO5**: SQLite index schema, WAL concurrency, write transactions, and the rebuild mechanism added. Added `reindex` CLI command.
