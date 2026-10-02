@@ -4,12 +4,12 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **5/13 complete** (PR-01, PR-01b, PR-02a, PR-02b, PR-03). PR-04 in progress. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **6/13 complete** (PR-01 through PR-04). PR-05a in progress. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer built across 7 WOs. |
+| pr-05a-pipeline-code | WO1/7 — In Progress | Executors, Triage, Extract, Reconcile, Verify, Publish | [PROJECT.md](../pr-05a-pipeline-code/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
