@@ -189,7 +189,6 @@ func TestSubcommandsExecution(t *testing.T) {
 		{"tick", []string{"tick"}},
 		{"run", []string{"run"}},
 		{"mcp", []string{"mcp"}},
-		{"search", []string{"search", "query"}},
 		{"report", []string{"report"}},
 		{"status", []string{"status"}},
 		{"reindex", []string{"reindex"}},

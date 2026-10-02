@@ -15,7 +15,7 @@ Make captured history searchable before the knowledge pipeline exists, and impor
 
 | # | WO | Branch | Status | Complexity | Worker |
 |---|---|---|---|---|---|
-| 1 | `wo1-fts-index` | `pr-03-episode-search/wo1-fts-index` | ☐ Pending | standard | — |
+| 1 | `wo1-fts-index` | `pr-03-episode-search/wo1-fts-index` | ☑ Complete | standard | — |
 | 2 | `wo2-search-cli` | `pr-03-episode-search/wo2-search-cli` | ☐ Pending | standard | — |
 | 3 | `wo3-pa-import` | `pr-03-episode-search/wo3-pa-import` | ☐ Pending | standard | — |
 | 4 | `wo4-ask-fallback` | `pr-03-episode-search/wo4-ask-fallback` | ☐ Pending | standard | — |
@@ -32,3 +32,4 @@ Make captured history searchable before the knowledge pipeline exists, and impor
 ## Session Log
 
 - **2026-10-02**: Human approved PR-03 Work Order decomposition (WO1-WO6). Initiating WO1.
+- **2026-10-02**: WO1 completed. SQLite FTS5 index for episodes implemented (`internal/core/index/index.go`) with WAL and read-only readers, along with store population logic (`internal/core/index/populate.go`). Initiating WO2.
