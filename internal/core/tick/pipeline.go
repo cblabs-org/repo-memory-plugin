@@ -193,17 +193,12 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 		}
 
 		transcriptPath := entry.TranscriptPath
-		if transcriptPath == "" {
-			queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
-			if _, err := os.Stat(queueCandidate); err == nil {
-				transcriptPath = queueCandidate
-			}
-		} else {
+		queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
+		if _, err := os.Stat(queueCandidate); err == nil {
+			transcriptPath = queueCandidate
+		} else if transcriptPath != "" {
 			if _, err := os.Stat(transcriptPath); err != nil {
-				queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
-				if _, qErr := os.Stat(queueCandidate); qErr == nil {
-					transcriptPath = queueCandidate
-				}
+				transcriptPath = ""
 			}
 		}
 
@@ -291,8 +286,11 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 		}
 
 		cost := tracker.Cost()
-		_ = p.checkBudget(&cost)
-		_ = p.store.Complete(ctx, job.ID, &cost)
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -361,8 +359,12 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 				}
 
 				cost := tracker.Cost()
-				_ = p.checkBudget(&cost)
-				_ = p.store.Complete(ctx, job.ID, &cost)
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	select { case errCh <- err: default: }
+	return
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 			}
 		}()
 	}
@@ -450,8 +452,11 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 		}
 
 		cost := tracker.Cost()
-		_ = p.checkBudget(&cost)
-		_ = p.store.Complete(ctx, job.ID, &cost)
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -500,8 +505,11 @@ func (p *PipelineExecutor) processVerify(ctx context.Context) error {
 		}
 
 		cost := tracker.Cost()
-		_ = p.checkBudget(&cost)
-		_ = p.store.Complete(ctx, job.ID, &cost)
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }

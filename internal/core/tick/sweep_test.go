@@ -1,6 +1,7 @@
 package tick
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"os"
@@ -134,7 +135,7 @@ func TestSweep_WithAttributor(t *testing.T) {
 	// Find the subagent job and verify its payload contains parent_conversation_id
 	var foundSubagentJob bool
 	for _, j := range jobsList {
-		if j.IdempotencyKey == "sweep-conv-subagent" {
+		if strings.HasPrefix(j.IdempotencyKey, "sweep-conv-subagent") {
 			foundSubagentJob = true
 			var payload map[string]any
 			if err := json.Unmarshal([]byte(j.Payload), &payload); err != nil {

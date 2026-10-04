@@ -127,7 +127,7 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 				continue
 			}
 
-			_, err = spool.CopyTranscriptIncremental(s.ConversationID, s.TranscriptPath, queueDir, stateDir)
+			res, err := spool.CopyTranscriptIncremental(s.ConversationID, s.TranscriptPath, queueDir, stateDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "incremental copy err for %s: %v\n", s.ConversationID, err)
 				continue
@@ -157,7 +157,7 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 
 				_, _ = store.Enqueue(ctx, &jobs.Job{
 					Kind:           jobs.KindCapture,
-					IdempotencyKey: "sweep-" + s.ConversationID,
+					IdempotencyKey: fmt.Sprintf("sweep-%s-%d", s.ConversationID, res.TotalBytes),
 					Priority:       10,
 					Payload:        string(payloadBytes),
 				})

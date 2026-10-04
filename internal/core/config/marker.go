@@ -19,10 +19,10 @@ func EnrolledMarkerPath(repoRoot string) string {
 // CreateEnrolledMarker creates the zero-byte .memory/.enrolled marker file in repoRoot.
 // It creates the parent .memory directory if it does not already exist.
 func CreateEnrolledMarker(repoRoot string) error {
-	markerPath := EnrolledMarkerPath(repoRoot)
-	if err := os.MkdirAll(filepath.Dir(markerPath), 0755); err != nil {
+	if err := EnsureRepoLayout(repoRoot); err != nil {
 		return err
 	}
+	markerPath := EnrolledMarkerPath(repoRoot)
 	f, err := os.OpenFile(markerPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -59,6 +59,11 @@ func IsEnrolledFast(dir string) bool {
 	for {
 		marker := filepath.Join(curr, ".memory", EnrolledMarkerFile)
 		if fi, err := os.Stat(marker); err == nil && !fi.IsDir() {
+			if entry, found, _ := FindRegistryEntry(DataDir(), curr); found && entry != nil {
+				if entry.Enabled != nil && !*entry.Enabled {
+					return false
+				}
+			}
 			return true
 		}
 		// If we find a .git root and no .memory/.enrolled was present, this repository is not enrolled.
