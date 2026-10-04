@@ -50,8 +50,24 @@ var hookCmd = &cobra.Command{
 			}()
 		}
 
+		// Fast path for non-enrolled repositories / kill switch (target <= 5ms)
+		if !hookProbeFlag {
+			targetDir := hookWorkspaceFlag
+			if targetDir == "" {
+				targetDir, _ = os.Getwd()
+			}
+			if os.Getenv("REPO_MEMORY_DISABLED") == "1" || !config.IsEnrolledFast(targetDir) {
+				if isPreToolUse {
+					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(), `{}`)
+				}
+				return nil
+			}
+		}
+
 		// Wrap the real logic so we can catch errors and fail open.
-		err := hookRunE(cmd, args, eventName)
+		err := hookRunE(cmd, args, eventName, isPreToolUse)
 		if err != nil && isPreToolUse {
 			// Fail open: return allow instead of propagating the error.
 			fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow","reason":"fail-open: `+strings.ReplaceAll(err.Error(), `"`, `'`)+`"}`)
@@ -61,7 +77,7 @@ var hookCmd = &cobra.Command{
 	},
 }
 
-func hookRunE(cmd *cobra.Command, args []string, eventName string) error {
+func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse bool) error {
 	if hookProbeFlag {
 		event := "unknown"
 		if len(args) >= 2 {
@@ -109,7 +125,11 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string) error {
 	valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
 	if err != nil || !valid {
 		// Sub-5ms fast-path: immediately return harness no-op output
-		fmt.Fprintln(cmd.OutOrStdout(), "{}")
+		if isPreToolUse {
+			fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "{}")
+		}
 		return nil
 	}
 
@@ -238,9 +258,13 @@ func handleProbe(event string, payload []byte) ([]byte, error) {
 			if data, err := os.ReadFile(targetPath); err == nil {
 				snapshotFile := filepath.Join(logsDir, fmt.Sprintf("probe_%s_%s_transcript.jsonl", event, timestamp))
 				_ = os.WriteFile(snapshotFile, data, 0644)
+				_ = config.RotateLogFile(snapshotFile, config.DefaultMaxLogBytes, config.DefaultMaxRotatedFiles)
 			}
 		}
 	}
+
+	// Clean up probe logs older than 7 days
+	_, _ = config.CleanProbeLogs(logsDir, 7*24*time.Hour)
 
 	if strings.EqualFold(event, "PreToolUse") || strings.EqualFold(event, "pre_tool_use") {
 		resp := map[string]string{

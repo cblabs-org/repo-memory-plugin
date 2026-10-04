@@ -73,7 +73,7 @@ func EnsureRepoLayout(repoRoot string) error {
 
 	gitignorePath := filepath.Join(memoryDir, ".gitignore")
 	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
-		content := []byte(".cache/\n")
+		content := []byte(".cache/\n.enrolled\n")
 		if err := os.WriteFile(gitignorePath, content, 0644); err != nil {
 			return fmt.Errorf("creating gitignore in %s: %w", memoryDir, err)
 		}

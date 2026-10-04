@@ -239,3 +239,36 @@ func TestUninstallFlagValidation(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestValidateHooksJSON(t *testing.T) {
+	// Valid
+	validJSON := []byte(`{
+		"repo-memory": {
+			"enabled": true,
+			"PreInvocation": [{"type": "command", "command": "repo-memory hook antigravity PreInvocation"}],
+			"PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": "repo-memory hook antigravity PreToolUse"}]}]
+		}
+	}`)
+	if err := ValidateHooksJSON(validJSON); err != nil {
+		t.Errorf("expected valid JSON to pass validation, got: %v", err)
+	}
+
+	// Empty object {}
+	emptyJSON := []byte(`{}`)
+	if err := ValidateHooksJSON(emptyJSON); err == nil {
+		t.Error("expected empty object {} to fail validation")
+	}
+
+	// Empty repo-memory block
+	emptyBlock := []byte(`{"repo-memory": {"enabled": true}}`)
+	if err := ValidateHooksJSON(emptyBlock); err == nil {
+		t.Error("expected empty hook group to fail validation")
+	}
+
+	// Malformed JSON
+	malformed := []byte(`{invalid`)
+	if err := ValidateHooksJSON(malformed); err == nil {
+		t.Error("expected malformed JSON to fail validation")
+	}
+}
+
