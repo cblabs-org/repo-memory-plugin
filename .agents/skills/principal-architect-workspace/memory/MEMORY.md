@@ -1,26 +1,26 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-02T08:00:00+01:00 -->
+<!-- Last updated: 2026-10-04T12:17:00+01:00 -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | Executing — SPEC v0.10, 13 PRs. **6/13 complete** (PR-01 through PR-04). PR-05a in progress. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **8/19 complete** (PR-01 through PR-05b). PR-05-v2-foundation next. X-gate at PR-06-v2-spike exit. Early kill gate X6-lite at PR-09. Confirmatory X6 at PR-12-v2-pilot. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| (None) | | | |
+| pr-05-v2-foundation | WO1/5 | Close-out, Capture, Hooks, Telemetry | [PROJECT.md](../pr-05-v2-foundation/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
 |---|---|---|---|
-| pr-05a-pipeline-code | 2026-10-02 | Executors, Triage, Extract, Reconcile, Verify, Publish | Knowledge pipeline implemented and wired to tick processing. 7/7 WOs. |
-| pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer built across 7 WOs. |
+| pr-05b-dogfood-pilot | 2026-10-04 | Pipeline, Views, Evaluation | Dogfood run on 71 episodes → 125 claims. WO4 superseded by `dogfood-evaluation-01.md`. Led to v2 pivot. Branch closed onto `main` by PR-05-v2-foundation wo1. |
+| pr-05a-pipeline-code | 2026-10-02 | Executors, Triage, Extract, Reconcile, Verify, Publish | v1 pipeline implemented. 7/7 WOs. Merged to `main`. Stages superseded by v2; executor, job chaining and local publish retained. |
+| pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer. 7/7 WOs. Entities and index carry forward. Events store retired in v2 (PD26). |
 | pr-03-episode-search | 2026-10-02 | FTS Index, Search CLI, PA Import, Eval Harness | FTS5 search, memory.ask fallback, eval harness with B1-B5 datasets. 6/6 WOs. |
-| pr-02b-capture-runtime | 2026-10-02 | Capture Runtime, Spool, Stop Hook, Tick, Sweep | Spool, tick, hooks, and job table implemented. 7/7 WOs. |
-| pr-02a-transcript-episode | 2026-10-02 | Transcript Parser, Compaction, Episode Store | Parser, 5.4× compaction, episode store, commit linkage, metrics. 5/5 WOs. |
+| pr-02b-capture-runtime | 2026-10-02 | Capture Runtime, Spool, Stop Hook, Tick, Sweep | Spool, tick, hooks, and job table. 7/7 WOs. |
 
 ## Older Projects
-2 completed projects.
+4 completed projects.
 Full project history: [PROJECT_INDEX.md](PROJECT_INDEX.md)
 Cross-cutting module index: [MODULE_INDEX.md](MODULE_INDEX.md)
