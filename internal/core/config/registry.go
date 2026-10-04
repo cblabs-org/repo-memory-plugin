@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // RegistryEntry represents an enrolled repository entry in <data-dir>/registry.json.
 type RegistryEntry struct {
 	RepoID   string `json:"repo_id"`
 	RootPath string `json:"root_path"`
+	Enabled  *bool  `json:"enabled,omitempty"`
 }
 
 // UnmarshalJSON supports both snake_case (repo_id, root_path) and PascalCase (RepoID, RootPath).
@@ -21,6 +24,7 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 		Alias
 		AltRepoID   string `json:"RepoID"`
 		AltRootPath string `json:"RootPath"`
+		AltEnabled  *bool  `json:"Enabled"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -31,6 +35,9 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 	}
 	if e.RootPath == "" && aux.AltRootPath != "" {
 		e.RootPath = aux.AltRootPath
+	}
+	if e.Enabled == nil && aux.AltEnabled != nil {
+		e.Enabled = aux.AltEnabled
 	}
 	return nil
 }
@@ -46,15 +53,56 @@ func RegistryPath(dataDir string) string {
 	return filepath.Join(dataDir, "registry.json")
 }
 
+var (
+	registryCacheMu     sync.RWMutex
+	cachedRegistry      Registry
+	cachedRegistryPath  string
+	cachedRegistryMtime time.Time
+)
+
+// IsEnrolled reports whether repoRoot is enrolled in repo-memory.
+// It checks the fast filesystem marker (.memory/.enrolled) first, and falls back
+// to the cached registry lookup.
+func IsEnrolled(repoRoot string) bool {
+	if IsEnrolledFast(repoRoot) {
+		return true
+	}
+	entry, found, err := FindRegistryEntry("", repoRoot)
+	return err == nil && found && entry != nil
+}
+
 // LoadRegistry reads and parses <data-dir>/registry.json.
 // If the file does not exist or is empty, an empty Registry is returned without error.
+// Parsed results are cached by file modification time.
 func LoadRegistry(dataDir string) (Registry, error) {
 	path := RegistryPath(dataDir)
-	data, err := os.ReadFile(path)
+
+	fi, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			registryCacheMu.Lock()
+			cachedRegistry = make(Registry)
+			cachedRegistryPath = path
+			cachedRegistryMtime = time.Time{}
+			registryCacheMu.Unlock()
 			return make(Registry), nil
 		}
+		return nil, fmt.Errorf("reading registry %s: %w", path, err)
+	}
+
+	registryCacheMu.RLock()
+	if cachedRegistry != nil && cachedRegistryPath == path && cachedRegistryMtime.Equal(fi.ModTime()) {
+		regCopy := make(Registry, len(cachedRegistry))
+		for k, v := range cachedRegistry {
+			regCopy[k] = v
+		}
+		registryCacheMu.RUnlock()
+		return regCopy, nil
+	}
+	registryCacheMu.RUnlock()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return nil, fmt.Errorf("reading registry %s: %w", path, err)
 	}
 
@@ -69,7 +117,18 @@ func LoadRegistry(dataDir string) (Registry, error) {
 	if reg == nil {
 		reg = make(Registry)
 	}
-	return reg, nil
+
+	registryCacheMu.Lock()
+	cachedRegistry = reg
+	cachedRegistryPath = path
+	cachedRegistryMtime = fi.ModTime()
+	registryCacheMu.Unlock()
+
+	regCopy := make(Registry, len(reg))
+	for k, v := range reg {
+		regCopy[k] = v
+	}
+	return regCopy, nil
 }
 
 // SaveRegistry writes the Registry to <data-dir>/registry.json atomically.
@@ -96,6 +155,10 @@ func SaveRegistry(dataDir string, reg Registry) error {
 		_ = os.Remove(tmpFile)
 		return fmt.Errorf("renaming registry file to %s: %w", path, err)
 	}
+
+	registryCacheMu.Lock()
+	cachedRegistry = nil
+	registryCacheMu.Unlock()
 
 	return nil
 }

@@ -3,4 +3,4 @@
 *.swo
 *~
 bin/
-repo-memory
+/repo-memory

@@ -392,3 +392,54 @@ func TestStopHook_ExecutionBudgetUnder200ms(t *testing.T) {
 		t.Errorf("Stop hook took %v, exceeded 200ms execution budget!", duration)
 	}
 }
+
+func TestStopHook_ArtifactCapture(t *testing.T) {
+	dataDir, repoDir, repoID := setupEnrolledRepo(t)
+
+	// Create fake transcript
+	brainDir := filepath.Join(t.TempDir(), "brain", "conv-artifact-1")
+	transcriptDir := filepath.Join(brainDir, ".system_generated", "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatalf("creating transcript dir: %v", err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte("{\"step_index\": 0}\n"), 0644); err != nil {
+		t.Fatalf("writing transcript: %v", err)
+	}
+
+	// Create sample artifacts in brainDir
+	planPath := filepath.Join(brainDir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("# Implementation Plan\n"), 0644); err != nil {
+		t.Fatalf("writing plan.md: %v", err)
+	}
+	metaPath := filepath.Join(brainDir, "plan.md.metadata.json")
+	if err := os.WriteFile(metaPath, []byte(`{"title":"Plan"}`), 0644); err != nil {
+		t.Fatalf("writing metadata.json: %v", err)
+	}
+
+	payload := &StopPayload{
+		ConversationID:        "conv-artifact-1",
+		TranscriptPath:        transcriptPath,
+		ArtifactDirectoryPath: brainDir,
+		WorkspacePaths:        []string{repoDir},
+	}
+
+	res, err := HandleStopEvent(context.Background(), payload, WithDataDir(dataDir))
+	if err != nil {
+		t.Fatalf("HandleStopEvent failed: %v", err)
+	}
+	if res.Skipped {
+		t.Fatalf("unexpected skip: %s", res.Reason)
+	}
+	if res.ArtifactsCopied != 2 {
+		t.Fatalf("expected 2 artifacts copied, got %d", res.ArtifactsCopied)
+	}
+
+	dstArtifactDir := filepath.Join(dataDir, repoID, "evidence", "artifacts", "conv-artifact-1")
+	if _, err := os.Stat(filepath.Join(dstArtifactDir, "plan.md")); err != nil {
+		t.Fatalf("plan.md not found in evidence store: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dstArtifactDir, "plan.md.metadata.json")); err != nil {
+		t.Fatalf("plan.md.metadata.json not found in evidence store: %v", err)
+	}
+}

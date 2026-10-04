@@ -2,22 +2,35 @@ package config
 
 import (
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 // AssignSubsystem returns the name of the subsystem that the given file belongs to.
 // It iterates through the subsystems and returns the first one where a glob matches the file path.
 // Returns an empty string if no subsystem matches.
 func (c RepoConfig) AssignSubsystem(filePath string) string {
-	for name, subsystem := range c.Subsystems {
+	var names []string
+	for name := range c.Subsystems {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		subsystem := c.Subsystems[name]
 		for _, pattern := range subsystem.Globs {
 			matched, err := filepath.Match(pattern, filePath)
 			if err == nil && matched {
 				return name
 			}
-			// Fallback: Check if the file is within a directory matched by the pattern
-			// e.g. pattern "cmd/*" matches "cmd/app/main.go" if we only used filepath.Match it wouldn't.
-			// Actually, standard filepath.Match doesn't support "**", but let's just do filepath.Match on the base or dir if needed.
-			// Let's stick to standard filepath.Match for now as requested by typical simple globs, or check prefix?
+			
+			// Support ** for recursive directory matching
+			if strings.HasSuffix(pattern, "/**") {
+				prefix := strings.TrimSuffix(pattern, "/**")
+				if strings.HasPrefix(filePath, prefix+"/") {
+					return name
+				}
+			}
 		}
 	}
 	return ""

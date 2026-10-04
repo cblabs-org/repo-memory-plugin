@@ -62,6 +62,15 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 		t.Errorf("expected .gitignore to ignore .cache/, got %q", string(gitignoreData))
 	}
 
+	// 1b. Verify .memory/.enrolled marker file exists
+	if !config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected IsEnrolledFast to return true for enrolled repo %s", repoDir)
+	}
+	markerPath := config.EnrolledMarkerPath(repoDir)
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Errorf("expected marker file %s to exist: %v", markerPath, err)
+	}
+
 	// 2. Verify GEMINI.md created with map include line
 	geminiPath := filepath.Join(repoDir, "GEMINI.md")
 	geminiData, err := os.ReadFile(geminiPath)
@@ -204,6 +213,14 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 	_, foundAfter, err := config.FindRegistryEntry(dataDir, repoDir)
 	if err != nil || foundAfter {
 		t.Errorf("expected repo to be removed from registry")
+	}
+
+	// Marker must be removed
+	if config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected marker to be removed after leave")
+	}
+	if _, err := os.Stat(config.EnrolledMarkerPath(repoDir)); !os.IsNotExist(err) {
+		t.Errorf("expected marker file to not exist after leave")
 	}
 
 	// Private data dir must STILL exist because purge=false

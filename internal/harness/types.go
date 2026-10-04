@@ -1,6 +1,9 @@
 package harness
 
-import "fmt"
+import (
+	"fmt"
+	"errors"
+)
 
 // Stage represents a stage in the repository memory processing pipeline.
 type Stage int
@@ -163,3 +166,6 @@ type ReportStatus struct {
 	Active   bool   `json:"active"`
 	Messages []Step `json:"messages,omitempty"`
 }
+
+
+var ErrQuotaExhausted = errors.New("quota exhausted (HTTP 429)")

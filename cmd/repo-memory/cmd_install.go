@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,43 @@ func ResolveAntigravityPluginDir() (string, error) {
 	return filepath.Join(home, ".gemini", "config", "plugins", "repo-memory"), nil
 }
 
+// ValidateHooksJSON parses hooks.json data and verifies it has at least one valid hook entry.
+func ValidateHooksJSON(data []byte) error {
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if len(parsed) == 0 {
+		return errors.New("hooks configuration is empty ({})")
+	}
+
+	totalHooks := 0
+	for _, v := range parsed {
+		var hookGroup map[string]json.RawMessage
+		if err := json.Unmarshal(v, &hookGroup); err == nil {
+			for k, g := range hookGroup {
+				if k == "enabled" {
+					continue
+				}
+				var arr []json.RawMessage
+				if err := json.Unmarshal(g, &arr); err == nil && len(arr) > 0 {
+					totalHooks += len(arr)
+				}
+			}
+		} else {
+			var arr []json.RawMessage
+			if err := json.Unmarshal(v, &arr); err == nil && len(arr) > 0 {
+				totalHooks += len(arr)
+			}
+		}
+	}
+
+	if totalHooks == 0 {
+		return errors.New("hooks configuration contains no hook entries")
+	}
+	return nil
+}
+
 // RunInstall writes the plugin configuration, hooks, MCP server, and sidecar definitions.
 // It is idempotent and can be safely re-run to upgrade configurations in place.
 func RunInstall(pluginDir, binPath string) error {
@@ -58,12 +96,15 @@ func RunInstall(pluginDir, binPath string) error {
 
 	// 2. Generate JSON file contents using templates with absolute binary path
 	hooksContent := antigravity.GenerateHooksJSON(binPath)
+	if err := ValidateHooksJSON([]byte(hooksContent)); err != nil {
+		return fmt.Errorf("validating generated hooks template: %w", err)
+	}
+
 	mcpContent := antigravity.GenerateMCPConfigJSON(binPath)
 	sidecarContent := antigravity.GenerateSidecarJSON(binPath)
 	pluginContent := antigravity.GeneratePluginJSON()
 
 	files := map[string]string{
-		filepath.Join(pluginDir, "hooks.json"):                       hooksContent,
 		filepath.Join(pluginDir, "mcp_config.json"):                  mcpContent,
 		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"): sidecarContent,
 		filepath.Join(pluginDir, "plugin.json"):                      pluginContent,
@@ -73,6 +114,23 @@ func RunInstall(pluginDir, binPath string) error {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return fmt.Errorf("writing file %s: %w", path, err)
 		}
+	}
+
+	// 3. Write and verify hooks.json with safety validation
+	hooksPath := filepath.Join(pluginDir, "hooks.json")
+	if err := os.WriteFile(hooksPath, []byte(hooksContent), 0644); err != nil {
+		return fmt.Errorf("writing file %s: %w", hooksPath, err)
+	}
+
+	// Safety check: read back, parse as JSON, verify at least one hook entry
+	readBack, err := os.ReadFile(hooksPath)
+	if err != nil {
+		_ = os.Remove(hooksPath)
+		return fmt.Errorf("reading back %s for verification: %w", hooksPath, err)
+	}
+	if err := ValidateHooksJSON(readBack); err != nil {
+		_ = os.Remove(hooksPath)
+		return fmt.Errorf("safety check failed for %s: %w", hooksPath, err)
 	}
 
 	return nil
