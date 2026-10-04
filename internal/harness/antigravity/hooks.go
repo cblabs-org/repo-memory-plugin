@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 )
@@ -19,7 +20,8 @@ const DefaultHookBudget = 200 * time.Millisecond
 
 // StopPayload represents the JSON payload received from Google Antigravity on a Stop event.
 type StopPayload struct {
-	ArtifactDirectoryPath string   `json:"artifactDirectoryPath,omitempty"`
+	ArtifactDirectoryPath      string   `json:"artifactDirectoryPath,omitempty"`
+	ArtifactDirectoryPathSnake string   `json:"artifact_directory_path,omitempty"`
 	ConversationID            string   `json:"conversationId,omitempty"`
 	ConversationIDSnake       string   `json:"conversation_id,omitempty"`
 	ParentConversationID      string   `json:"parentConversationId,omitempty"`
@@ -39,6 +41,12 @@ type StopPayload struct {
 
 // Normalize normalizes fields across camelCase and snake_case variations.
 func (p *StopPayload) Normalize() {
+	if p.ArtifactDirectoryPath == "" && p.ArtifactDirectoryPathSnake != "" {
+		p.ArtifactDirectoryPath = p.ArtifactDirectoryPathSnake
+	}
+	if p.ArtifactDirectoryPath != "" {
+		p.ArtifactDirectoryPath = expandHome(p.ArtifactDirectoryPath)
+	}
 	if p.ConversationID == "" && p.ConversationIDSnake != "" {
 		p.ConversationID = p.ConversationIDSnake
 	}
@@ -84,6 +92,7 @@ type StopResult struct {
 	SpoolPath            string            `json:"spool_path,omitempty"`
 	SpoolEntry           *spool.Entry      `json:"spool_entry,omitempty"`
 	CopyResult           *spool.CopyResult `json:"copy_result,omitempty"`
+	ArtifactsCopied      int               `json:"artifacts_copied,omitempty"`
 	Duration             time.Duration     `json:"duration_ms"`
 }
 
@@ -363,6 +372,19 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}
 	}
 
+	// 7. Artifact capture (best-effort per SPEC)
+	var artifactsCopied int
+	if payload.ArtifactDirectoryPath != "" {
+		artSrc := expandHome(payload.ArtifactDirectoryPath)
+		artDst := evidence.ArtifactDir(dataDir, repoID, convID)
+		count, err := evidence.CopyArtifacts(artSrc, artDst)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "copying artifacts for %s: %v\n", convID, err)
+		} else {
+			artifactsCopied = count
+		}
+	}
+
 	duration := time.Since(start)
 	return &StopResult{
 		Skipped:              false,
@@ -375,6 +397,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		SpoolPath:            spoolPath,
 		SpoolEntry:           &captureEntry,
 		CopyResult:           copyResult,
+		ArtifactsCopied:      artifactsCopied,
 		Duration:             duration,
 	}, nil
 }
