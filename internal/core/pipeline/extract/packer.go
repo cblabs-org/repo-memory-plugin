@@ -20,9 +20,9 @@ type EpisodePayload struct {
 	Steps    []harness.Step  `json:"steps"` // The actual steps within the windows
 }
 
-// ExtractInput represents the payload sent to the LLM for extraction.
 type ExtractInput struct {
-	Episodes []EpisodePayload `json:"episodes"`
+	Instructions string           `json:"instructions"`
+	Episodes     []EpisodePayload `json:"episodes"`
 }
 
 // Packer groups episodes up to a token limit.

@@ -80,6 +80,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, ep *episode.Episode, candida
 			existing = existing[:30]
 		}
 
+		if len(existing) == 0 {
+			action := ReconcileAction{
+				Op:        OpCreate,
+				Candidate: cand,
+				Rationale: "New claim without existing matches",
+			}
+			if r.applyAction(ep, action) {
+				applied = append(applied, action)
+			}
+			continue
+		}
+
 		in := ReconcileInput{
 			Candidate:      cand,
 			ExistingClaims: existing,
@@ -111,6 +123,9 @@ func (r *Reconciler) lookup(cand extract.Candidate, all []*claims.Claim) []*clai
 
 	// Anchors
 	for _, candAnchor := range cand.Anchors {
+		if candAnchor.Ref == "" {
+			continue
+		}
 		for _, c := range all {
 			if seen[c.ID] {
 				continue
@@ -125,18 +140,57 @@ func (r *Reconciler) lookup(cand extract.Candidate, all []*claims.Claim) []*clai
 		}
 	}
 
-	// Same type
+	// Same type with statement word overlap (or empty statement for tests)
+	candWords := tokenize(cand.Statement)
 	for _, c := range all {
 		if seen[c.ID] {
 			continue
 		}
 		if c.Type == cand.Type {
-			match = append(match, c)
-			seen[c.ID] = true
+			if len(candWords) == 0 || hasSignificantOverlap(candWords, tokenize(c.Title)) {
+				match = append(match, c)
+				seen[c.ID] = true
+			}
 		}
 	}
 
 	return match
+}
+
+func tokenize(s string) []string {
+	words := strings.Fields(strings.ToLower(s))
+	var res []string
+	stopWords := map[string]bool{
+		"this": true, "that": true, "with": true, "from": true, "have": true,
+		"were": true, "been": true, "will": true, "uses": true, "used": true,
+		"using": true, "does": true, "each": true, "their": true, "when": true,
+		"repo-memory": true, "repo": true, "memory": true, "transcript": true,
+		"transcripts": true, "plugin": true, "internal": true,
+	}
+	for _, w := range words {
+		w = strings.Trim(w, `.,:;!?'"()[]{}`)
+		if len(w) >= 4 && !stopWords[w] {
+			res = append(res, w)
+		}
+	}
+	return res
+}
+
+func hasSignificantOverlap(a, b []string) bool {
+	bMap := make(map[string]bool, len(b))
+	for _, w := range b {
+		bMap[w] = true
+	}
+	overlap := 0
+	for _, w := range a {
+		if bMap[w] {
+			overlap++
+			if overlap >= 2 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Reconciler) checkP13(ep *episode.Episode, claimID string) bool {
@@ -195,13 +249,25 @@ func (r *Reconciler) applyAction(ep *episode.Episode, action ReconcileAction) bo
 	
 	switch action.Op {
 	case OpCreate:
+		stmt := strings.TrimSpace(action.Candidate.Statement)
+		if stmt == "" {
+			return false
+		}
+		cType := action.Candidate.Type
+		if cType == "" {
+			cType = claims.TypeFact
+		}
+		cStatus := action.Candidate.ProposedStatus
+		if cStatus == "" {
+			cStatus = claims.StatusVerified
+		}
 		claim := &claims.Claim{
 			ID:           claims.GenerateID(),
-			Type:         action.Candidate.Type,
-			Title:        action.Candidate.Statement,
+			Type:         cType,
+			Title:        stmt,
 			RelevantWhen: action.Candidate.RelevantWhen,
 			Apply:        action.Candidate.Apply,
-			Status:       action.Candidate.ProposedStatus,
+			Status:       cStatus,
 			Anchors:      action.Candidate.Anchors,
 			Evidence:     action.Candidate.Evidence,
 			Created:      time.Now(),

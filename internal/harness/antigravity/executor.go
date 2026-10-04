@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
@@ -60,40 +61,35 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 
 	projectArg := fmt.Sprintf("repo-memory-%s", h.RepoID)
 
-	cmd := exec.CommandContext(ctx, "agy", "-p", "",
-		"--model", h.Model,
-		"--output-format", "stream-json", // Using stream-json to match input-format stream-json
-		"--input-format", "stream-json",
-		"--print-timeout", h.Timeout,
-		"--project", projectArg,
-	)
-
-	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
-	cmd.Dir = workDir
-
-	// Prepare stdin
+	// Prepare input string
 	inputBytes, err := json.Marshal(input)
 	if err != nil {
 		return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
 	}
 
-	// Make sure the input has an event field. If it's a map, we inject it.
-	var inputMap map[string]any
-	if err := json.Unmarshal(inputBytes, &inputMap); err == nil {
-		if _, ok := inputMap["event"]; !ok {
-			inputMap["event"] = "request"
-			inputBytes, _ = json.Marshal(inputMap)
-		}
-	} else {
-		// Just wrap it if it wasn't a map
-		inputMap = map[string]any{
-			"event":  "request",
-			"prompt": input,
-		}
-		inputBytes, _ = json.Marshal(inputMap)
+	var schemaGuide string
+	switch stage {
+	case harness.StageReconcile:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"actions\": [\n    {\"op\": \"create|support|refine|contradict|supersede|promote|discard\", \"candidate\": ..., \"target_id\": \"clm-...\", \"rationale\": \"...\"}\n  ]\n}"
+	case harness.StageVerify:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"consistent\": true,\n  \"rationale\": \"...\"\n}"
+	case harness.StageTriage:
+		schemaGuide = "Return strictly JSON in the form:\n{\n  \"decisions\": [\n    {\"id\": \"...\", \"keep\": true, \"reason\": \"...\"}\n  ]\n}"
 	}
 
-	cmd.Stdin = bytes.NewReader(inputBytes)
+	prompt := fmt.Sprintf("You are executing the %s pipeline stage. DO NOT call any tools. %s\n\nInput:\n%s", stage, schemaGuide, string(inputBytes))
+
+	cmd := exec.CommandContext(ctx, "agy",
+		"-p", prompt,
+		"--model", h.Model,
+		"--output-format", "stream-json",
+		"--print-timeout", h.Timeout,
+		"--project", projectArg,
+		"--dangerously-skip-permissions",
+	)
+
+	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
+	cmd.Dir = workDir
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -101,6 +97,9 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+			return harness.Result{}, harness.ErrQuotaExhausted
+		}
 		return harness.Result{}, fmt.Errorf("agy execution failed: %v\nStderr: %s", err, stderr.String())
 	}
 
@@ -115,7 +114,16 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 			if msg.Result.Status == "ERROR" {
 				return result, fmt.Errorf("agy returned error: %s", msg.Result.Error)
 			}
-			result.Payload = msg.Result.Response
+			payload := msg.Result.Response
+			
+			// Find the first { and last }
+			first := strings.Index(payload, "{")
+			last := strings.LastIndex(payload, "}")
+			if first != -1 && last != -1 && last >= first {
+				payload = payload[first : last+1]
+			}
+			
+			result.Payload = strings.TrimSpace(payload)
 			result.Usage = harness.Usage{
 				InputTokens:     msg.Result.Usage.InputTokens,
 				OutputTokens:    msg.Result.Usage.OutputTokens,
@@ -125,5 +133,9 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		}
 	}
 
+	if result.Payload == "" {
+		return result, fmt.Errorf("agy returned empty payload. Stdout: %s\nStderr: %s", stdout.String(), stderr.String())
+	}
 	return result, nil
 }
+

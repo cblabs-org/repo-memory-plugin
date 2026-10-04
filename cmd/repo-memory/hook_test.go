@@ -56,6 +56,16 @@ func TestHookCmd_Stop_Enrolled(t *testing.T) {
 		t.Fatalf("SaveRepoConfig: %v", err)
 	}
 
+	// Create enrolled marker and run in repoDir
+	if err := config.CreateEnrolledMarker(repoDir); err != nil {
+		t.Fatalf("CreateEnrolledMarker: %v", err)
+	}
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origWd)
+
 	// Create fake transcript
 	transcriptDir := filepath.Join(t.TempDir(), "brain", "conv-cli-stop", ".system_generated", "logs")
 	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
@@ -109,6 +119,12 @@ func TestHookCmd_Stop_Unenrolled(t *testing.T) {
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
 
 	repoDir := t.TempDir()
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origWd)
+
 	payload := `{"conversationId":"conv-cli-unenrolled","workspacePaths":["` + repoDir + `"]}`
 
 	var stdin bytes.Buffer
@@ -145,6 +161,13 @@ func TestHookCmd_Stop_KillSwitch(t *testing.T) {
 	t.Setenv("REPO_MEMORY_DISABLED", "1")
 
 	repoDir := t.TempDir()
+	_ = config.CreateEnrolledMarker(repoDir)
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origWd)
+
 	payload := `{"conversationId":"conv-cli-kill","workspacePaths":["` + repoDir + `"]}`
 
 	var stdin bytes.Buffer
@@ -170,6 +193,13 @@ func TestHookCmd_Stop_HousekeepingGuard(t *testing.T) {
 	t.Setenv("REPO_MEMORY_HOUSEKEEPING", "1")
 
 	repoDir := t.TempDir()
+	_ = config.CreateEnrolledMarker(repoDir)
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origWd)
+
 	payload := `{"conversationId":"conv-cli-housekeeping","workspacePaths":["` + repoDir + `"]}`
 
 	var stdin bytes.Buffer

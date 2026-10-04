@@ -155,9 +155,9 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 
 // SubsystemConfig describes a subsystem defined in .memory/config.yaml.
 type SubsystemConfig struct {
-	Title   string   `json:"title,omitempty" yaml:"title,omitempty"`
-	Purpose string   `json:"purpose,omitempty" yaml:"purpose,omitempty"`
-	Globs   []string `json:"globs,omitempty" yaml:"globs,omitempty"`
+	Title       string   `json:"title,omitempty" yaml:"title,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Globs       []string `json:"globs,omitempty" yaml:"globs,omitempty"`
 }
 
 // RepoConfig represents the repository-level configuration (<repoRoot>/.memory/config.yaml).

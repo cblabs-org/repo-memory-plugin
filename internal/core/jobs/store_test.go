@@ -2,6 +2,7 @@ package jobs_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -304,8 +305,8 @@ func TestJobLifecycleSuccess(t *testing.T) {
 
 	// No more jobs available
 	next, err := store.AcquireNext(ctx, 30*time.Second)
-	if err != nil {
-		t.Fatalf("AcquireNext failed: %v", err)
+	if !errors.Is(err, jobs.ErrNoJobAvailable) {
+		t.Fatalf("AcquireNext expected ErrNoJobAvailable, got: %v", err)
 	}
 	if next != nil {
 		t.Errorf("expected nil next job, got %+v", next)
@@ -653,5 +654,115 @@ func TestStoreListAndDelete(t *testing.T) {
 	err = store.Delete(ctx, j3.ID)
 	if err != jobs.ErrJobNotFound {
 		t.Errorf("expected ErrJobNotFound on second delete, got %v", err)
+	}
+}
+
+func TestRequeueKind(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "jobs.sqlite")
+
+	store, err := jobs.Open(dbPath)
+	if err != nil {
+		t.Fatalf("jobs.Open failed: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Enqueue 2 capture jobs and 1 triage job
+	cap1, err := store.Enqueue(ctx, &jobs.Job{
+		Kind:     jobs.KindCapture,
+		Priority: jobs.PriorityNormal,
+		Payload:  "capture-payload-1",
+	})
+	if err != nil {
+		t.Fatalf("failed to enqueue cap1: %v", err)
+	}
+
+	cap2, err := store.Enqueue(ctx, &jobs.Job{
+		Kind:     jobs.KindCapture,
+		Priority: jobs.PriorityNormal,
+		Payload:  "capture-payload-2",
+	})
+	if err != nil {
+		t.Fatalf("failed to enqueue cap2: %v", err)
+	}
+
+	triageJob, err := store.Enqueue(ctx, &jobs.Job{
+		Kind:     jobs.KindTriage,
+		Priority: jobs.PriorityInteractive,
+		Payload:  "triage-payload",
+	})
+	if err != nil {
+		t.Fatalf("failed to enqueue triageJob: %v", err)
+	}
+
+	// Complete cap1
+	leased1, err := store.AcquireNext(ctx, 1*time.Minute, jobs.KindCapture)
+	if err != nil || leased1 == nil {
+		t.Fatalf("failed to acquire cap1: %v", err)
+	}
+	if err := store.Complete(ctx, leased1.ID, nil); err != nil {
+		t.Fatalf("failed to complete cap1: %v", err)
+	}
+
+	// Acquire and complete cap2
+	leased2, err := store.AcquireNext(ctx, 1*time.Minute, jobs.KindCapture)
+	if err != nil || leased2 == nil {
+		t.Fatalf("failed to acquire cap2: %v", err)
+	}
+	if err := store.Complete(ctx, leased2.ID, nil); err != nil {
+		t.Fatalf("failed to complete cap2: %v", err)
+	}
+
+	// Verify both captures are done
+	job1, err := store.Get(ctx, cap1.ID)
+	if err != nil || job1.State != jobs.StateDone {
+		t.Fatalf("expected cap1 done, got %v (state %v)", err, job1.State)
+	}
+	job2, err := store.Get(ctx, cap2.ID)
+	if err != nil || job2.State != jobs.StateDone {
+		t.Fatalf("expected cap2 done, got %v (state %v)", err, job2.State)
+	}
+
+	// Call RequeueKind for KindCapture
+	count, err := store.RequeueKind(ctx, jobs.KindCapture)
+	if err != nil {
+		t.Fatalf("RequeueKind failed: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 jobs requeued, got %d", count)
+	}
+
+	// Verify both captures are reset to queued with clean state
+	for _, id := range []string{cap1.ID, cap2.ID} {
+		j, err := store.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("failed to get job %s: %v", id, err)
+		}
+		if j.State != jobs.StateQueued {
+			t.Errorf("expected job %s state StateQueued, got %s", id, j.State)
+		}
+		if j.Attempts != 0 {
+			t.Errorf("expected job %s attempts 0, got %d", id, j.Attempts)
+		}
+		if j.LastError != "" {
+			t.Errorf("expected job %s last_error empty, got %q", id, j.LastError)
+		}
+		if j.LeaseExpires != nil {
+			t.Errorf("expected job %s lease_expires nil, got %v", id, j.LeaseExpires)
+		}
+		if j.NextAttemptAt != nil {
+			t.Errorf("expected job %s next_attempt_at nil, got %v", id, j.NextAttemptAt)
+		}
+	}
+
+	// Verify triage job is untouched
+	checkTriage, err := store.Get(ctx, triageJob.ID)
+	if err != nil {
+		t.Fatalf("failed to get triageJob: %v", err)
+	}
+	if checkTriage.State != jobs.StateQueued {
+		t.Errorf("expected triageJob state %s, got %s", jobs.StateQueued, checkTriage.State)
 	}
 }

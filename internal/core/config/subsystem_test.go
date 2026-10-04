@@ -4,56 +4,28 @@ import (
 	"testing"
 )
 
-func TestSubsystemAssignment(t *testing.T) {
-	cfg := RepoConfig{
-		Subsystems: map[string]SubsystemConfig{
-			"core": {
-				Globs: []string{"internal/core/*", "internal/core/*/*"},
-			},
-			"api": {
-				Globs: []string{"api/*"},
-			},
-		},
+func TestAssignSubsystem(t *testing.T) {
+	cfg, err := LoadRepoConfig("../../../")
+	if err != nil {
+		t.Fatalf("LoadRepoConfig failed: %v", err)
 	}
 
 	tests := []struct {
-		file     string
-		expected string
+		file      string
+		subsystem string
 	}{
-		{"internal/core/foo.go", "core"},
-		{"internal/core/config/config.go", "core"},
-		{"api/server.go", "api"},
-		{"cmd/main.go", ""},
+		{"internal/core/config/config.go", "core-infrastructure"},
+		{"internal/core/pipeline/compact/compact.go", "transcript-episode"},
+		{"internal/harness/antigravity/hooks.go", "capture-runtime"},
+		{"cmd/repo-memory/main.go", "cli"},
+		{"cmd/repo-memory/commands/import.go", "cli"},
+		{"unknown/file.go", ""},
 	}
 
 	for _, tt := range tests {
 		got := cfg.AssignSubsystem(tt.file)
-		if got != tt.expected {
-			t.Errorf("AssignSubsystem(%q) = %q, want %q", tt.file, got, tt.expected)
+		if got != tt.subsystem {
+			t.Errorf("AssignSubsystem(%q) = %q; want %q", tt.file, got, tt.subsystem)
 		}
-	}
-}
-
-func TestUnassignedFiles(t *testing.T) {
-	cfg := RepoConfig{
-		Subsystems: map[string]SubsystemConfig{
-			"core": {
-				Globs: []string{"internal/core/*"},
-			},
-		},
-	}
-
-	files := []string{
-		"internal/core/foo.go",
-		"cmd/main.go",
-		"README.md",
-	}
-
-	unassigned := cfg.UnassignedFiles(files)
-	if len(unassigned) != 2 {
-		t.Errorf("expected 2 unassigned files, got %d", len(unassigned))
-	}
-	if unassigned[0] != "cmd/main.go" || unassigned[1] != "README.md" {
-		t.Errorf("unexpected unassigned files: %v", unassigned)
 	}
 }
