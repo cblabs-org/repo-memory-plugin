@@ -4,16 +4,17 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **8/19 complete** (PR-01 through PR-05b). PR-05-v2-foundation next. X-gate at PR-06-v2-spike exit. Early kill gate X6-lite at PR-09. Confirmatory X6 at PR-12-v2-pilot. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **9/19 complete** (PR-01 through PR-05-v2-foundation). PR-06-v2-spike next. X-gate at PR-06-v2-spike exit. Early kill gate X6-lite at PR-09. Confirmatory X6 at PR-12-v2-pilot. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-05-v2-foundation | WO1/5 | Close-out, Capture, Hooks, Telemetry | [PROJECT.md](../pr-05-v2-foundation/PROJECT.md) |
+| (None — PR-05-v2-foundation complete; PR-06-v2-spike next) | | | |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
 |---|---|---|---|
+| pr-05-v2-foundation | 2026-10-04 | Evidence, Hooks, Telemetry, Snapshot | Close PR-05b, fix capture→evidence, artifact capture+snapshot, hooks restored (13μs fast path), 2.4 GB probe logs cleaned, cost telemetry with gen_metadata/quota guard. |
 | pr-05b-dogfood-pilot | 2026-10-04 | Pipeline, Views, Evaluation | Dogfood run on 71 episodes → 125 claims. WO4 superseded by `dogfood-evaluation-01.md`. Led to v2 pivot. Branch closed onto `main` by PR-05-v2-foundation wo1. |
 | pr-05a-pipeline-code | 2026-10-02 | Executors, Triage, Extract, Reconcile, Verify, Publish | v1 pipeline implemented. 7/7 WOs. Merged to `main`. Stages superseded by v2; executor, job chaining and local publish retained. |
 | pr-04-entities-claims | 2026-10-02 | Entities, Claims, Index, Events | Data model layer. 7/7 WOs. Entities and index carry forward. Events store retired in v2 (PD26). |
