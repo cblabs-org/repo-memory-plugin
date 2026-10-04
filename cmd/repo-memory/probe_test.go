@@ -408,6 +408,16 @@ func TestProbe_Disabled_FastPath(t *testing.T) {
 		t.Fatalf("hookCmd.RunE failed: %v", err)
 	}
 
+	if strings.TrimSpace(stdout.String()) != `{"decision":"allow"}` {
+		t.Errorf("expected fast-path fail-open '{\"decision\":\"allow\"}', got %q", stdout.String())
+	}
+
+	// Verify non-PreToolUse events return {}
+	stdout.Reset()
+	err = hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"})
+	if err != nil {
+		t.Fatalf("hookCmd.RunE PreInvocation failed: %v", err)
+	}
 	if strings.TrimSpace(stdout.String()) != "{}" {
 		t.Errorf("expected fast-path no-op '{}', got %q", stdout.String())
 	}

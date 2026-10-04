@@ -48,6 +48,11 @@ func RunInit(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("ensuring repo layout: %w", err)
 	}
 
+	// 2b. Create .memory/.enrolled marker file
+	if err := config.CreateEnrolledMarker(repoRoot); err != nil {
+		return fmt.Errorf("creating enrolled marker: %w", err)
+	}
+
 	// 3. Append MAP include line to GEMINI.md if missing or create GEMINI.md
 	geminiPath := filepath.Join(repoRoot, "GEMINI.md")
 	if err := ensureMapIncludeInGemini(geminiPath); err != nil {

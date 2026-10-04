@@ -50,6 +50,11 @@ func RunLeave(cmd *cobra.Command, targetDir string, purge bool) error {
 		return fmt.Errorf("removing from registry: %w", err)
 	}
 
+	// Remove .memory/.enrolled marker
+	if err := config.RemoveEnrolledMarker(repoRoot); err != nil {
+		return fmt.Errorf("removing enrolled marker: %w", err)
+	}
+
 	if purge {
 		var idsToPurge []string
 		idsToPurge = append(idsToPurge, removedIDs...)
