@@ -1,6 +1,7 @@
 package tick
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"os"
@@ -134,7 +135,7 @@ func TestSweep_WithAttributor(t *testing.T) {
 	// Find the subagent job and verify its payload contains parent_conversation_id
 	var foundSubagentJob bool
 	for _, j := range jobsList {
-		if j.IdempotencyKey == "sweep-conv-subagent" {
+		if strings.HasPrefix(j.IdempotencyKey, "sweep-conv-subagent") {
 			foundSubagentJob = true
 			var payload map[string]any
 			if err := json.Unmarshal([]byte(j.Payload), &payload); err != nil {
@@ -165,3 +166,72 @@ func TestSweep_EmptyAttributors(t *testing.T) {
 		t.Errorf("expected nil error for empty sweep, got: %v", err)
 	}
 }
+
+func TestSweep_ArtifactCapture(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	repoID := "repo-xyz"
+
+	// Create brain dir with artifacts and transcript
+	brainDir := filepath.Join(tempDir, "brain", "conv-idle-art")
+	sysLogsDir := filepath.Join(brainDir, ".system_generated", "logs")
+	if err := os.MkdirAll(sysLogsDir, 0755); err != nil {
+		t.Fatalf("creating sysLogsDir: %v", err)
+	}
+
+	transcriptPath := filepath.Join(sysLogsDir, "transcript_full.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte("{\"step\":0,\"content\":\"hello\"}\n"), 0644); err != nil {
+		t.Fatalf("writing transcript: %v", err)
+	}
+
+	designMd := filepath.Join(brainDir, "design.md")
+	if err := os.WriteFile(designMd, []byte("# System Design\n"), 0644); err != nil {
+		t.Fatalf("writing design.md: %v", err)
+	}
+
+	designMeta := filepath.Join(brainDir, "design.md.metadata.json")
+	if err := os.WriteFile(designMeta, []byte(`{"title":"Design"}`), 0644); err != nil {
+		t.Fatalf("writing design.md.metadata.json: %v", err)
+	}
+
+	enrolledRepos := map[string]config.RegistryEntry{
+		"/workspace/repo": {
+			RepoID:   repoID,
+			RootPath: "/workspace/repo",
+		},
+	}
+
+	mockAttr := &mockAttributor{
+		sessions: []AttributedSession{
+			{
+				ConversationID: "conv-idle-art",
+				RepoID:         repoID,
+				RepoRoot:       "/workspace/repo",
+				TranscriptPath: transcriptPath,
+				Idle:           true,
+				Source:         "test",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	if err := Sweep(ctx, dataDir, enrolledRepos, mockAttr); err != nil {
+		t.Fatalf("Sweep failed: %v", err)
+	}
+
+	// Verify transcript was copied into queue
+	queueFile := filepath.Join(dataDir, repoID, "queue", "conv-idle-art.jsonl")
+	if _, err := os.Stat(queueFile); err != nil {
+		t.Fatalf("queue file not found: %v", err)
+	}
+
+	// Verify artifacts were copied into evidence/artifacts/conv-idle-art
+	dstArtifactDir := filepath.Join(dataDir, repoID, "evidence", "artifacts", "conv-idle-art")
+	if _, err := os.Stat(filepath.Join(dstArtifactDir, "design.md")); err != nil {
+		t.Fatalf("design.md was not copied to evidence store: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dstArtifactDir, "design.md.metadata.json")); err != nil {
+		t.Fatalf("design.md.metadata.json was not copied to evidence store: %v", err)
+	}
+}
+

@@ -10,6 +10,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/triage"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
+	"github.com/invopop/jsonschema"
 )
 
 // Gap represents things the episode relied on that match neither a claim nor an entity.
@@ -70,7 +71,12 @@ func (e *Extractor) Extract(ctx context.Context, episodes []*episode.Episode, tr
 		go func(b []EpisodePayload) {
 			defer wg.Done()
 			
-			input := ExtractInput{Episodes: b}
+			schemaBytes, _ := json.MarshalIndent(jsonschema.Reflect(&ExtractionResult{}), "", "  ")
+			
+			input := ExtractInput{
+				Instructions: "You are a memory extraction engine. Analyze the provided episodes and extract knowledge claims. DO NOT USE ANY TOOLS. Do not use run_command or write_to_file or any other tool. Your ONLY task is to output the JSON extraction result directly matching the following JSON schema:\n\n" + string(schemaBytes),
+				Episodes: b,
+			}
 			
 			res, err := e.Housekeeper.Run(ctx, harness.StageExtract, input)
 			if err != nil {
@@ -84,9 +90,10 @@ func (e *Extractor) Extract(ctx context.Context, episodes []*episode.Episode, tr
 			
 			var output ExtractionResult
 			if err := json.Unmarshal([]byte(res.Payload), &output); err != nil {
+				fmt.Printf("FAILED UNMARSHAL: %v\nPAYLOAD: %s\n", err, res.Payload)
 				mu.Lock()
 				if firstErr == nil {
-					firstErr = fmt.Errorf("failed to parse extraction output: %w", err)
+					firstErr = fmt.Errorf("failed to parse extraction output: %w\nPayload:\n%s", err, res.Payload)
 				}
 				mu.Unlock()
 				return

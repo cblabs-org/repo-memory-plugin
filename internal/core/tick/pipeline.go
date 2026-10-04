@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	claimstore "github.com/cblabs-org/repo-memory-plugin/internal/core/claims/store"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/extract"
@@ -40,7 +43,7 @@ type PipelineExecutor struct {
 	mu          sync.Mutex
 }
 
-func (t *Ticker) processPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
+func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
 	if t.hk == nil {
 		return nil
 	}
@@ -51,7 +54,7 @@ func (t *Ticker) processPipeline(ctx context.Context, store *jobs.Store, repoRoo
 	}
 
 	repoDataDir := filepath.Join(t.dataDir, repoID)
-	epStore := episode.NewStore(repoRoot, filepath.Join(repoDataDir, "episodes"))
+	epStore := episode.NewStore(t.dataDir, repoID)
 	claimStore, err := claimstore.New(filepath.Join(repoDataDir, "claims"))
 	if err != nil {
 		return fmt.Errorf("opening claim store: %w", err)
@@ -90,8 +93,59 @@ func (p *PipelineExecutor) checkBudget(cost *jobs.Cost) error {
 	return nil
 }
 
+// NewPipelineExecutor creates a PipelineExecutor for pipeline processing.
+func NewPipelineExecutor(dataDir, repoRoot, repoID string, store *jobs.Store, epStore *episode.Store) *PipelineExecutor {
+	return &PipelineExecutor{
+		dataDir:  dataDir,
+		repoRoot: repoRoot,
+		repoID:   repoID,
+		store:    store,
+		epStore:  epStore,
+	}
+}
+
+// SetHousekeeper sets the housekeeper harness for the executor.
+func (p *PipelineExecutor) SetHousekeeper(hk harness.Housekeeper) {
+	p.hk = hk
+}
+
+type usageTracker struct {
+	hk    harness.Housekeeper
+	mu    sync.Mutex
+	usage harness.Usage
+}
+
+func newUsageTracker(hk harness.Housekeeper) *usageTracker {
+	return &usageTracker{hk: hk}
+}
+
+func (u *usageTracker) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
+	if u.hk == nil {
+		return harness.Result{}, fmt.Errorf("no housekeeper configured")
+	}
+	res, err := u.hk.Run(ctx, stage, input)
+	u.mu.Lock()
+	u.usage.InputTokens += res.Usage.InputTokens
+	u.usage.OutputTokens += res.Usage.OutputTokens
+	u.usage.ThinkingTokens += res.Usage.ThinkingTokens
+	u.usage.CacheReadTokens += res.Usage.CacheReadTokens
+	u.mu.Unlock()
+	return res, err
+}
+
+func (u *usageTracker) Cost() jobs.Cost {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return jobs.FromUsage(u.usage)
+}
+
+// ConvertCapturesToEvidence exposes convertCapturesToEvidence for testing and direct invocation.
+func (p *PipelineExecutor) ConvertCapturesToEvidence(ctx context.Context) error {
+	return p.convertCapturesToEvidence(ctx)
+}
+
 func (p *PipelineExecutor) Run(ctx context.Context) error {
-	if err := p.convertCapturesToTriage(ctx); err != nil {
+	if err := p.convertCapturesToEvidence(ctx); err != nil {
 		return err
 	}
 
@@ -118,7 +172,11 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 	return nil
 }
 
-func (p *PipelineExecutor) convertCapturesToTriage(ctx context.Context) error {
+func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error {
+	if p.epStore == nil {
+		p.epStore = episode.NewStore(p.dataDir, p.repoID)
+	}
+
 	for {
 		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindCapture)
 		if err != nil {
@@ -129,16 +187,40 @@ func (p *PipelineExecutor) convertCapturesToTriage(ctx context.Context) error {
 		}
 
 		var entry spool.Entry
-		if err := json.Unmarshal([]byte(job.Payload), &entry); err == nil && entry.ConversationID != "" {
-			triageJob := &jobs.Job{
-				Kind:           jobs.KindTriage,
-				Priority:       jobs.PriorityNormal,
-				IdempotencyKey: "triage-" + entry.ConversationID,
-				Payload:        entry.ConversationID,
-			}
-			_, _ = p.store.Enqueue(ctx, triageJob)
+		if err := json.Unmarshal([]byte(job.Payload), &entry); err != nil || entry.ConversationID == "" {
+			_ = p.store.Complete(ctx, job.ID, nil)
+			continue
 		}
-		
+
+		transcriptPath := entry.TranscriptPath
+		queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
+		if _, err := os.Stat(queueCandidate); err == nil {
+			transcriptPath = queueCandidate
+		} else if transcriptPath != "" {
+			if _, err := os.Stat(transcriptPath); err != nil {
+				transcriptPath = ""
+			}
+		}
+
+		if transcriptPath == "" {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("no transcript path for conversation %s", entry.ConversationID), 5*time.Minute)
+			continue
+		}
+
+		parsed, err := evidence.ParseTranscript(transcriptPath)
+		if err != nil {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to parse transcript %s: %v", transcriptPath, err), 5*time.Minute)
+			continue
+		}
+
+		entry.TranscriptPath = transcriptPath
+		ep := evidence.BuildEpisode(entry, parsed, p.repoID)
+
+		if _, err := p.epStore.WriteEpisode(ep); err != nil {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to write episode for %s: %v", entry.ConversationID, err), 5*time.Minute)
+			continue
+		}
+
 		_ = p.store.Complete(ctx, job.ID, nil)
 	}
 	return nil
@@ -166,6 +248,10 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 		epID := job.Payload
 		ep, err := p.epStore.Read(epID)
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
@@ -175,14 +261,19 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 			tcfg.Subsystems = append(tcfg.Subsystems, s.Title)
 		}
 
-		triager := triage.NewTriager(p.hk, tcfg, triage.DefaultWindowsConfig())
+		tracker := newUsageTracker(p.hk)
+		triager := triage.NewTriager(tracker, tcfg, triage.DefaultWindowsConfig())
 		res, err := triager.Process(ctx, []*episode.Episode{ep})
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
 
-		if tRes, ok := res[epID]; ok && tRes.Keep {
+		if tRes, ok := res[ep.Header.EpisodeID]; ok && tRes.Keep {
 			payload := extractPayload{EpisodeID: epID, Result: tRes}
 			b, _ := json.Marshal(payload)
 			extractJob := &jobs.Job{
@@ -194,7 +285,12 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 			_, _ = p.store.Enqueue(ctx, extractJob)
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{}) // Dummy cost since Triager doesn't export usage natively
+		cost := tracker.Cost()
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -236,8 +332,9 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 					continue
 				}
 
-				extractor := extract.NewExtractor(p.hk, 16000)
-				triageMap := map[string]triage.TriageResult{payload.EpisodeID: payload.Result}
+				tracker := newUsageTracker(p.hk)
+				extractor := extract.NewExtractor(tracker, 16000)
+				triageMap := map[string]triage.TriageResult{ep.Header.EpisodeID: payload.Result}
 				
 				results, err := extractor.Extract(ctx, []*episode.Episode{ep}, triageMap)
 				if err != nil {
@@ -247,7 +344,9 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 
 				// Enqueue Reconcile jobs
 				for _, res := range results {
-					for _, cand := range res.Candidates {
+					for i := range res.Candidates {
+						cand := res.Candidates[i]
+						cand.EpisodeID = payload.EpisodeID // Force it to be the SessionID
 						cb, _ := json.Marshal(cand)
 						reconcileJob := &jobs.Job{
 							Kind:           jobs.KindReconcile,
@@ -259,7 +358,13 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 					}
 				}
 
-				_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+				cost := tracker.Cost()
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	select { case errCh <- err: default: }
+	return
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 			}
 		}()
 	}
@@ -293,15 +398,34 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 			continue
 		}
 
-		ep, err := p.epStore.Read(cand.EpisodeID)
+		sessionID := cand.EpisodeID
+		if sessionID == "" || strings.HasPrefix(sessionID, "ep-") {
+			// Extract from idempotency key: reconcile-pa-filename-ULID-statement
+			// Find the ULID which is 26 uppercase chars and digits
+			parts := strings.Split(job.IdempotencyKey, "-")
+			for i, pPart := range parts {
+				if len(pPart) == 26 && i >= 2 {
+					sessionID = strings.Join(parts[1:i+1], "-")
+					cand.EpisodeID = sessionID
+					break
+				}
+			}
+		}
+
+		ep, err := p.epStore.Read(sessionID)
 		if err != nil {
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to read session %q: %v", sessionID, err), 5*time.Minute)
 			continue
 		}
 
-		reconciler := reconcile.NewReconciler(p.hk, p.claimStore)
+		tracker := newUsageTracker(p.hk)
+		reconciler := reconcile.NewReconciler(tracker, p.claimStore)
 		actions, err := reconciler.Reconcile(ctx, ep, []extract.Candidate{cand})
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
@@ -327,7 +451,12 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 			}
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+		cost := tracker.Cost()
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -356,7 +485,8 @@ func (p *PipelineExecutor) processVerify(ctx context.Context) error {
 			}
 		}
 
-		verifier := verify.NewVerifier(p.hk, p.claimStore, p.repoRoot)
+		tracker := newUsageTracker(p.hk)
+		verifier := verify.NewVerifier(tracker, p.claimStore, p.repoRoot)
 		if err := verifier.VerifyClaims(ctx, targetClaims); err != nil {
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
@@ -374,7 +504,12 @@ func (p *PipelineExecutor) processVerify(ctx context.Context) error {
 			}
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+		cost := tracker.Cost()
+if err := p.checkBudget(&cost); err != nil {
+	_ = p.store.Complete(ctx, job.ID, &cost)
+	return err
+}
+_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -396,6 +531,10 @@ func (p *PipelineExecutor) processPublish(ctx context.Context) error {
 		claimID := job.Payload
 		claim, err := p.claimStore.Read(claimID)
 		if err != nil {
+			if errors.Is(err, harness.ErrQuotaExhausted) {
+				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
+				return err
+			}
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}

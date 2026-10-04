@@ -1,6 +1,7 @@
 package tick
 
 import (
+	"encoding/json"
 	"context"
 	"errors"
 	"fmt"
@@ -95,6 +96,9 @@ func (t *Ticker) Run(ctx context.Context) error {
 	}
 
 	for repoRoot, entry := range enrolledRepos {
+		if entry.Enabled == nil || *entry.Enabled {
+			_ = config.CreateEnrolledMarker(repoRoot)
+		}
 		if err := t.processRepo(ctx, repoRoot, entry.RepoID); err != nil {
 			fmt.Fprintf(os.Stderr, "tick error for repo %s: %v\n", repoRoot, err)
 		}
@@ -124,11 +128,12 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 	// 2. Ingest spool files as jobs
 	reader := spool.NewReader(spoolDir)
 	_, err = reader.Ingest(func(item spool.Item) error {
+		payloadBytes, _ := json.Marshal(item.Entry)
 		job := &jobs.Job{
 			Kind:           jobs.Kind(item.Entry.Kind),
 			IdempotencyKey: item.Entry.ID,
 			Priority:       10,
-			Payload:        item.Entry.ID,
+			Payload:        string(payloadBytes),
 		}
 		if job.IdempotencyKey == "" {
 			job.IdempotencyKey = fmt.Sprintf("ingest-%s-%s", item.Entry.Kind, item.Entry.ConversationID)
@@ -151,6 +156,11 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 	_, err = store.ReclaimExpiredLeases(ctx, time.Now())
 	if err != nil {
 		return err
+	}
+
+	// 4. Run pipeline
+	if err := t.ProcessPipeline(ctx, store, repoRoot, repoID); err != nil {
+		fmt.Fprintf(os.Stderr, "pipeline error for repo %s: %v\n", repoID, err)
 	}
 
 	return nil

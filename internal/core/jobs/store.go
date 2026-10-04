@@ -337,7 +337,7 @@ WHERE (state = 'queued' OR (state = 'failed' AND (next_attempt_at IS NULL OR nex
 	job, err := scanJob(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // No jobs available
+			return nil, ErrNoJobAvailable // No jobs available
 		}
 		return nil, fmt.Errorf("querying eligible job: %w", err)
 	}
@@ -372,7 +372,7 @@ WHERE id = ? AND state = ?;
 	}
 	if rows == 0 {
 		// Concurrently acquired
-		return nil, nil
+		return nil, ErrNoJobAvailable
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -800,4 +800,21 @@ func costValue(c *Cost) any {
 		return nil
 	}
 	return val
+}
+
+// RequeueKind resets the state of all jobs of the specified kind to queued,
+// so they can be processed again. Returns the number of jobs modified.
+func (s *Store) RequeueKind(ctx context.Context, kind Kind) (int, error) {
+	now := time.Now().UTC()
+	query := "UPDATE jobs SET state = ?, attempts = 0, last_error = NULL, lease_expires = NULL, next_attempt_at = NULL, updated_at = ? WHERE kind = ?"
+	result, err := s.db.ExecContext(ctx, query, string(StateQueued), now, string(kind))
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
 }

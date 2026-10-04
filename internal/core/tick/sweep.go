@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 )
@@ -126,10 +127,19 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 				continue
 			}
 
-			_, err = spool.CopyTranscriptIncremental(s.ConversationID, s.TranscriptPath, queueDir, stateDir)
+			res, err := spool.CopyTranscriptIncremental(s.ConversationID, s.TranscriptPath, queueDir, stateDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "incremental copy err for %s: %v\n", s.ConversationID, err)
 				continue
+			}
+
+			// Copy artifacts from the brain directory
+			brainDir := deriveBrainDir(s.ConversationID, s.TranscriptPath)
+			if brainDir != "" {
+				artDst := evidence.ArtifactDir(memoryDataDir, s.RepoID, s.ConversationID)
+				if _, err := evidence.CopyArtifacts(brainDir, artDst); err != nil {
+					fmt.Fprintf(os.Stderr, "copying artifacts err for %s: %v\n", s.ConversationID, err)
+				}
 			}
 
 			// Enqueue capture job
@@ -147,7 +157,7 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 
 				_, _ = store.Enqueue(ctx, &jobs.Job{
 					Kind:           jobs.KindCapture,
-					IdempotencyKey: "sweep-" + s.ConversationID,
+					IdempotencyKey: fmt.Sprintf("sweep-%s-%d", s.ConversationID, res.TotalBytes),
 					Priority:       10,
 					Payload:        string(payloadBytes),
 				})
@@ -158,3 +168,47 @@ func Sweep(ctx context.Context, memoryDataDir string, enrolledRepos map[string]c
 
 	return nil
 }
+
+func deriveBrainDir(convID, transcriptPath string) string {
+	if transcriptPath != "" {
+		if fi, err := os.Stat(transcriptPath); err == nil && fi.IsDir() {
+			return transcriptPath
+		}
+		// If transcriptPath is a file, walk up parent directories to find directory named convID
+		dir := filepath.Dir(transcriptPath)
+		for dir != "" && dir != "." && dir != string(filepath.Separator) {
+			if filepath.Base(dir) == convID {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	// Fallback to environment variable or standard user home brain directories
+	if envDir := os.Getenv("ANTIGRAVITY_BRAIN_DIR"); envDir != "" {
+		cand := filepath.Join(envDir, convID)
+		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+			return cand
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		candidates := []string{
+			filepath.Join(home, ".gemini", "antigravity", "brain", convID),
+			filepath.Join(home, ".gemini", "antigravity-cli", "brain", convID),
+		}
+		for _, cand := range candidates {
+			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+				return cand
+			}
+		}
+	}
+
+	return ""
+}
+

@@ -319,7 +319,7 @@ func TestLoadRepoConfig_ValidYAML(t *testing.T) {
 subsystems:
   ota:
     title: OTA updates
-    purpose: Manifest-first signed firmware updates
+    description: Manifest-first signed firmware updates
     globs:
       - modules/OTAUpdateManager/**
       - lib/OTADownloadEngine/**
@@ -349,8 +349,8 @@ subsystems:
 	if ota.Title != "OTA updates" {
 		t.Errorf("ota title: got %q, want 'OTA updates'", ota.Title)
 	}
-	if ota.Purpose != "Manifest-first signed firmware updates" {
-		t.Errorf("ota purpose: got %q", ota.Purpose)
+	if ota.Description != "Manifest-first signed firmware updates" {
+		t.Errorf("ota description: got %q", ota.Description)
 	}
 	if len(ota.Globs) != 2 {
 		t.Errorf("ota globs: got %d globs, want 2", len(ota.Globs))
