@@ -14,6 +14,7 @@ var DataDirSubdirectories = []string{
 	"runs",
 	"episodes",
 	"evidence",
+	filepath.Join("evidence", "artifacts"),
 	"pending",
 	"alerts",
 	"metrics",
