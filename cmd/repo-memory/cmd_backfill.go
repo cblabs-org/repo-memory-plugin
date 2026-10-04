@@ -39,15 +39,6 @@ var backfillCmd = &cobra.Command{
 				totalRequeued += count
 				fmt.Printf("Requeued %d captures for %s\n", count, entry.RepoID)
 			}
-
-			// Also requeue dead/completed triage jobs
-			tCount, err := store.RequeueKind(ctx, jobs.KindTriage)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to requeue triage for %s: %v\n", entry.RepoID, err)
-			} else {
-				totalRequeued += tCount
-				fmt.Printf("Requeued %d triage jobs for %s\n", tCount, entry.RepoID)
-			}
 			store.Close()
 		}
 
