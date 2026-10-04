@@ -14,6 +14,8 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness/fake"
 )
 
 func TestPipelineBudgetCapping(t *testing.T) {
@@ -249,3 +251,104 @@ func TestPipelineRun_ConvertCapturesToEvidence(t *testing.T) {
 		t.Errorf("got status %s, want captured", ep.Header.Status)
 	}
 }
+
+func TestPipelineCostPersistence(t *testing.T) {
+	dataDir := t.TempDir()
+	repoRoot := filepath.Join(dataDir, "workspace")
+	repoID := "repo-cost-test"
+	epID := "ep-ambiguous-session"
+
+	os.MkdirAll(filepath.Join(repoRoot, ".memory"), 0755)
+	cfg := config.DefaultRepoConfig()
+	config.SaveRepoConfig(repoRoot, cfg)
+
+	repoDataDir := filepath.Join(dataDir, repoID)
+	os.MkdirAll(repoDataDir, 0755)
+	jobStore, err := jobs.Open(filepath.Join(repoDataDir, "jobs.sqlite"))
+	if err != nil {
+		t.Fatalf("jobs.Open: %v", err)
+	}
+	defer jobStore.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Write an ambiguous episode (6 read steps: not kept, not skipped by rules)
+	epStore := episode.NewStore(dataDir, repoID)
+	ambiguousEp := &episode.Episode{
+		Header: episode.Header{
+			SessionID: epID,
+			EpisodeID: epID,
+			RepoID:    repoID,
+		},
+		Steps: []harness.Step{
+			{Index: 0, Kind: harness.StepKindRead, File: "a.txt"},
+			{Index: 1, Kind: harness.StepKindRead, File: "b.txt"},
+			{Index: 2, Kind: harness.StepKindRead, File: "c.txt"},
+			{Index: 3, Kind: harness.StepKindRead, File: "d.txt"},
+			{Index: 4, Kind: harness.StepKindRead, File: "e.txt"},
+			{Index: 5, Kind: harness.StepKindRead, File: "f.txt"},
+		},
+	}
+	if _, err := epStore.WriteEpisode(ambiguousEp); err != nil {
+		t.Fatalf("WriteEpisode: %v", err)
+	}
+
+	// Enqueue triage job
+	triageJob, err := jobStore.Enqueue(ctx, &jobs.Job{
+		Kind:           jobs.KindTriage,
+		Priority:       jobs.PriorityNormal,
+		IdempotencyKey: "triage-" + epID,
+		Payload:        epID,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	// Setup fake Housekeeper with token usage
+	fakeHK := fake.NewFakeHousekeeper()
+	expectedUsage := harness.Usage{
+		InputTokens:     2048,
+		OutputTokens:    512,
+		ThinkingTokens:  128,
+		CacheReadTokens: 1024,
+	}
+	fakeHK.SetResult(harness.StageTriage, harness.Result{
+		Payload: `{"decisions":[{"id":"ep-ambiguous-session","keep":false,"reason":"filtered"}]}`,
+		Usage:   expectedUsage,
+	})
+
+	exec := tick.NewPipelineExecutor(dataDir, repoRoot, repoID, jobStore, epStore)
+	exec.SetHousekeeper(fakeHK)
+
+	if err := exec.Run(ctx); err != nil {
+		t.Fatalf("exec.Run: %v", err)
+	}
+
+	// Fetch completed job and verify Cost is populated from usage
+	completedJob, err := jobStore.Get(ctx, triageJob.ID)
+	if err != nil {
+		t.Fatalf("jobStore.Get: %v", err)
+	}
+
+	if completedJob.State != jobs.StateDone {
+		t.Fatalf("expected job state done, got %s", completedJob.State)
+	}
+	if completedJob.Cost == nil {
+		t.Fatal("expected non-nil job.Cost")
+	}
+
+	if completedJob.Cost.InputTokens != expectedUsage.InputTokens {
+		t.Errorf("InputTokens: got %d, want %d", completedJob.Cost.InputTokens, expectedUsage.InputTokens)
+	}
+	if completedJob.Cost.OutputTokens != expectedUsage.OutputTokens {
+		t.Errorf("OutputTokens: got %d, want %d", completedJob.Cost.OutputTokens, expectedUsage.OutputTokens)
+	}
+	if completedJob.Cost.ThinkingTokens != expectedUsage.ThinkingTokens {
+		t.Errorf("ThinkingTokens: got %d, want %d", completedJob.Cost.ThinkingTokens, expectedUsage.ThinkingTokens)
+	}
+	if completedJob.Cost.CacheReadTokens != expectedUsage.CacheReadTokens {
+		t.Errorf("CacheReadTokens: got %d, want %d", completedJob.Cost.CacheReadTokens, expectedUsage.CacheReadTokens)
+	}
+}
+
