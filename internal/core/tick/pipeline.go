@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	claimstore "github.com/cblabs-org/repo-memory-plugin/internal/core/claims/store"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/extract"
@@ -91,8 +93,24 @@ func (p *PipelineExecutor) checkBudget(cost *jobs.Cost) error {
 	return nil
 }
 
+// NewPipelineExecutor creates a PipelineExecutor for pipeline processing.
+func NewPipelineExecutor(dataDir, repoRoot, repoID string, store *jobs.Store, epStore *episode.Store) *PipelineExecutor {
+	return &PipelineExecutor{
+		dataDir:  dataDir,
+		repoRoot: repoRoot,
+		repoID:   repoID,
+		store:    store,
+		epStore:  epStore,
+	}
+}
+
+// ConvertCapturesToEvidence exposes convertCapturesToEvidence for testing and direct invocation.
+func (p *PipelineExecutor) ConvertCapturesToEvidence(ctx context.Context) error {
+	return p.convertCapturesToEvidence(ctx)
+}
+
 func (p *PipelineExecutor) Run(ctx context.Context) error {
-	if err := p.convertCapturesToTriage(ctx); err != nil {
+	if err := p.convertCapturesToEvidence(ctx); err != nil {
 		return err
 	}
 
@@ -119,7 +137,11 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 	return nil
 }
 
-func (p *PipelineExecutor) convertCapturesToTriage(ctx context.Context) error {
+func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error {
+	if p.epStore == nil {
+		p.epStore = episode.NewStore(p.dataDir, p.repoID)
+	}
+
 	for {
 		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindCapture)
 		if err != nil {
@@ -130,16 +152,45 @@ func (p *PipelineExecutor) convertCapturesToTriage(ctx context.Context) error {
 		}
 
 		var entry spool.Entry
-		if err := json.Unmarshal([]byte(job.Payload), &entry); err == nil && entry.ConversationID != "" {
-			triageJob := &jobs.Job{
-				Kind:           jobs.KindTriage,
-				Priority:       jobs.PriorityNormal,
-				IdempotencyKey: "triage-" + entry.ConversationID,
-				Payload:        entry.ConversationID,
-			}
-			_, _ = p.store.Enqueue(ctx, triageJob)
+		if err := json.Unmarshal([]byte(job.Payload), &entry); err != nil || entry.ConversationID == "" {
+			_ = p.store.Complete(ctx, job.ID, nil)
+			continue
 		}
-		
+
+		transcriptPath := entry.TranscriptPath
+		if transcriptPath == "" {
+			queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
+			if _, err := os.Stat(queueCandidate); err == nil {
+				transcriptPath = queueCandidate
+			}
+		} else {
+			if _, err := os.Stat(transcriptPath); err != nil {
+				queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
+				if _, qErr := os.Stat(queueCandidate); qErr == nil {
+					transcriptPath = queueCandidate
+				}
+			}
+		}
+
+		if transcriptPath == "" {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("no transcript path for conversation %s", entry.ConversationID), 5*time.Minute)
+			continue
+		}
+
+		parsed, err := evidence.ParseTranscript(transcriptPath)
+		if err != nil {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to parse transcript %s: %v", transcriptPath, err), 5*time.Minute)
+			continue
+		}
+
+		entry.TranscriptPath = transcriptPath
+		ep := evidence.BuildEpisode(entry, parsed, p.repoID)
+
+		if _, err := p.epStore.WriteEpisode(ep); err != nil {
+			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to write episode for %s: %v", entry.ConversationID, err), 5*time.Minute)
+			continue
+		}
+
 		_ = p.store.Complete(ctx, job.ID, nil)
 	}
 	return nil

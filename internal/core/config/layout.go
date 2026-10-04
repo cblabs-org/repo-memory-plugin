@@ -13,6 +13,7 @@ var DataDirSubdirectories = []string{
 	"queue",
 	"runs",
 	"episodes",
+	"evidence",
 	"pending",
 	"alerts",
 	"metrics",

@@ -70,24 +70,45 @@ type Stats struct {
 
 // Header represents the metadata header line of an episode file (§5.1).
 type Header struct {
-	EpisodeID        string    `json:"episode_id"`
-	Harness          string    `json:"harness"`
-	SessionID        string    `json:"session_id"`
-	ParentEpisode    *string   `json:"parent_episode"`
-	RepoID           string    `json:"repo_id"`
-	Branch           string    `json:"branch,omitempty"`
-	Started          time.Time `json:"started,omitempty"`
-	Ended            time.Time `json:"ended,omitempty"`
-	HeadStart        string    `json:"head_start,omitempty"`
-	HeadEnd          string    `json:"head_end,omitempty"`
-	Commits          []string  `json:"commits,omitempty"`
-	StepGaps         [][2]int  `json:"step_gaps,omitempty"`
-	Model            string    `json:"model,omitempty"`
-	HarnessVersion   string    `json:"harness_version,omitempty"`
-	StartedBy        string    `json:"started_by,omitempty"`
-	CompactorVersion string    `json:"compactor_version,omitempty"`
-	PipelineVersion  string    `json:"pipeline_version,omitempty"`
-	Stats            Stats     `json:"stats,omitempty"`
+	EpisodeID        string            `json:"episode_id"`
+	Harness          string            `json:"harness"`
+	SessionID        string            `json:"session_id"`
+	ParentEpisode    *string           `json:"parent_episode"`
+	RepoID           string            `json:"repo_id"`
+	Branch           string            `json:"branch,omitempty"`
+	Started          time.Time         `json:"started,omitempty"`
+	Ended            time.Time         `json:"ended,omitempty"`
+	HeadStart        string            `json:"head_start,omitempty"`
+	HeadEnd          string            `json:"head_end,omitempty"`
+	Commits          []string          `json:"commits,omitempty"`
+	StepGaps         [][2]int          `json:"step_gaps,omitempty"`
+	Model            string            `json:"model,omitempty"`
+	HarnessVersion   string            `json:"harness_version,omitempty"`
+	StartedBy        string            `json:"started_by,omitempty"`
+	CompactorVersion string            `json:"compactor_version,omitempty"`
+	PipelineVersion  string            `json:"pipeline_version,omitempty"`
+	Stats            Stats             `json:"stats,omitempty"`
+	Source           string            `json:"source,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	StepCount        int               `json:"step_count,omitempty"`
+	Checkpoints      map[string]string `json:"checkpoints,omitempty"`
+	Metadata         map[string]any    `json:"metadata,omitempty"`
+}
+
+// SetCheckpoint records a parsed checkpoint section on the header.
+func (h *Header) SetCheckpoint(section, content string) {
+	if h.Checkpoints == nil {
+		h.Checkpoints = make(map[string]string)
+	}
+	h.Checkpoints[section] = content
+}
+
+// Checkpoint returns a parsed checkpoint section by name.
+func (h *Header) Checkpoint(section string) string {
+	if h.Checkpoints == nil {
+		return ""
+	}
+	return h.Checkpoints[section]
 }
 
 // NewEpisodeID creates a new ULID-based episode ID with the "ep-" prefix.
