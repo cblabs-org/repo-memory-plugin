@@ -62,7 +62,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 		}
 
 		name := d.Name()
-		if !strings.HasSuffix(name, ".md") && !strings.HasSuffix(name, ".metadata.json") {
+		if !strings.HasSuffix(name, ".md") && !strings.HasSuffix(name, ".metadata.json") && !strings.HasSuffix(name, ".md.resolved") {
 			return nil
 		}
 
@@ -87,7 +87,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 		targetPath := filepath.Join(dstDir, rel)
 
 		if dstInfo, err := os.Stat(targetPath); err == nil {
-			if dstInfo.Size() == info.Size() {
+			if dstInfo.Size() == info.Size() && dstInfo.ModTime().Equal(info.ModTime()) {
 				return nil
 			}
 		}
@@ -95,6 +95,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 		if err := copyFile(path, targetPath); err != nil {
 			return fmt.Errorf("copying artifact %s to %s: %w", path, targetPath, err)
 		}
+		os.Chtimes(targetPath, info.ModTime(), info.ModTime())
 
 		copiedCount++
 		return nil

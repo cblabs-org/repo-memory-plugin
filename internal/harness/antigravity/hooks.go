@@ -377,11 +377,21 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 	if payload.ArtifactDirectoryPath != "" {
 		artSrc := expandHome(payload.ArtifactDirectoryPath)
 		artDst := evidence.ArtifactDir(dataDir, repoID, convID)
-		count, err := evidence.CopyArtifacts(artSrc, artDst)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "copying artifacts for %s: %v\n", convID, err)
-		} else {
+		
+		ch := make(chan int, 1)
+		go func() {
+			count, err := evidence.CopyArtifacts(artSrc, artDst)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "copying artifacts for %s: %v\n", convID, err)
+			}
+			ch <- count
+		}()
+
+		select {
+		case count := <-ch:
 			artifactsCopied = count
+		case <-time.After(100 * time.Millisecond):
+			// Timeout, let it run in background (will be killed when process exits)
 		}
 	}
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"errors"
 	"fmt"
 	"os"
@@ -72,7 +73,18 @@ func EnsureRepoLayout(repoRoot string) error {
 	}
 
 	gitignorePath := filepath.Join(memoryDir, ".gitignore")
-	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
+	if bGit, err := os.ReadFile(gitignorePath); err == nil {
+		if !strings.Contains(string(bGit), ".enrolled") {
+			f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
+			if err == nil {
+				if len(bGit) > 0 && bGit[len(bGit)-1] != '\n' {
+					f.WriteString("\n")
+				}
+				f.WriteString(".enrolled\n")
+				f.Close()
+			}
+		}
+	} else if os.IsNotExist(err) {
 		content := []byte(".cache/\n.enrolled\n")
 		if err := os.WriteFile(gitignorePath, content, 0644); err != nil {
 			return fmt.Errorf("creating gitignore in %s: %w", memoryDir, err)

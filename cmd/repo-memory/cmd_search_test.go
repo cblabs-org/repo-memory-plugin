@@ -1,49 +1,56 @@
 package main
 
 import (
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"bytes"
-	"context"
-	"os"
+		"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
-)
+	)
 
 func TestSearchCommand(t *testing.T) {
 	tempDir := t.TempDir()
+
+	os.Setenv("REPO_MEMORY_DATA_DIR", filepath.Join(tempDir, "data"))
+	defer os.Unsetenv("REPO_MEMORY_DATA_DIR")
 
 	// Initialize git repo so gitops works
 	if err := os.Mkdir(filepath.Join(tempDir, ".git"), 0755); err != nil {
 		t.Fatal(err)
 	}
-
+	
 	// Create memory layout
 	memDir := filepath.Join(tempDir, ".memory", "views", "index")
 	if err := os.MkdirAll(memDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dbPath := filepath.Join(memDir, "episodes.db")
 
-	idx, err := index.NewIndex(dbPath)
-	if err != nil {
+	repoID, _ := gitops.GenerateRepoID(tempDir)
+	dataDir := filepath.Join(tempDir, "data", repoID)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	_ = filepath.Join(dataDir, "episodes_fts.db")
 
-	record := index.EpisodeRecord{
-		EpisodeID:    "ep-123",
-		SessionID:    "sess-abc",
-		Content:      "Added a new feature for searching",
-		FilesTouched: "cmd_search.go",
-		Outcomes:     "success",
-		Date:         time.Now(),
+	store := episode.NewStore(filepath.Join(tempDir, "data"), repoID)
+	ep := episode.NewEpisode(episode.Header{
+		EpisodeID: "ep-123",
+		SessionID: "sess-abc",
+		Started:   time.Now(),
+	})
+	
+	// manually add step to bypass the empty check and parse correctly
+	ep.Steps = []harness.Step{
+		{Text: "Added a new feature for searching", File: "cmd_search.go"},
 	}
-	if err := idx.InsertEpisode(context.Background(), record); err != nil {
+	if _, err := store.WriteEpisode(ep); err != nil {
 		t.Fatal(err)
 	}
-	idx.Close()
 
 	// Change working directory to tempDir so gitops finds the repo root
 	origWd, _ := os.Getwd()

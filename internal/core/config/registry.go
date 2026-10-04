@@ -14,6 +14,7 @@ import (
 type RegistryEntry struct {
 	RepoID   string `json:"repo_id"`
 	RootPath string `json:"root_path"`
+	Enabled  *bool  `json:"enabled,omitempty"`
 }
 
 // UnmarshalJSON supports both snake_case (repo_id, root_path) and PascalCase (RepoID, RootPath).
@@ -23,6 +24,7 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 		Alias
 		AltRepoID   string `json:"RepoID"`
 		AltRootPath string `json:"RootPath"`
+		AltEnabled  *bool  `json:"Enabled"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -33,6 +35,9 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 	}
 	if e.RootPath == "" && aux.AltRootPath != "" {
 		e.RootPath = aux.AltRootPath
+	}
+	if e.Enabled == nil && aux.AltEnabled != nil {
+		e.Enabled = aux.AltEnabled
 	}
 	return nil
 }

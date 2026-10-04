@@ -51,12 +51,38 @@ var hookCmd = &cobra.Command{
 		}
 
 		// Fast path for non-enrolled repositories / kill switch (target <= 5ms)
+		var payload []byte
 		if !hookProbeFlag {
+			if os.Getenv("REPO_MEMORY_DISABLED") == "1" {
+				if isPreToolUse {
+					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(), `{}`)
+				}
+				return nil
+			}
+
 			targetDir := hookWorkspaceFlag
 			if targetDir == "" {
-				targetDir, _ = os.Getwd()
+				payload, _ = io.ReadAll(cmd.InOrStdin())
+				type fastPayload struct {
+					WorkspacePaths      []string `json:"workspacePaths"`
+					WorkspacePathsSnake []string `json:"workspace_paths"`
+				}
+				var parsed fastPayload
+				if len(payload) > 0 {
+					_ = json.Unmarshal(payload, &parsed)
+				}
+				if len(parsed.WorkspacePaths) > 0 && parsed.WorkspacePaths[0] != "" {
+					targetDir = parsed.WorkspacePaths[0]
+				} else if len(parsed.WorkspacePathsSnake) > 0 && parsed.WorkspacePathsSnake[0] != "" {
+					targetDir = parsed.WorkspacePathsSnake[0]
+				} else {
+					targetDir, _ = os.Getwd()
+				}
 			}
-			if os.Getenv("REPO_MEMORY_DISABLED") == "1" || !config.IsEnrolledFast(targetDir) {
+
+			if !config.IsEnrolledFast(targetDir) {
 				if isPreToolUse {
 					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
 				} else {
@@ -67,7 +93,7 @@ var hookCmd = &cobra.Command{
 		}
 
 		// Wrap the real logic so we can catch errors and fail open.
-		err := hookRunE(cmd, args, eventName, isPreToolUse)
+		err := hookRunE(cmd, args, eventName, isPreToolUse, payload)
 		if err != nil && isPreToolUse {
 			// Fail open: return allow instead of propagating the error.
 			fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow","reason":"fail-open: `+strings.ReplaceAll(err.Error(), `"`, `'`)+`"}`)
@@ -77,7 +103,7 @@ var hookCmd = &cobra.Command{
 	},
 }
 
-func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse bool) error {
+func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse bool, preReadPayload []byte) error {
 	if hookProbeFlag {
 		event := "unknown"
 		if len(args) >= 2 {
@@ -90,9 +116,13 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 			}
 		}
 
-		payload, err := io.ReadAll(cmd.InOrStdin())
-		if err != nil {
-			return fmt.Errorf("reading hook payload: %w", err)
+		payload := preReadPayload
+		if len(payload) == 0 {
+			var err error
+			payload, err = io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				return fmt.Errorf("reading hook payload: %w", err)
+			}
 		}
 
 		out, err := handleProbe(event, payload)
@@ -109,9 +139,13 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 	}
 
 	if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "stop") {
-		payload, err := io.ReadAll(cmd.InOrStdin())
-		if err != nil {
-			return fmt.Errorf("reading hook payload: %w", err)
+		payload := preReadPayload
+		if len(payload) == 0 {
+			var err error
+			payload, err = io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				return fmt.Errorf("reading hook payload: %w", err)
+			}
 		}
 
 		out, err := antigravity.HandleStop(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))

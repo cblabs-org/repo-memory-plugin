@@ -38,7 +38,7 @@ func BuildEpisode(entry spool.Entry, parsed *ParsedTranscript, repoID string) *e
 	}
 
 	header := episode.Header{
-		EpisodeID:        episode.NewEpisodeIDWithTime(started),
+		EpisodeID:        entry.ConversationID,
 		Harness:          harnessName,
 		SessionID:        entry.ConversationID,
 		RepoID:           repoID,
