@@ -805,7 +805,9 @@ func costValue(c *Cost) any {
 // RequeueKind resets the state of all jobs of the specified kind to queued,
 // so they can be processed again. Returns the number of jobs modified.
 func (s *Store) RequeueKind(ctx context.Context, kind Kind) (int, error) {
-	result, err := s.db.ExecContext(ctx, "UPDATE jobs SET state = ?, attempts = 0, error = NULL, result = NULL WHERE kind = ?", StateQueued, kind)
+	now := time.Now().UTC()
+	query := "UPDATE jobs SET state = ?, attempts = 0, last_error = NULL, lease_expires = NULL, next_attempt_at = NULL, updated_at = ? WHERE kind = ?"
+	result, err := s.db.ExecContext(ctx, query, string(StateQueued), now, string(kind))
 	if err != nil {
 		return 0, err
 	}
