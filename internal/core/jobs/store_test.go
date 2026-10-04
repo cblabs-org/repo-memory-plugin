@@ -2,6 +2,7 @@ package jobs_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -304,8 +305,8 @@ func TestJobLifecycleSuccess(t *testing.T) {
 
 	// No more jobs available
 	next, err := store.AcquireNext(ctx, 30*time.Second)
-	if err != nil {
-		t.Fatalf("AcquireNext failed: %v", err)
+	if !errors.Is(err, jobs.ErrNoJobAvailable) {
+		t.Fatalf("AcquireNext expected ErrNoJobAvailable, got: %v", err)
 	}
 	if next != nil {
 		t.Errorf("expected nil next job, got %+v", next)

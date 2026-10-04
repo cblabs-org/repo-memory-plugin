@@ -40,5 +40,6 @@ func init() {
 	rootCmd.AddCommand(importPACmd)
 	rootCmd.AddCommand(evalCmd)
 	rootCmd.AddCommand(snapshotCmd)
+	rootCmd.AddCommand(usageCmd)
 }
 

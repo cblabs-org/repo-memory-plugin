@@ -104,6 +104,41 @@ func NewPipelineExecutor(dataDir, repoRoot, repoID string, store *jobs.Store, ep
 	}
 }
 
+// SetHousekeeper sets the housekeeper harness for the executor.
+func (p *PipelineExecutor) SetHousekeeper(hk harness.Housekeeper) {
+	p.hk = hk
+}
+
+type usageTracker struct {
+	hk    harness.Housekeeper
+	mu    sync.Mutex
+	usage harness.Usage
+}
+
+func newUsageTracker(hk harness.Housekeeper) *usageTracker {
+	return &usageTracker{hk: hk}
+}
+
+func (u *usageTracker) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
+	if u.hk == nil {
+		return harness.Result{}, fmt.Errorf("no housekeeper configured")
+	}
+	res, err := u.hk.Run(ctx, stage, input)
+	u.mu.Lock()
+	u.usage.InputTokens += res.Usage.InputTokens
+	u.usage.OutputTokens += res.Usage.OutputTokens
+	u.usage.ThinkingTokens += res.Usage.ThinkingTokens
+	u.usage.CacheReadTokens += res.Usage.CacheReadTokens
+	u.mu.Unlock()
+	return res, err
+}
+
+func (u *usageTracker) Cost() jobs.Cost {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return jobs.FromUsage(u.usage)
+}
+
 // ConvertCapturesToEvidence exposes convertCapturesToEvidence for testing and direct invocation.
 func (p *PipelineExecutor) ConvertCapturesToEvidence(ctx context.Context) error {
 	return p.convertCapturesToEvidence(ctx)
@@ -231,7 +266,8 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 			tcfg.Subsystems = append(tcfg.Subsystems, s.Title)
 		}
 
-		triager := triage.NewTriager(p.hk, tcfg, triage.DefaultWindowsConfig())
+		tracker := newUsageTracker(p.hk)
+		triager := triage.NewTriager(tracker, tcfg, triage.DefaultWindowsConfig())
 		res, err := triager.Process(ctx, []*episode.Episode{ep})
 		if err != nil {
 			if errors.Is(err, harness.ErrQuotaExhausted) {
@@ -254,7 +290,9 @@ func (p *PipelineExecutor) processTriage(ctx context.Context) error {
 			_, _ = p.store.Enqueue(ctx, extractJob)
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{}) // Dummy cost since Triager doesn't export usage natively
+		cost := tracker.Cost()
+		_ = p.checkBudget(&cost)
+		_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -296,7 +334,8 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 					continue
 				}
 
-				extractor := extract.NewExtractor(p.hk, 16000)
+				tracker := newUsageTracker(p.hk)
+				extractor := extract.NewExtractor(tracker, 16000)
 				triageMap := map[string]triage.TriageResult{ep.Header.EpisodeID: payload.Result}
 				
 				results, err := extractor.Extract(ctx, []*episode.Episode{ep}, triageMap)
@@ -321,7 +360,9 @@ func (p *PipelineExecutor) processExtract(ctx context.Context) error {
 					}
 				}
 
-				_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+				cost := tracker.Cost()
+				_ = p.checkBudget(&cost)
+				_ = p.store.Complete(ctx, job.ID, &cost)
 			}
 		}()
 	}
@@ -375,7 +416,8 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 			continue
 		}
 
-		reconciler := reconcile.NewReconciler(p.hk, p.claimStore)
+		tracker := newUsageTracker(p.hk)
+		reconciler := reconcile.NewReconciler(tracker, p.claimStore)
 		actions, err := reconciler.Reconcile(ctx, ep, []extract.Candidate{cand})
 		if err != nil {
 			if errors.Is(err, harness.ErrQuotaExhausted) {
@@ -407,7 +449,9 @@ func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
 			}
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+		cost := tracker.Cost()
+		_ = p.checkBudget(&cost)
+		_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }
@@ -436,7 +480,8 @@ func (p *PipelineExecutor) processVerify(ctx context.Context) error {
 			}
 		}
 
-		verifier := verify.NewVerifier(p.hk, p.claimStore, p.repoRoot)
+		tracker := newUsageTracker(p.hk)
+		verifier := verify.NewVerifier(tracker, p.claimStore, p.repoRoot)
 		if err := verifier.VerifyClaims(ctx, targetClaims); err != nil {
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
@@ -454,7 +499,9 @@ func (p *PipelineExecutor) processVerify(ctx context.Context) error {
 			}
 		}
 
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
+		cost := tracker.Cost()
+		_ = p.checkBudget(&cost)
+		_ = p.store.Complete(ctx, job.ID, &cost)
 	}
 	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
 // Standard Job Kinds defined in SPEC §4.3.
@@ -75,10 +77,32 @@ func (s State) IsTerminal() bool {
 
 // Cost represents token, duration, and model metrics for execution runs (SPEC §4.3, §4.4).
 type Cost struct {
-	InputTokens  int    `json:"input_tokens,omitempty"`
-	OutputTokens int    `json:"output_tokens,omitempty"`
-	DurationMS   int64  `json:"duration_ms,omitempty"`
-	Model        string `json:"model,omitempty"`
+	InputTokens     int    `json:"input_tokens,omitempty"`
+	OutputTokens    int    `json:"output_tokens,omitempty"`
+	ThinkingTokens  int    `json:"thinking_tokens,omitempty"`
+	CacheReadTokens int    `json:"cache_read_tokens,omitempty"`
+	DurationMS      int64  `json:"duration_ms,omitempty"`
+	Model           string `json:"model,omitempty"`
+}
+
+// FromUsage converts a harness.Usage into a Cost.
+func FromUsage(u harness.Usage) Cost {
+	return Cost{
+		InputTokens:     u.InputTokens,
+		OutputTokens:    u.OutputTokens,
+		ThinkingTokens:  u.ThinkingTokens,
+		CacheReadTokens: u.CacheReadTokens,
+	}
+}
+
+// ToUsage converts a Cost into a harness.Usage.
+func (c Cost) ToUsage() harness.Usage {
+	return harness.Usage{
+		InputTokens:     c.InputTokens,
+		OutputTokens:    c.OutputTokens,
+		ThinkingTokens:  c.ThinkingTokens,
+		CacheReadTokens: c.CacheReadTokens,
+	}
 }
 
 // Value implements driver.Valuer for SQLite storage as JSON.
