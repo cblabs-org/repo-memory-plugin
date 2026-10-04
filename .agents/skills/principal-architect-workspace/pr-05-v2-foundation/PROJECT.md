@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-05-v2-foundation
 > **Base branch:** `main`
-> **Status:** ☐ Planned
+> **Status:** ✅ Complete (5/5 WOs)
 > **SPEC:** [SPEC.md](../../../../SPEC.md) v0.10 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 
@@ -30,7 +30,7 @@ Put the retained infrastructure into a known-good state before any v2 work. Clos
 | 2 | [`wo2-capture-to-evidence`](wo2-capture-to-evidence/WORKORDER.md) | Fix the broken link between capture and episodes. `convertCapturesToTriage` (`internal/core/tick/pipeline.go`) queues triage by conversation ID, but nothing parses or compacts the captured transcript into the episode store: 124 captured, 0 processed. Build episodes, or evidence records, from captured transcripts incrementally. Parse `CHECKPOINT` steps into structured sections (User Knowledge, Model Knowledge, Work Accomplished, …). Backfill the 124 already captured. Remove the v1 capture→triage hand-off. | standard | ☑ Complete |
 | 3 | [`wo3-artifact-capture`](wo3-artifact-capture/WORKORDER.md) | Copy conversation artifacts (`brain/<id>/*.md` and `.metadata.json`) into `<data-dir>/<repo-id>/evidence/artifacts/`, at `Stop` and during the sweep, for enrolled repos. Deterministic. Add a `snapshot` command that copies the named conversations' transcripts and artifacts now, for X6 candidates (PD17). | standard | ☑ Complete |
 | 4 | [`wo4-hooks-restore`](wo4-hooks-restore/WORKORDER.md) | The installed `~/.gemini/config/plugins/repo-memory/hooks.json` has been `{}` since 2026-10-02 22:45, so no hooks run and capture relies on the sweep. Record why it was emptied. Make `install`/`upgrade` write the hook set safely, with fail-open behaviour verified (empty stdout or `{"decision":"allow"}`; never `{}`). Add the non-enrolled fast path (E05: 57 ms → ≤ 5 ms via a marker or registry cache). Delete the 1.5 GB of probe logs and add rotation for logs and probes. | standard | ☑ Complete |
-| 5 | `wo5-cost-telemetry` | Executor results are stored with `Cost{}`. Record `usage` from `agy` JSON output (input, output, thinking, cache read) on every job. Add a read-only `gen_metadata` reader, marked experimental and undocumented, for the uncached, cached and output tokens of IDE turns. X1 and X3 need it. Add a `/usage` reader (`agy -p "/usage" --output-format json`, zero tokens) as a shared quota-guard library. | standard | ☐ Planned |
+| 5 | [`wo5-cost-telemetry`](wo5-cost-telemetry/WORKORDER.md) | Executor results are stored with `Cost{}`. Record `usage` from `agy` JSON output (input, output, thinking, cache read) on every job. Add a read-only `gen_metadata` reader, marked experimental and undocumented, for the uncached, cached and output tokens of IDE turns. X1 and X3 need it. Add a `/usage` reader (`agy -p "/usage" --output-format json`, zero tokens) as a shared quota-guard library. | standard | ☑ Complete |
 
 ## Exit Criteria
 
@@ -60,3 +60,9 @@ Put the retained infrastructure into a known-good state before any v2 work. Clos
 ## Session Log
 
 - 2026-10-04 13:46 — Project approved. Full autonomous implementation authority granted. Starting WO1 (close PR-05b).
+- 2026-10-04 13:50 — WO1 complete. Cherry-picked 10 PR-05b commits, archived v1 claims. Build clean.
+- 2026-10-04 14:03 — WO2 complete. Evidence package created (checkpoint parser, transcript builder). `convertCapturesToTriage` → `convertCapturesToEvidence`. Episode header extended with Source, Status, StepCount, Checkpoints fields.
+- 2026-10-04 14:17 — WO3 complete. `CopyArtifacts` (idempotent, size-limited). Artifact capture at Stop hook and sweep. `repo-memory snapshot` CLI. Out-of-scope: `.gitignore` `repo-memory` → `/repo-memory`; attribution timestamp test issue.
+- 2026-10-04 14:39 — WO4 complete. Hooks restored and validated. `.enrolled` marker + `IsEnrolledFast`: 13μs (13,447 ns/op) non-enrolled fast path, well under 5ms budget. Install safety validation. 2.4 GB probe logs cleaned. Log rotation added. `.gitignore` fixed. Out-of-scope: `cmd_search_test.go` fixture mismatch; `attribution_test.go` timestamp bug.
+- 2026-10-04 14:53 — WO5 complete. `Cost` extended with ThinkingTokens/CacheReadTokens + `FromUsage`/`ToUsage`. Pipeline wired with `usageTracker`. `telemetry` package: `ReadGenMetadata` (experimental), `CheckQuota` (zero-token). `repo-memory usage` CLI.
+- 2026-10-04 14:54 — **PR-05-v2-foundation complete.** 5/5 WOs. Staged for user review.
