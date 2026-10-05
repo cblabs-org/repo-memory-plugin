@@ -40,7 +40,7 @@ The split architecture doc ([`docs/antigravity-plugin-architecture.md`](../../..
 
 ### Check 1: Nested plugin dir isolation
 
-- [ ] Create a temporary test plugin structure that mimics the split layout:
+- [x] Create a temporary test plugin structure that mimics the split layout:
   ```
   /tmp/repo-memory-split-test/
   ├── plugin.json              # { "name": "test-daemon" }
@@ -52,14 +52,14 @@ The split architecture doc ([`docs/antigravity-plugin-architecture.md`](../../..
           ├── plugin.json      # { "name": "test-workspace-bundle" }
           └── hooks.json       # { "Stop": { "commands": [{ "command": ["echo", "test-hook-fired"] }] } }
   ```
-- [ ] Symlink or copy the test plugin to `~/.gemini/config/plugins/test-split-daemon/`
-- [ ] Check if `test-workspace-bundle` appears as a loaded plugin (check `~/.gemini/config/config.json` plugins section, or use `agy` commands)
-- [ ] If it IS loaded globally → the assumption fails. Document the fallback (separate directories instead of nesting).
-- [ ] Clean up: remove `~/.gemini/config/plugins/test-split-daemon/`
+- [x] Symlink or copy the test plugin to `~/.gemini/config/plugins/test-split-daemon/`
+- [x] Check if `test-workspace-bundle` appears as a loaded plugin (check `~/.gemini/config/config.json` plugins section, or use `agy` commands)
+- [x] If it IS loaded globally → the assumption fails. Document the fallback (separate directories instead of nesting).
+- [x] Clean up: remove `~/.gemini/config/plugins/test-split-daemon/`
 
 ### Check 2: `~` expansion in `.agents/plugins.json`
 
-- [ ] In this repo's `.agents/` directory, create a temporary `plugins.json`:
+- [x] In this repo's `.agents/` directory, create a temporary `plugins.json`:
   ```json
   {
     "entries": [
@@ -68,24 +68,24 @@ The split architecture doc ([`docs/antigravity-plugin-architecture.md`](../../..
   }
   ```
   (Use the test plugin from Check 1 — re-install it for this check)
-- [ ] Start a conversation in this repo and check if the `test-workspace-bundle` hooks are loaded
-- [ ] If `~` is NOT expanded → test with absolute path as fallback
-- [ ] Document whether `~`, `$HOME`, or only absolute paths work
-- [ ] Clean up: remove `.agents/plugins.json` and the test plugin
+- [x] Start a conversation in this repo and check if the `test-workspace-bundle` hooks are loaded
+- [x] If `~` is NOT expanded → test with absolute path as fallback
+- [x] Document whether `~`, `$HOME`, or only absolute paths work
+- [x] Clean up: remove `.agents/plugins.json` and the test plugin
 
 ### Check 3: Extra files in sidecar dirs
 
-- [ ] Add a `config.json` file alongside the test sidecar:
+- [x] Add a `config.json` file alongside the test sidecar:
   ```
   test-split-daemon/sidecars/tick/config.json   # { "enrolled_repos": [] }
   ```
-- [ ] Verify the sidecar still appears in the dashboard / is loadable
-- [ ] Document whether extra files cause errors
-- [ ] Clean up
+- [x] Verify the sidecar still appears in the dashboard / is loadable
+- [x] Document whether extra files cause errors
+- [x] Clean up
 
 ### Write the report
 
-- [ ] Create `docs/experiments/phase0-plugin-split.md` with:
+- [x] Create `docs/experiments/phase0-plugin-split.md` with:
   - Date, branch, methodology
   - Results table: assumption × result × evidence
   - For any failed assumption: the fallback approach
