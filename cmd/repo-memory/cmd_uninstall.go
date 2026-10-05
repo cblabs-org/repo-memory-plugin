@@ -56,6 +56,9 @@ var uninstallCmd = &cobra.Command{
 		if uninstallPurge {
 			fmt.Printf("Purged data directory at: %s\n", dataDir)
 		}
+		
+		fmt.Println("\n⚠ Any enrolled repos still have .agents/plugins.json pointing to the removed plugin.")
+		fmt.Println("  Run 'repo-memory unenroll' in each enrolled repo, or remove .agents/plugins.json manually.")
 
 		return nil
 	},

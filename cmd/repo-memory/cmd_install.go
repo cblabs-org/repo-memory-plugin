@@ -93,11 +93,19 @@ func RunInstall(pluginDir, binPath string) error {
 	if legacyDir != pluginDir {
 		if info, err := os.Stat(legacyDir); err == nil && info.IsDir() {
 			fmt.Println("Migrating from legacy plugin layout (repo-memory/ → repo-memory-daemon/)")
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("resolving user home directory for backup: %w", err)
+			}
+			backupBase := filepath.Join(home, ".gemini", "antigravity", "sidecar_data", "repo-memory-daemon", "backups")
+			if err := os.MkdirAll(backupBase, 0755); err != nil {
+				return fmt.Errorf("creating backup dir: %w", err)
+			}
 			backupName := fmt.Sprintf("repo-memory.bak-%s", time.Now().Format("20060102"))
-			backupDir := filepath.Join(parentDir, backupName)
+			backupDir := filepath.Join(backupBase, backupName)
 			if _, err := os.Stat(backupDir); err == nil {
 				for i := 1; ; i++ {
-					candidate := filepath.Join(parentDir, fmt.Sprintf("%s-%d", backupName, i))
+					candidate := filepath.Join(backupBase, fmt.Sprintf("%s-%d", backupName, i))
 					if _, err := os.Stat(candidate); os.IsNotExist(err) {
 						backupDir = candidate
 						break
@@ -108,6 +116,24 @@ func RunInstall(pluginDir, binPath string) error {
 				return fmt.Errorf("backing up legacy plugin directory: %w", err)
 			}
 			fmt.Printf("Legacy plugin backed up to %s. Remove after verifying the new layout.\n", backupDir)
+		}
+	}
+
+	configDir := filepath.Dir(parentDir)
+	configPath := filepath.Join(configDir, "config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var config map[string]interface{}
+		if err := json.Unmarshal(data, &config); err == nil {
+			if pluginsVal, ok := config["plugins"]; ok {
+				if plugins, ok := pluginsVal.(map[string]interface{}); ok {
+					delete(plugins, "repo-memory")
+					plugins["repo-memory-daemon"] = map[string]interface{}{"enabled": true}
+					config["plugins"] = plugins
+					if out, err := json.MarshalIndent(config, "", "  "); err == nil {
+						_ = os.WriteFile(configPath, out, 0644)
+					}
+				}
+			}
 		}
 	}
 

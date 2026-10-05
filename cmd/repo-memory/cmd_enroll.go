@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -26,12 +27,8 @@ var enrollCmd = &cobra.Command{
 	},
 }
 
-// initCmd is retained as an alias variable for backwards compatibility.
 var initCmd = enrollCmd
 
-const mapIncludeLine = "@[memory map](.memory/views/MAP.md)"
-
-// RunEnroll executes repository enrolment.
 func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
@@ -42,47 +39,34 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("resolving repository root: %w", err)
 	}
 
-	// 1. Check if .memory/ directory exists before enroll (template warning)
 	memDir := filepath.Join(repoRoot, ".memory")
 	if fi, err := os.Stat(memDir); err == nil && fi.IsDir() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: .memory/ directory already exists (inherited from template?)\n")
 	}
 
-	// 2. Create .memory/ directory and .memory/.gitignore (ignoring .cache/)
 	if err := config.EnsureRepoLayout(repoRoot); err != nil {
 		return fmt.Errorf("ensuring repo layout: %w", err)
 	}
 
-	// 2b. Create .memory/.enrolled marker file
 	if err := config.CreateEnrolledMarker(repoRoot); err != nil {
 		return fmt.Errorf("creating enrolled marker: %w", err)
 	}
 
-	// 2c. Configure .agents/plugins.json and .agents/.gitignore
 	if err := EnsureWorkspacePluginConfigured(repoRoot); err != nil {
 		return fmt.Errorf("configuring workspace plugin: %w", err)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Workspace plugin enabled for this repository via .agents/plugins.json")
 
-	// 3. Append MAP include line to GEMINI.md if missing or create GEMINI.md
-	geminiPath := filepath.Join(repoRoot, "GEMINI.md")
-	if err := ensureMapIncludeInGemini(geminiPath); err != nil {
-		return fmt.Errorf("updating GEMINI.md: %w", err)
-	}
-
-	// 4. Generate Repo ID
 	repoID, err := gitops.GenerateRepoID(repoRoot)
 	if err != nil {
 		return fmt.Errorf("generating repo ID: %w", err)
 	}
 
-	// 5. Ensure data-dir layout for this repository
 	dataDir := config.DataDir()
 	if err := config.EnsureDataDirLayout(dataDir, repoID); err != nil {
 		return fmt.Errorf("ensuring data dir layout: %w", err)
 	}
 
-	// 6. Add to <data-dir>/registry.json
 	worktrees, _ := gitops.GetWorktreePaths(repoRoot)
 	workspacePaths := append([]string{repoRoot}, worktrees...)
 	if err := config.AddToRegistry(dataDir, workspacePaths, repoID, repoRoot); err != nil {
@@ -93,37 +77,10 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	return nil
 }
 
-// RunInit executes repository enrolment (alias for RunEnroll).
 func RunInit(cmd *cobra.Command, targetDir string) error {
 	return RunEnroll(cmd, targetDir)
 }
 
-func ensureMapIncludeInGemini(geminiPath string) error {
-	data, err := os.ReadFile(geminiPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Create GEMINI.md with MAP include line
-			return os.WriteFile(geminiPath, []byte(mapIncludeLine+"\n"), 0644)
-		}
-		return err
-	}
-
-	content := string(data)
-	if strings.Contains(content, mapIncludeLine) || strings.Contains(content, ".memory/views/MAP.md") {
-		// Already included
-		return nil
-	}
-
-	// Append MAP include line
-	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	content += mapIncludeLine + "\n"
-
-	return os.WriteFile(geminiPath, []byte(content), 0644)
-}
-
-// EnsureWorkspacePluginConfigured writes or updates .agents/plugins.json and .agents/.gitignore.
 func EnsureWorkspacePluginConfigured(repoRoot string) error {
 	daemonDir, err := ResolveAntigravityPluginDir()
 	if err != nil {
@@ -142,10 +99,16 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 
 	pluginsPath := filepath.Join(agentsDir, "plugins.json")
 
+	cmdGit := exec.Command("git", "ls-files", "--error-unmatch", pluginsPath)
+	cmdGit.Dir = repoRoot
+	if err := cmdGit.Run(); err == nil {
+		return fmt.Errorf(".agents/plugins.json is tracked in git — it contains machine-specific paths and should not be committed. Remove it from git tracking: git rm --cached .agents/plugins.json")
+	}
+
 	var configMap map[string]any
 	if data, err := os.ReadFile(pluginsPath); err == nil {
 		if err := json.Unmarshal(data, &configMap); err != nil {
-			configMap = make(map[string]any)
+			return fmt.Errorf("cannot parse existing .agents/plugins.json: %w — please fix or remove the file manually", err)
 		}
 	} else if os.IsNotExist(err) {
 		configMap = make(map[string]any)
@@ -187,15 +150,13 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 		}
 	}
 
-	// Ensure plugins.json is in .agents/.gitignore
-	if err := ensurePluginsGitignored(agentsDir); err != nil {
-		return fmt.Errorf("updating .agents/.gitignore: %w", err)
+	if err := ensurePluginsGitExcluded(repoRoot); err != nil {
+		return fmt.Errorf("updating .git/info/exclude: %w", err)
 	}
 
 	return nil
 }
 
-// RemoveWorkspacePluginConfigured removes the repo-memory workspace-plugin entry from .agents/plugins.json.
 func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
 	data, err := os.ReadFile(pluginsPath)
@@ -266,13 +227,16 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	return os.WriteFile(pluginsPath, append(marshaled, '\n'), 0644)
 }
 
-func ensurePluginsGitignored(agentsDir string) error {
-	gitignorePath := filepath.Join(agentsDir, ".gitignore")
-	data, err := os.ReadFile(gitignorePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return os.WriteFile(gitignorePath, []byte("plugins.json\n"), 0644)
-		}
+func ensurePluginsGitExcluded(repoRoot string) error {
+	excludePath := filepath.Join(repoRoot, ".git", "info", "exclude")
+	
+	infoDir := filepath.Dir(excludePath)
+	if info, err := os.Stat(infoDir); err != nil || !info.IsDir() {
+		return nil
+	}
+
+	data, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
@@ -280,7 +244,7 @@ func ensurePluginsGitignored(agentsDir string) error {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "plugins.json" || trimmed == "/plugins.json" {
+		if trimmed == ".agents/plugins.json" || trimmed == "/.agents/plugins.json" {
 			return nil
 		}
 	}
@@ -288,22 +252,18 @@ func ensurePluginsGitignored(agentsDir string) error {
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	content += "plugins.json\n"
-	return os.WriteFile(gitignorePath, []byte(content), 0644)
+	content += "# repo-memory: machine-specific workspace plugin path\n.agents/plugins.json\n"
+	return os.WriteFile(excludePath, []byte(content), 0644)
 }
 
 func isRepoMemoryWorkspacePluginEntry(entryPath, expectedPath string) bool {
-	if entryPath == "" {
+	if entryPath == "" || expectedPath == "" {
 		return false
 	}
-	if expectedPath != "" && filepath.Clean(entryPath) == filepath.Clean(expectedPath) {
+	if filepath.Clean(entryPath) == filepath.Clean(expectedPath) {
 		return true
 	}
-	if expectedPath != "" && filepath.Clean(entryPath) == filepath.Join(filepath.Clean(expectedPath), "repo-memory") {
-		return true
-	}
-	cleaned := filepath.Clean(entryPath)
-	if strings.Contains(cleaned, "repo-memory") && strings.Contains(cleaned, "workspace-plugin") {
+	if filepath.Clean(entryPath) == filepath.Join(filepath.Clean(expectedPath), "repo-memory") {
 		return true
 	}
 	return false
