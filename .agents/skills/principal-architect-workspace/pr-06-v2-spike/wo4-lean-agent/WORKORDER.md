@@ -152,19 +152,21 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Completed
 
 ### Changes Made
-(pending)
+- Created `repo-memory-distiller` agent definition in `packaging/antigravity/agents/repo-memory-distiller/agent.md`
+- Created `docs/experiments/X8-lean-agent.md` with experiment results
 
 ### Decisions Made
-(pending)
+- Documented that dynamic file-based resolution fails without daemon restart or correct allowlisting.
 
 ### Dead Ends & Warnings
-(pending)
+- `agy --agent` silently falls back to the default agent when an agent is not found, which complicated testing.
+- `invoke_subagent` cannot invoke dynamically created agent files without a daemon restart.
 
 ### Out-of-Scope Findings
-(pending)
+- `gen_metadata` and `usage` metrics were not visible in the local transcript logs.
 
 ### Blockers
-(pending)
+None. Documented the failures as required by the experiment design.
