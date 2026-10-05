@@ -130,7 +130,10 @@ func RunInstall(pluginDir, binPath string) error {
 					plugins["repo-memory-daemon"] = map[string]interface{}{"enabled": true}
 					config["plugins"] = plugins
 					if out, err := json.MarshalIndent(config, "", "  "); err == nil {
-						_ = os.WriteFile(configPath, out, 0644)
+						out = append(out, '\n')
+						if err := atomicWriteConfig(configPath, data, out); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: could not update config.json: %v\n", err)
+						}
 					}
 				}
 			}
@@ -241,6 +244,46 @@ var installCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// atomicWriteConfig writes config data atomically: back up the original,
+// write to a temp file in the same directory, then rename into place.
+// This prevents corruption from crashes or concurrent IDE writes.
+func atomicWriteConfig(configPath string, originalData, newData []byte) error {
+	dir := filepath.Dir(configPath)
+
+	// Back up original to a sibling file
+	backupPath := configPath + ".bak"
+	if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
+		return fmt.Errorf("backing up config.json: %w", err)
+	}
+
+	// Write to temp file in the same directory (same filesystem for atomic rename)
+	tmp, err := os.CreateTemp(dir, "config-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(newData); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp to config.json: %w", err)
+	}
+
+	// Clean up backup on success
+	os.Remove(backupPath)
+	return nil
 }
 
 func init() {
