@@ -163,19 +163,22 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Completed.
 
 ### Changes Made
-(pending)
+- Created `internal/harness/antigravity/v2_spike_channels.go` with `V2SpikePreInvocation`.
+- Added PreInvocation hook handler to `cmd/repo-memory/cmd_hook.go`.
+- Created `internal/harness/antigravity/v2_spike_channels_test.go` with unit tests.
+- Wrote the experiment report `docs/experiments/X5-channels.md`.
 
 ### Decisions Made
-(pending)
+- Bypassed the fast-path explicitly for `PreInvocation` in `cmd_hook.go` to ensure the hook fired.
 
 ### Dead Ends & Warnings
-(pending)
+- Antigravity completely ignores `systemMessage` and `userMessage` fields returned from `PreInvocation`. The hook gets executed and returns the data, but it is not injected into the transcript.
 
 ### Out-of-Scope Findings
-(pending)
+None.
 
 ### Blockers
-(pending)
+None for this task, but the delivery system (PR-08) is blocked from using `PreInvocation` for injection.
