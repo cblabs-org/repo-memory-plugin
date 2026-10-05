@@ -146,19 +146,53 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Complete
 
 ### Changes Made
-(pending)
+- Created `docs/experiments/X3-quota.md` detailing the quota API structure from `agy /usage` and the missing token metadata in transcripts.
+- Created `docs/experiments/spike-summary.md` consolidating the findings from X1, X3, X5, X8, X9, and Phase 0, mapping them to the v2 design sections.
+- Formulated SPEC v1.0 edit proposals below.
+
+### Proposed SPEC Edits
+
+1. **§4.1 Invocation paths**
+   - Current: "Nothing runs continuously... Time path: scheduled tick... Cron, every minute (Antigravity plugin sidecar...)"
+   - Proposed: Add explicit note about `~` path expansion limitation: "Global plugins and sidecars must be registered using absolute paths in `.agents/plugins.json`, as `~` expansion is not supported by the platform loader."
+   - Rationale: Phase 0 experiment proved that `~` and `$HOME` fail silently.
+
+2. **§4.4 Executors and session visibility**
+   - Current: "Housekeeping runs... use `agy -p`... cost model... ~17k input tokens"
+   - Proposed: Add quota checking instructions: "Prior to launching housekeeping runs, the tick must evaluate quota availability using `agy -p /usage --output-format json` to ensure the required bucket's `remaining_fraction` is above the safety threshold, leveraging `reset_time` to schedule retries."
+   - Rationale: X3 experiment demonstrated this is a zero-token, exact mechanism for quota enforcement.
+
+3. **§5.1 Episode record (Token Measurement)**
+   - Current: Implies tracking costs from transcripts.
+   - Proposed: Remove assumption of token metadata from `transcript_full.jsonl`. Token accounting must rely on CLI output metadata from the housekeeping processes, as transcript files do not record `gen_metadata` in this environment.
+   - Rationale: X8 and X3 experiments confirmed token metrics are completely absent from transcripts.
+
+4. **§5.4 Sidecar fallback / Lean agent**
+   - Current: Assumes `repo-memory-distiller` can be placed in `.agents/agents/` and discovered natively.
+   - Proposed: "The lean agent cannot rely on file-based resolution without a daemon restart. The pipeline must explicitly register it at runtime via the `define_subagent` API before invocation."
+   - Rationale: X8 experiment proved that dynamic file-based agent resolution fails natively.
+
+5. **§8.2 Channels (Retrieval and delivery)**
+   - Current: "`systemMessage` via `PreInvocation` `injectSteps` ... `ephemeralMessage` via `PreInvocation`"
+   - Proposed: "Alternative injection required. `PreInvocation` currently ignores `systemMessage` and `userMessage`. Context delivery must rely on prompt mutation, `PreToolUse` fast paths, or `Stop` hook continuations until the platform resolves this limitation."
+   - Rationale: X5 experiment conclusively demonstrated that message injection via `PreInvocation` is silently ignored.
+
+6. **§X.Y (Implicit) Hook contracts**
+   - Proposed: Add explicit documentation of hook contract behavior: "The `PreToolUse` hook is fail-closed (an empty or malformed response is an implicit deny), whereas all other hooks are fail-open."
+   - Rationale: X9 experiment documented this critical platform behavior.
 
 ### Decisions Made
-(pending)
+- Chose to omit token tracking directly from the X3-quota document's "results" other than noting its absence, since the platform simply doesn't expose it there.
 
 ### Dead Ends & Warnings
-(pending)
+- **Dead End:** `PreInvocation` context delivery via `systemMessage` and `userMessage`. We must pivot to an alternative for PR-08.
+- **Warning:** Token measurement is impossible by parsing transcripts right now.
 
 ### Out-of-Scope Findings
-(pending)
+- `agy -p /usage` acts as an undocumented, zero-token CLI subcommand (though the interactive TUI `/usage` behaves differently). We must invoke it via `-p` and JSON output to reliably parse the model buckets.
 
 ### Blockers
-(pending)
+- None for this work order, but the X5 failure (Channel injection) is a blocker for the planned delivery mechanism in PR-08.
