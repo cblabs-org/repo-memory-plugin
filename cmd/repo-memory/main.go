@@ -24,8 +24,8 @@ func main() {
 
 func init() {
 	rootCmd.AddCommand(hookCmd)
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(leaveCmd)
+	rootCmd.AddCommand(enrollCmd)
+	rootCmd.AddCommand(unenrollCmd)
 	rootCmd.AddCommand(enableCmd)
 	rootCmd.AddCommand(disableCmd)
 	rootCmd.AddCommand(tickCmd)

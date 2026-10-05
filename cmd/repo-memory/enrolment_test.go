@@ -40,12 +40,17 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 	runGit(t, repoDir, "remote", "add", "origin", "https://github.com/cblabs-org/repo-memory-plugin.git")
 
 	var stdout, stderr bytes.Buffer
-	cmd := initCmd
+	cmd := enrollCmd
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	if err := RunInit(cmd, repoDir); err != nil {
-		t.Fatalf("RunInit failed: %v", err)
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	// Verify stdout mentions workspace plugin
+	if !strings.Contains(stdout.String(), "Workspace plugin enabled for this repository via .agents/plugins.json") {
+		t.Errorf("expected output to mention workspace plugin, got: %s", stdout.String())
 	}
 
 	// 1. Verify .memory and .gitignore exist
@@ -69,6 +74,24 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 	markerPath := config.EnrolledMarkerPath(repoDir)
 	if _, err := os.Stat(markerPath); err != nil {
 		t.Errorf("expected marker file %s to exist: %v", markerPath, err)
+	}
+
+	// 1c. Verify .agents/plugins.json and .agents/.gitignore exist
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	pluginsData, err := os.ReadFile(pluginsPath)
+	if err != nil {
+		t.Fatalf("expected .agents/plugins.json to exist: %v", err)
+	}
+	if !strings.Contains(string(pluginsData), "workspace-plugin") {
+		t.Errorf("expected .agents/plugins.json to contain workspace-plugin, got: %s", string(pluginsData))
+	}
+	agentsGitignore := filepath.Join(repoDir, ".agents", ".gitignore")
+	agentsGitignoreData, err := os.ReadFile(agentsGitignore)
+	if err != nil {
+		t.Fatalf("expected .agents/.gitignore to exist: %v", err)
+	}
+	if !strings.Contains(string(agentsGitignoreData), "plugins.json") {
+		t.Errorf("expected .agents/.gitignore to contain plugins.json, got: %s", string(agentsGitignoreData))
 	}
 
 	// 2. Verify GEMINI.md created with map include line
@@ -136,12 +159,12 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	cmd := initCmd
+	cmd := enrollCmd
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	if err := RunInit(cmd, repoDir); err != nil {
-		t.Fatalf("RunInit failed: %v", err)
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
 	// Verify template warning was logged to stderr
@@ -162,9 +185,9 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 		t.Errorf("missing map include line in GEMINI.md: %s", geminiStr)
 	}
 
-	// Run init a second time; ensure line is not duplicated
-	if err := RunInit(cmd, repoDir); err != nil {
-		t.Fatalf("second RunInit failed: %v", err)
+	// Run enroll a second time; ensure line is not duplicated
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("second RunEnroll failed: %v", err)
 	}
 	geminiData2, _ := os.ReadFile(geminiPath)
 	if strings.Count(string(geminiData2), "@[memory map](.memory/views/MAP.md)") != 1 {
@@ -184,29 +207,29 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 
 	// Enroll repo first
 	var stdout bytes.Buffer
-	cmdInit := initCmd
-	cmdInit.SetOut(&stdout)
-	if err := RunInit(cmdInit, repoDir); err != nil {
-		t.Fatalf("RunInit failed: %v", err)
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&stdout)
+	if err := RunEnroll(cmdEnroll, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
 	entry, found, err := config.FindRegistryEntry(dataDir, repoDir)
 	if err != nil || !found || entry == nil {
-		t.Fatalf("expected repo in registry before leave: %v", err)
+		t.Fatalf("expected repo in registry before unenroll: %v", err)
 	}
 	repoID := entry.RepoID
 
 	repoDataDir := filepath.Join(dataDir, repoID)
 	if _, err := os.Stat(repoDataDir); err != nil {
-		t.Fatalf("expected data dir %s to exist before leave", repoDataDir)
+		t.Fatalf("expected data dir %s to exist before unenroll", repoDataDir)
 	}
 
-	// 1. Leave WITHOUT --purge
+	// 1. Unenroll WITHOUT --purge
 	var leaveOut bytes.Buffer
-	cmdLeave := leaveCmd
-	cmdLeave.SetOut(&leaveOut)
-	if err := RunLeave(cmdLeave, repoDir, false); err != nil {
-		t.Fatalf("RunLeave failed: %v", err)
+	cmdUnenroll := unenrollCmd
+	cmdUnenroll.SetOut(&leaveOut)
+	if err := RunUnenroll(cmdUnenroll, repoDir, false); err != nil {
+		t.Fatalf("RunUnenroll failed: %v", err)
 	}
 
 	// Entry must be gone from registry
@@ -215,12 +238,18 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 		t.Errorf("expected repo to be removed from registry")
 	}
 
+	// .agents/plugins.json must be removed
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins.json to be deleted after unenroll")
+	}
+
 	// Marker must be removed
 	if config.IsEnrolledFast(repoDir) {
-		t.Errorf("expected marker to be removed after leave")
+		t.Errorf("expected marker to be removed after unenroll")
 	}
 	if _, err := os.Stat(config.EnrolledMarkerPath(repoDir)); !os.IsNotExist(err) {
-		t.Errorf("expected marker file to not exist after leave")
+		t.Errorf("expected marker file to not exist after unenroll")
 	}
 
 	// Private data dir must STILL exist because purge=false
@@ -233,13 +262,13 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 		t.Errorf(".memory was unexpectedly deleted from repo")
 	}
 
-	// 2. Re-enroll then leave WITH --purge
-	if err := RunInit(cmdInit, repoDir); err != nil {
-		t.Fatalf("re-RunInit failed: %v", err)
+	// 2. Re-enroll then unenroll WITH --purge
+	if err := RunEnroll(cmdEnroll, repoDir); err != nil {
+		t.Fatalf("re-RunEnroll failed: %v", err)
 	}
 	leaveOut.Reset()
-	if err := RunLeave(cmdLeave, repoDir, true); err != nil {
-		t.Fatalf("RunLeave with purge failed: %v", err)
+	if err := RunUnenroll(cmdUnenroll, repoDir, true); err != nil {
+		t.Fatalf("RunUnenroll with purge failed: %v", err)
 	}
 
 	// Private data dir must now be deleted
@@ -341,8 +370,8 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 	}
 
 	// 2. Enroll repository
-	if err := RunInit(initCmd, repoDir); err != nil {
-		t.Fatalf("RunInit failed: %v", err)
+	if err := RunEnroll(enrollCmd, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
 	// Now enrolled and enabled: hook should pass fast-path and proceed to stub
@@ -390,3 +419,269 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 		t.Errorf("expected {} when repo disabled, got %q", out.String())
 	}
 }
+
+func TestEnrollAndUnenrollAliases(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
+
+	// Test "init" alias
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+	rootCmd.SetArgs([]string{"init", repoDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("rootCmd execute init failed: %v", err)
+	}
+
+	if !config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected repo to be enrolled via init alias")
+	}
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	if _, err := os.Stat(pluginsPath); err != nil {
+		t.Errorf("expected .agents/plugins.json to exist after init alias: %v", err)
+	}
+
+	// Test "leave" alias
+	out.Reset()
+	rootCmd.SetArgs([]string{"leave", repoDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("rootCmd execute leave failed: %v", err)
+	}
+
+	if config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected repo to be unenrolled via leave alias")
+	}
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins.json to be deleted after leave alias")
+	}
+
+	// Test "enroll" primary command
+	out.Reset()
+	rootCmd.SetArgs([]string{"enroll", repoDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("rootCmd execute enroll failed: %v", err)
+	}
+	if !config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected repo to be enrolled via enroll command")
+	}
+
+	// Test "unenroll" primary command
+	out.Reset()
+	rootCmd.SetArgs([]string{"unenroll", repoDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("rootCmd execute unenroll failed: %v", err)
+	}
+	if config.IsEnrolledFast(repoDir) {
+		t.Errorf("expected repo to be unenrolled via unenroll command")
+	}
+}
+
+func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
+
+	// Pre-populate .agents/plugins.json with an external plugin
+	agentsDir := filepath.Join(repoDir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	existingJSON := `{
+  "entries": [
+    {
+      "path": "/opt/other-plugin"
+    }
+  ]
+}
+`
+	pluginsPath := filepath.Join(agentsDir, "plugins.json")
+	if err := os.WriteFile(pluginsPath, []byte(existingJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-populate .agents/.gitignore with an existing rule
+	gitignorePath := filepath.Join(agentsDir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("local-secret.json\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run Enroll
+	var buf bytes.Buffer
+	cmd := enrollCmd
+	cmd.SetOut(&buf)
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	// Verify .agents/.gitignore contains both local-secret.json and plugins.json
+	giData, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(giData), "local-secret.json") || !strings.Contains(string(giData), "plugins.json") {
+		t.Errorf("unexpected .gitignore content: %s", string(giData))
+	}
+
+	// Verify .agents/plugins.json contains /opt/other-plugin AND workspace-plugin
+	pData, err := os.ReadFile(pluginsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pData), "/opt/other-plugin") {
+		t.Errorf("expected existing entry /opt/other-plugin to be preserved: %s", string(pData))
+	}
+	if !strings.Contains(string(pData), "workspace-plugin") {
+		t.Errorf("expected workspace-plugin entry to be added: %s", string(pData))
+	}
+
+	// Re-run enroll (idempotency check)
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("second RunEnroll failed: %v", err)
+	}
+	pData2, _ := os.ReadFile(pluginsPath)
+	if strings.Count(string(pData2), "workspace-plugin") != 1 {
+		t.Errorf("duplicate workspace-plugin entries found: %s", string(pData2))
+	}
+
+	// Unenroll: should keep /opt/other-plugin, delete only workspace-plugin
+	cmdUnenroll := unenrollCmd
+	cmdUnenroll.SetOut(&buf)
+	if err := RunUnenroll(cmdUnenroll, repoDir, false); err != nil {
+		t.Fatalf("RunUnenroll failed: %v", err)
+	}
+	pData3, err := os.ReadFile(pluginsPath)
+	if err != nil {
+		t.Fatalf("expected plugins.json to still exist because other entries remained: %v", err)
+	}
+	if !strings.Contains(string(pData3), "/opt/other-plugin") {
+		t.Errorf("expected /opt/other-plugin to remain: %s", string(pData3))
+	}
+	if strings.Contains(string(pData3), "workspace-plugin") {
+		t.Errorf("expected workspace-plugin entry to be removed: %s", string(pData3))
+	}
+}
+
+func TestEnableDisableRepo_PluginsJSON(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
+
+	// Enroll repo
+	var buf bytes.Buffer
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&buf)
+	if err := RunEnroll(cmdEnroll, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	if _, err := os.Stat(pluginsPath); err != nil {
+		t.Fatalf("expected plugins.json to exist: %v", err)
+	}
+
+	// Change working dir to repoDir
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Disable repo-level
+	cmdDisable := disableCmd
+	cmdDisable.SetOut(&buf)
+	if err := RunDisable(cmdDisable, true); err != nil {
+		t.Fatalf("RunDisable failed: %v", err)
+	}
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected plugins.json to be deleted on disable --repo")
+	}
+	// Marker must STILL exist
+	if !config.IsEnrolledFast(repoDir) {
+		t.Errorf("marker should still exist after disable --repo")
+	}
+
+	// Enable repo-level
+	cmdEnable := enableCmd
+	cmdEnable.SetOut(&buf)
+	if err := RunEnable(cmdEnable, true); err != nil {
+		t.Fatalf("RunEnable failed: %v", err)
+	}
+	if _, err := os.Stat(pluginsPath); err != nil {
+		t.Errorf("expected plugins.json to be restored on enable --repo: %v", err)
+	}
+}
+
+func TestDoctor_Checks(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	// Set custom plugin dir
+	pluginDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", pluginDir)
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
+
+	// Case 1: Repo enrolled but plugins.json missing
+	if err := config.EnsureRepoLayout(repoDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.CreateEnrolledMarker(repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	cmdDoctor := doctorCmd
+	cmdDoctor.SetOut(&buf)
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⚠ repo-memory is enrolled but workspace plugin is not configured.") {
+		t.Errorf("expected warning 1, got: %s", buf.String())
+	}
+
+	// Case 2: plugins.json configured, but plugin directory does not exist on disk
+	if err := EnsureWorkspacePluginConfigured(repoDir); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⚠ Workspace plugin not found at") {
+		t.Errorf("expected warning 2, got: %s", buf.String())
+	}
+
+	// Case 3: Plugin directory exists on disk
+	wsPluginPath := filepath.Join(pluginDir, "workspace-plugin")
+	if err := os.MkdirAll(wsPluginPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if buf.Len() > 0 {
+		t.Errorf("expected clean doctor output, got: %s", buf.String())
+	}
+}
+
