@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-06b-v2-plugin-split
 > **Base branch:** `main` (PR-05-v2-foundation merged 2026-10-04)
-> **Status:** 🔄 In Progress
+> **Status:** ✅ Complete (4/4 WOs)
 > **SPEC:** [SPEC.md](../../../../SPEC.md) v0.10 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 
@@ -84,9 +84,9 @@ Per-repo `.agents/plugins.json` (gitignored, **absolute paths required** — `~`
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
 | 1 | [`wo1-validate-assumptions`](wo1-validate-assumptions/WORKORDER.md) | Validate the two platform assumptions the split depends on: (a) workspace-plugin/ nested inside a global plugin is NOT loaded globally; (b) `.agents/plugins.json` `path` entries support `~` expansion. Also verify extra files in sidecar dirs are ignored by the loader. Document results in `docs/experiments/phase0-plugin-split.md`. | standard | ☑ Complete |
-| 2 | [`wo2-install-restructure`](wo2-install-restructure/WORKORDER.md) | Restructure `cmd_install.go` and `packaging/antigravity/` to create the daemon + workspace-plugin directory layout. Daemon gets: `plugin.json` (`name: repo-memory-daemon`), `config.json` (`enabled: true`), `sidecars/tick/sidecar.json` (NO `agent_permissions`). Workspace-plugin gets: `plugin.json` (`name: repo-memory`), `hooks.json`, `mcp_config.json`. Update `ResolveAntigravityPluginDir` to return the daemon path. Add `ResolveWorkspacePluginDir`. Update `ensurePluginEnabled` for `repo-memory-daemon`. Add migration from old `repo-memory/` layout. | standard | ☐ Planned |
-| 3 | [`wo3-enrollment-flow`](wo3-enrollment-flow/WORKORDER.md) | Rename `init`→`enroll`, `leave`→`unenroll` (keep old names as hidden aliases). `enroll` writes `.agents/plugins.json` pointing to the workspace bundle, and adds `plugins.json` to `.agents/.gitignore` (or creates it). `unenroll` removes the entry. `enable`/`disable` toggle the `.agents/plugins.json` entry (already exist as commands, need updating). Update `cmd_doctor.go` to check workspace plugin reference is valid and provide install instructions for new clones. | standard | ☐ Planned |
-| 4 | [`wo4-tests-and-migration`](wo4-tests-and-migration/WORKORDER.md) | Update all test fixtures and references to the old plugin path. Add integration test: `install` → `enroll` → verify hooks fire → `unenroll` → verify hooks don't fire. Run full test suite. Migrate the live installed plugin on the user's machine: script or command that moves `repo-memory/` to `repo-memory-daemon/` layout. Verify with `go build`, `go vet`, `go test ./...`. | standard | ☐ Planned |
+| 2 | [`wo2-install-restructure`](wo2-install-restructure/WORKORDER.md) | Restructure `cmd_install.go` and `packaging/antigravity/` to create the daemon + workspace-plugin directory layout. Daemon gets: `plugin.json` (`name: repo-memory-daemon`), `config.json` (`enabled: true`), `sidecars/tick/sidecar.json` (NO `agent_permissions`). Workspace-plugin gets: `plugin.json` (`name: repo-memory`), `hooks.json`, `mcp_config.json`. Update `ResolveAntigravityPluginDir` to return the daemon path. Add `ResolveWorkspacePluginDir`. Update `ensurePluginEnabled` for `repo-memory-daemon`. Add migration from old `repo-memory/` layout. | standard | ☑ Complete |
+| 3 | [`wo3-enrollment-flow`](wo3-enrollment-flow/WORKORDER.md) | Rename `init`→`enroll`, `leave`→`unenroll` (keep old names as hidden aliases). `enroll` writes `.agents/plugins.json` pointing to the workspace bundle, and adds `plugins.json` to `.agents/.gitignore` (or creates it). `unenroll` removes the entry. `enable`/`disable` toggle the `.agents/plugins.json` entry (already exist as commands, need updating). Update `cmd_doctor.go` to check workspace plugin reference is valid and provide install instructions for new clones. | standard | ☑ Complete |
+| 4 | [`wo4-tests-and-migration`](wo4-tests-and-migration/WORKORDER.md) | Update all test fixtures and references to the old plugin path. Add integration test: `install` → `enroll` → verify hooks fire → `unenroll` → verify hooks don't fire. Run full test suite. Migrate the live installed plugin on the user's machine: script or command that moves `repo-memory/` to `repo-memory-daemon/` layout. Verify with `go build`, `go vet`, `go test ./...`. | standard | ☑ Complete |
 
 ## Exit Criteria
 
@@ -119,3 +119,7 @@ Per-repo `.agents/plugins.json` (gitignored, **absolute paths required** — `~`
 ## Session Log
 
 - 2026-10-05 14:15 — PR-06b-v2-plugin-split created as interstitial PR for architecture refactor. Based on X1/X9 findings and the split architecture design doc.
+- 2026-10-05 14:48 — WO1 complete. All 3 Phase 0 checks pass. Key finding: `~` NOT expanded in `.agents/plugins.json` — must use absolute paths.
+- 2026-10-05 15:00 — WO2 complete. Install restructured: daemon (sidecar only) + workspace-plugin (hooks/MCP). `agent_permissions` removed from sidecar. Legacy migration with backup.
+- 2026-10-05 15:16 — WO3 complete. `init`→`enroll`, `leave`→`unenroll` (aliases preserved). `.agents/plugins.json` managed by enroll/unenroll/enable/disable. Doctor checks added.
+- 2026-10-05 17:58 — WO4 complete. Integration tests added (enroll/unenroll flow, third-party preservation, migration). Live plugin migrated. Finding: IDE keeps plugin paths in memory — old directory should remain until IDE restart.

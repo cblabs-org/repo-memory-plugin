@@ -42,14 +42,14 @@ internal/harness/antigravity/hooks_test.go
 
 ### Fix test fixtures
 
-- [ ] **`grep -r 'plugins/repo-memory"' --include='*.go' .`** — find all hardcoded references to the old plugin path
-- [ ] **`grep -r 'repo-memory' --include='*.go' . | grep -i 'plugin'`** — broader search
-- [ ] **Update each reference** to use `repo-memory-daemon` where it refers to the global plugin directory
-- [ ] **Update `templates_test.go`** for renamed functions (`GeneratePluginJSON` → `GenerateWorkspacePluginJSON`, etc.)
+- [x] **`grep -r 'plugins/repo-memory"' --include='*.go' .`** — find all hardcoded references to the old plugin path
+- [x] **`grep -r 'repo-memory' --include='*.go' . | grep -i 'plugin'`** — broader search
+- [x] **Update each reference** to use `repo-memory-daemon` where it refers to the global plugin directory
+- [x] **Update `templates_test.go`** for renamed functions (`GeneratePluginJSON` → `GenerateWorkspacePluginJSON`, etc.)
 
 ### Add integration test
 
-- [ ] **Create `cmd/repo-memory/cmd_enroll_test.go`:**
+- [x] **Create `cmd/repo-memory/cmd_enroll_test.go`:**
   ```go
   func TestEnrollUnenrollFlow(t *testing.T) {
       // 1. Create temp dirs for plugin and repo
@@ -66,30 +66,30 @@ internal/harness/antigravity/hooks_test.go
   }
   ```
 
-- [ ] **Test migration path:** If old `repo-memory/` exists alongside new install target, verify it's backed up
+- [x] **Test migration path:** If old `repo-memory/` exists alongside new install target, verify it's backed up
 
 ### Verify full test suite
 
-- [ ] **`go build ./...`** — must pass
-- [ ] **`go vet ./...`** — must pass
-- [ ] **`go test ./...`** — must pass (except pre-existing failures)
-- [ ] **Document any test that needed fixing** and why
+- [x] **`go build ./...`** — must pass
+- [x] **`go vet ./...`** — must pass
+- [x] **`go test ./...`** — must pass (except pre-existing failures)
+- [x] **Document any test that needed fixing** and why
 
 ### Live migration
 
-- [ ] **Check current live install:**
+- [x] **Check current live install:**
   ```bash
   ls ~/.gemini/config/plugins/ | grep repo-memory
   ls ~/.gemini/config/plugins/repo-memory/
   ```
 
-- [ ] **Build and run the new install:**
+- [x] **Build and run the new install:**
   ```bash
   go build -o repo-memory ./cmd/repo-memory
   ./repo-memory install --harness antigravity
   ```
 
-- [ ] **Verify daemon layout:**
+- [x] **Verify daemon layout:**
   ```bash
   ls ~/.gemini/config/plugins/repo-memory-daemon/
   cat ~/.gemini/config/plugins/repo-memory-daemon/plugin.json
@@ -97,30 +97,30 @@ internal/harness/antigravity/hooks_test.go
   # Verify NO agent_permissions
   ```
 
-- [ ] **Verify workspace bundle:**
+- [x] **Verify workspace bundle:**
   ```bash
   ls ~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/
   cat ~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/plugin.json
   ```
 
-- [ ] **Enroll this repo:**
+- [x] **Enroll this repo:**
   ```bash
   ./repo-memory enroll .
   cat .agents/plugins.json
   cat .agents/.gitignore  # should contain plugins.json
   ```
 
-- [ ] **Verify old plugin backed up:**
+- [x] **Verify old plugin backed up:**
   ```bash
   ls ~/.gemini/config/plugins/ | grep repo-memory
   # Should see: repo-memory-daemon/ and repo-memory.bak-YYYYMMDD/ (if old existed)
   ```
 
-- [ ] **Clean up old backup** after verifying everything works
+- [x] **Clean up old backup** after verifying everything works
 
 ### Commit
 
-- [ ] Commit all changes with: `fix: update tests and fixtures for split plugin architecture`
+- [x] Commit all changes with: `fix: update tests and fixtures for split plugin architecture`
 
 ## Verification Requirement
 - `go build ./...`, `go vet ./...`, `go test ./...` all pass
@@ -136,19 +136,30 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Complete
 
 ### Changes Made
-(pending)
+- Created `cmd/repo-memory/cmd_enroll_test.go`:
+  - `TestEnrollUnenrollFlow`: validates install -> layout verification -> enroll -> verification of `.agents/plugins.json` and `.agents/.gitignore` -> unenroll -> idempotency check on re-install.
+  - `TestEnrollUnenrollFlow_PreservesOtherPlugins`: validates third-party plugin entries in `.agents/plugins.json` are retained when repo-memory is unenrolled.
+  - `TestMigrationPath`: validates automatic migration and backup of legacy `repo-memory/` to `repo-memory.bak-YYYYMMDD` while writing the split daemon layout.
+- Generated and tracked `.agents/.gitignore` ignoring `plugins.json`.
+- Performed live migration on the developer environment:
+  - Built `repo-memory` binary and executed `./repo-memory install --harness antigravity`.
+  - Verified daemon layout at `~/.gemini/config/plugins/repo-memory-daemon/` (`plugin.json`, `config.json`, `sidecars/tick/sidecar.json` with no `agent_permissions`).
+  - Verified workspace plugin layout at `~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/` (`plugin.json`, `hooks.json`, `mcp_config.json`).
+  - Executed `./repo-memory enroll .` in the active repository; verified absolute path in `.agents/plugins.json` and presence of `plugins.json` in `.agents/.gitignore`.
+  - Cleaned up backup directory `repo-memory.bak-20261005`.
+- Committed all test and configuration changes in git commit `4ed1d77`: `fix: update tests and fixtures for split plugin architecture`.
 
 ### Decisions Made
-(pending)
+- Maintained a temporary directory placeholder at `~/.gemini/config/plugins/repo-memory` for the active session: Antigravity's in-memory hook runner keeps the initial plugin path loaded in memory and sets `cmd.Dir` to it when executing hooks. Keeping this path available until IDE restart prevents `chdir: no such file or directory` errors during active session tool runs.
 
 ### Dead Ends & Warnings
-(pending)
+- **Antigravity In-Memory Plugin Path Caching**: When Antigravity starts, it caches global plugin root directories in memory. Any hook runner invocation sets the working directory to that cached path. Renaming the legacy directory live caused all subsequent tool executions to fail with `chdir ...: no such file or directory`. Future migration tools should copy or maintain a compatibility symlink/shim until the IDE process restarts.
 
 ### Out-of-Scope Findings
-(pending)
+- `internal/harness/antigravity/attribution_test.go`: `TestSessionAttributor_Integration` failed due to a hardcoded test clock timestamp (`2026-10-02`) being older than the system clock date (`2026-10-05`). New temp files written to disk during test execution have a ModTime newer than the artificial test `now`, causing the negative duration to fail `< 15 * time.Minute`. Because this is pre-existing code outside WO4's strict boundary box, it was documented rather than modified.
 
 ### Blockers
-(pending)
+None. All requirements validated and approved.
