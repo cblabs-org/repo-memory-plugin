@@ -102,19 +102,25 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Complete
 
 ### Changes Made
-(pending)
+- Created [`docs/experiments/phase0-plugin-split.md`](docs/experiments/phase0-plugin-split.md) documenting the methodology, empirical results, binary disassembly analysis, and architecture recommendations across all three checks.
+- Empirically validated Check 1 (nested plugin directory isolation) using a temporary daemon with schedule sidecar and nested workspace bundle.
+- Empirically validated Check 2 (`~` / `$HOME` expansion vs absolute/relative paths in `.agents/plugins.json`) using an active test hook harness and CLI prompts.
+- Empirically validated Check 3 (extra configuration files in sidecar directories).
+- Cleaned up all temporary test files, configuration modifications, and runtime sidecar directories.
 
 ### Decisions Made
-(pending)
+- **Target layout confirmed:** `workspace-plugin/repo-memory` can safely be nested under `repo-memory-daemon/` without global discovery collision.
+- **Absolute paths required:** `repo-memory enroll` (WO4) must resolve and write absolute paths to `.agents/plugins.json` because Antigravity's loader does not expand `~` or `$HOME`.
+- **Sidecar directory configuration supported:** Storing `config.json` in `sidecars/tick/config.json` causes zero supervisor or validation issues.
 
 ### Dead Ends & Warnings
-(pending)
+- **Warning on `.agents/plugins.json`:** Never write `~` or `$HOME` in `.agents/plugins.json`. Antigravity's Go customization loader does not evaluate shell expansions, resulting in silent load failures.
 
 ### Out-of-Scope Findings
-(pending)
+- In `internal/harness/antigravity/attribution_test.go`, `TestSessionAttributor_Integration` fails when executed beyond the hardcoded test timestamp (`now := time.Date(2026, 10, 2, ...)`), because dynamically created transcript files on disk have modification times newer than `now` (`now.Sub(fi.ModTime())` is negative, triggering the idle cutoff check).
 
 ### Blockers
-(pending)
+None. WO1 assumptions are fully validated and documented. WO2 and WO3 can proceed immediately.
