@@ -9,7 +9,8 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| (None — PR-05-v2-foundation complete; PR-06-v2-spike next) | | | |
+| pr-06b-v2-plugin-split | WO1/4 | Install, Enroll, Packaging | [PROJECT.md](../pr-06b-v2-plugin-split/PROJECT.md) |
+| pr-06-v2-spike | WO2/5 (paused for 06b) | Experiments X1, X9, X5, X8, X3 | [PROJECT.md](../pr-06-v2-spike/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
