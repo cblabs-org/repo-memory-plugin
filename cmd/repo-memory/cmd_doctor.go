@@ -74,8 +74,7 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 
 		if !foundReference {
 			fmt.Fprintln(cmd.OutOrStdout(), "⚠ repo-memory is enrolled but workspace plugin is not configured.")
-			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity && repo-memory enroll .")
-			fmt.Fprintln(cmd.OutOrStdout(), "  (Or if already installed: repo-memory enroll .)")
+			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory enroll .")
 		} else {
 			if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
 				fmt.Fprintf(cmd.OutOrStdout(), "⚠ Workspace plugin not found at %s.\n", pluginPath)
