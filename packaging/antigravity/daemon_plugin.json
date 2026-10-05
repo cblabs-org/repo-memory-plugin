@@ -1,0 +1,5 @@
+{
+  "name": "repo-memory-daemon",
+  "version": "0.1.0",
+  "description": "Repository-level memory daemon (sidecar only)"
+}

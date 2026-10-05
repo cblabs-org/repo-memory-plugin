@@ -5,32 +5,36 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/spf13/cobra"
 )
 
-var leavePurgeFlag bool
+var unenrollPurgeFlag bool
 
-var leaveCmd = &cobra.Command{
-	Use:   "leave [path]",
-	Short: "Unenroll a repository from memory tracking",
-	Args:  cobra.MaximumNArgs(1),
+var unenrollCmd = &cobra.Command{
+	Use:     "unenroll [path]",
+	Short:   "Remove a repository from memory tracking",
+	Aliases: []string{"leave"},
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		targetDir := "."
 		if len(args) > 0 {
 			targetDir = args[0]
 		}
-		return RunLeave(cmd, targetDir, leavePurgeFlag)
+		return RunUnenroll(cmd, targetDir, unenrollPurgeFlag)
 	},
 }
 
+// leaveCmd is retained as an alias variable for backwards compatibility.
+var leaveCmd = unenrollCmd
+
 func init() {
-	leaveCmd.Flags().BoolVar(&leavePurgeFlag, "purge", false, "Delete private repository data directory (<data-dir>/<repo-id>/)")
+	unenrollCmd.Flags().BoolVar(&unenrollPurgeFlag, "purge", false, "Delete private repository data directory (<data-dir>/<repo-id>/)")
 }
 
-// RunLeave executes repository unenrolment.
-func RunLeave(cmd *cobra.Command, targetDir string, purge bool) error {
+// RunUnenroll executes repository unenrolment.
+func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
 		repoRoot = targetDir
@@ -48,6 +52,11 @@ func RunLeave(cmd *cobra.Command, targetDir string, purge bool) error {
 	removedIDs, err := config.RemoveFromRegistry(dataDir, repoRoot)
 	if err != nil {
 		return fmt.Errorf("removing from registry: %w", err)
+	}
+
+	// Remove .agents/plugins.json workspace-plugin entry before removing .enrolled marker
+	if err := RemoveWorkspacePluginConfigured(repoRoot); err != nil {
+		return fmt.Errorf("removing workspace plugin configuration: %w", err)
 	}
 
 	// Remove .memory/.enrolled marker
@@ -88,4 +97,9 @@ func RunLeave(cmd *cobra.Command, targetDir string, purge bool) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "Unenrolled repository %s\n", repoRoot)
 	}
 	return nil
+}
+
+// RunLeave is an alias for RunUnenroll.
+func RunLeave(cmd *cobra.Command, targetDir string, purge bool) error {
+	return RunUnenroll(cmd, targetDir, purge)
 }

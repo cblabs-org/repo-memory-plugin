@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
 )
 
 func TestInstallIdempotencyAndLayout(t *testing.T) {
@@ -21,8 +23,7 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	// Verify required subdirectories exist
 	expectedDirs := []string{
 		filepath.Join(tempPluginDir, "sidecars", "tick"),
-		filepath.Join(tempPluginDir, "rules"),
-		filepath.Join(tempPluginDir, "skills", "memory"),
+		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory"),
 	}
 	for _, dir := range expectedDirs {
 		info, err := os.Stat(dir)
@@ -39,20 +40,28 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		mustContain string
 	}{
 		{
-			relPath:     "hooks.json",
-			mustContain: "/test/bin/repo-memory hook antigravity",
+			relPath:     "plugin.json",
+			mustContain: "repo-memory-daemon",
 		},
 		{
-			relPath:     "mcp_config.json",
-			mustContain: "/test/bin/repo-memory",
+			relPath:     "config.json",
+			mustContain: `"enabled": true`,
 		},
 		{
 			relPath:     filepath.Join("sidecars", "tick", "sidecar.json"),
 			mustContain: "Repo Memory Tick",
 		},
 		{
-			relPath:     "plugin.json",
+			relPath:     filepath.Join("workspace-plugin", "repo-memory", "plugin.json"),
 			mustContain: "repo-memory",
+		},
+		{
+			relPath:     filepath.Join("workspace-plugin", "repo-memory", "hooks.json"),
+			mustContain: "/test/bin/repo-memory hook antigravity",
+		},
+		{
+			relPath:     filepath.Join("workspace-plugin", "repo-memory", "mcp_config.json"),
+			mustContain: "/test/bin/repo-memory",
 		},
 	}
 
@@ -87,6 +96,9 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	}
 	if sidecarMap["restart_policy"] != "always" {
 		t.Errorf("expected restart_policy 'always', got %v", sidecarMap["restart_policy"])
+	}
+	if _, ok := sidecarMap["agent_permissions"]; ok {
+		t.Errorf("expected no agent_permissions in sidecar.json")
 	}
 	args, ok := sidecarMap["args"].([]interface{})
 	if !ok || len(args) < 3 {
@@ -174,9 +186,67 @@ func TestResolveAntigravityPluginDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join("/custom/config", "plugins", "repo-memory")
+	expected := filepath.Join("/custom/config", "plugins", "repo-memory-daemon")
 	if res != expected {
 		t.Errorf("expected %s, got %s", expected, res)
+	}
+}
+
+func TestResolveWorkspacePluginDir(t *testing.T) {
+	daemonDir := "/custom/daemon"
+	res := ResolveWorkspacePluginDir(daemonDir)
+	expected := filepath.Join(daemonDir, "workspace-plugin", "repo-memory")
+	if res != expected {
+		t.Errorf("expected %s, got %s", expected, res)
+	}
+}
+
+func TestMigrationFromLegacyLayout(t *testing.T) {
+	t.Setenv("REPO_MEMORY_DATA_DIR", t.TempDir())
+	parentDir := t.TempDir()
+	legacyDir := filepath.Join(parentDir, "repo-memory")
+	if err := os.MkdirAll(filepath.Join(legacyDir, "sub"), 0755); err != nil {
+		t.Fatalf("creating legacy dir: %v", err)
+	}
+	dummyFile := filepath.Join(legacyDir, "sub", "old_config.txt")
+	if err := os.WriteFile(dummyFile, []byte("legacy data"), 0644); err != nil {
+		t.Fatalf("writing dummy legacy file: %v", err)
+	}
+
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
+	daemonDir := filepath.Join(parentDir, "repo-memory-daemon")
+	binPath := "/test/bin/repo-memory"
+
+	if err := RunInstall(daemonDir, binPath); err != nil {
+		t.Fatalf("RunInstall failed during migration: %v", err)
+	}
+
+	// Legacy dir should no longer exist
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
+		t.Errorf("expected legacy dir %s to be migrated, but it still exists", legacyDir)
+	}
+
+	// Backup dir should exist with today's date
+	expectedBackupDir := filepath.Join(tempHome, ".gemini", "antigravity", "sidecar_data", "repo-memory-daemon", "backups", "repo-memory.bak-"+time.Now().Format("20060102"))
+	if _, err := os.Stat(expectedBackupDir); err != nil {
+		t.Errorf("expected backup dir %s to exist: %v", expectedBackupDir, err)
+	}
+	backedUpFile := filepath.Join(expectedBackupDir, "sub", "old_config.txt")
+	if content, err := os.ReadFile(backedUpFile); err != nil || string(content) != "legacy data" {
+		t.Errorf("expected backed up file to exist with legacy data: %v", err)
+	}
+
+	// Daemon dir should be cleanly installed
+	if _, err := os.Stat(filepath.Join(daemonDir, "plugin.json")); err != nil {
+		t.Errorf("expected daemon plugin.json to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(daemonDir, "config.json")); err != nil {
+		t.Errorf("expected daemon config.json to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(daemonDir, "workspace-plugin", "repo-memory", "plugin.json")); err != nil {
+		t.Errorf("expected workspace plugin.json to exist: %v", err)
 	}
 }
 
