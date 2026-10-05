@@ -15,6 +15,9 @@ import (
 
 func TestEnrollUnenrollFlow(t *testing.T) {
 	// 1. Create temp dirs for plugin and repo
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+	
 	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
 	tempDataDir := filepath.Join(t.TempDir(), "data")
 	tempRepo := filepath.Join(t.TempDir(), "test-repo")
@@ -126,8 +129,8 @@ func TestEnrollUnenrollFlow(t *testing.T) {
 		t.Errorf("expected path %q in plugins.json, got: %v", expectedWsPath, firstEntry["path"])
 	}
 
-	// 7. Verify .agents/.gitignore contains plugins.json
-	gitignorePath := filepath.Join(tempRepo, ".agents", ".gitignore")
+	// 7. Verify .git/info/exclude contains plugins.json
+	gitignorePath := filepath.Join(tempRepo, ".git", "info", "exclude")
 	gitignoreData, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatalf("expected %s to exist: %v", gitignorePath, err)
@@ -270,6 +273,9 @@ func TestMigrationPath(t *testing.T) {
 		t.Fatalf("writing legacy file: %v", err)
 	}
 
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
 	daemonPluginDir := filepath.Join(parentPluginsDir, "repo-memory-daemon")
 	fakeBinPath := filepath.Join(t.TempDir(), "bin", "repo-memory")
 	_ = os.MkdirAll(filepath.Dir(fakeBinPath), 0755)
@@ -287,7 +293,7 @@ func TestMigrationPath(t *testing.T) {
 
 	// Backup directory should exist
 	expectedBackupName := fmt.Sprintf("repo-memory.bak-%s", time.Now().Format("20060102"))
-	backupDir := filepath.Join(parentPluginsDir, expectedBackupName)
+	backupDir := filepath.Join(tempHome, ".gemini", "antigravity", "sidecar_data", "repo-memory-daemon", "backups", expectedBackupName)
 	if _, err := os.Stat(backupDir); err != nil {
 		t.Fatalf("expected backup directory %s to exist: %v", backupDir, err)
 	}

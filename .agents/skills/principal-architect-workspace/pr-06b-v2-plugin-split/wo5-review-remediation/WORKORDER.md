@@ -188,19 +188,28 @@ If you discover a defect, upstream bug, or concern outside your boundary box, su
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Completed.
 
 ### Changes Made
-(pending)
+- Changed backup location to `~/.gemini/antigravity/sidecar_data/repo-memory-daemon/backups` and updated `config.json` in `cmd_install.go`.
+- Ensured `.agents/plugins.json` returns an error if it fails to parse or is tracked in git (`cmd_enroll.go`).
+- Added check in `EnsureWorkspacePluginConfigured` to use `.git/info/exclude` instead of `.agents/.gitignore`.
+- Modified `cmd_doctor.go` warning message to perfectly match expected message.
+- Appended a warning message to `cmd_uninstall.go` about orphaned `.agents/plugins.json` entries.
+- Fixed `isRepoMemoryWorkspacePluginEntry` loose matching using `filepath.Clean`.
+- Removed `ensureMapIncludeInGemini` logic entirely, stopping `GEMINI.md` appends.
+- Added PR-06b description to `PROGRAM-PLAN.md` dependency graph.
+- Added PD27 and human task to `PROJECT.md`, and fixed link to `docs/antigravity-plugin-architecture.md`.
+- Updated test files (`cmd_enroll_test.go`, `install_test.go`, `enrolment_test.go`) to account for new paths and behaviours.
 
 ### Decisions Made
-(pending)
+- Used `os.UserHomeDir()` instead of `config.DataDir()` directly for creating the backup path in `cmd_install.go` to exactly match the specific `~/.gemini/antigravity/...` target without relying on environment variable variations, while passing the mocked `$HOME` in tests to intercept and test properly.
 
 ### Dead Ends & Warnings
-(pending)
+- Encountered a few test failures because tests originally asserted behaviors that were explicitly removed (like `GEMINI.md` modification and `.agents/.gitignore` creation). Fixed tests by removing those legacy checks and adapting to the new `.git/info/exclude` approach.
 
 ### Out-of-Scope Findings
-(pending)
+None.
 
 ### Blockers
-(pending)
+None.

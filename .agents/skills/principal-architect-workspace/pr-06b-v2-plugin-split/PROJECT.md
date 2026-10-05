@@ -17,7 +17,7 @@ Split the single global `repo-memory` plugin into a **daemon** (sidecar-only, ze
 
 ### Shared conventions with bug-fixer-loop-plugin
 
-This refactor harmonises with the [pattern refinements](../../../../docs/antigravity-plugin-architecture.md) and the [shared team conventions](pattern-refinements-reference.md). The applicable shared patterns are:
+This refactor harmonises with the [pattern refinements](../../../../docs/antigravity-plugin-architecture.md) and the [shared team conventions](../../../../docs/antigravity-plugin-architecture.md). The applicable shared patterns are:
 
 | # | Refinement | Applies? |
 |---|---|---|
@@ -48,6 +48,7 @@ This refactor harmonises with the [pattern refinements](../../../../docs/antigra
 2. **`.agents/plugins.json` is gitignored.** Machine-specific paths. Recreated by `repo-memory enroll`. A doctor check provides instructions for new clones.
 3. **`agent_permissions` removed from tick sidecar.** Tick is a pure OS subprocess. `agent_permissions` caused the plugin to default to disabled (X1 finding).
 4. **Command rename:** `init`→`enroll`, `leave`→`unenroll` (shared convention §3).
+5. **PD27:** Split plugin into daemon + workspace bundle. Daemon (repo-memory-daemon) has sidecar only. Workspace bundle loaded per-repo via .agents/plugins.json. Motivated by: hooks firing in every workspace, agent_permissions disabling the plugin, MCP schemas loading into unrelated contexts. Validated by Phase 0 experiment (check 1: nested isolation, check 2: absolute paths required, check 3: sidecar extra files safe).
 
 ## Directory Layout (Target)
 
@@ -106,6 +107,7 @@ Per-repo `.agents/plugins.json` (gitignored, **absolute paths required** — `~`
 - Verify the Phase 0 check results (WO1)
 - Test `enroll`/`unenroll` on the live dev machine after WO3
 - Approve the migration of the live plugin (WO4)
+- Enable "repo-memory-daemon/tick" sidecar in the Antigravity Automations dashboard after install.
 
 ## Risks
 

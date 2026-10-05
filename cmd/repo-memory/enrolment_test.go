@@ -76,7 +76,7 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 		t.Errorf("expected marker file %s to exist: %v", markerPath, err)
 	}
 
-	// 1c. Verify .agents/plugins.json and .agents/.gitignore exist
+	// 1c. Verify .agents/plugins.json and .git/info/exclude exist
 	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
 	pluginsData, err := os.ReadFile(pluginsPath)
 	if err != nil {
@@ -85,24 +85,15 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 	if !strings.Contains(string(pluginsData), "workspace-plugin") {
 		t.Errorf("expected .agents/plugins.json to contain workspace-plugin, got: %s", string(pluginsData))
 	}
-	agentsGitignore := filepath.Join(repoDir, ".agents", ".gitignore")
+	agentsGitignore := filepath.Join(repoDir, ".git", "info", "exclude")
 	agentsGitignoreData, err := os.ReadFile(agentsGitignore)
 	if err != nil {
-		t.Fatalf("expected .agents/.gitignore to exist: %v", err)
+		t.Fatalf("expected .git/info/exclude to exist: %v", err)
 	}
 	if !strings.Contains(string(agentsGitignoreData), "plugins.json") {
-		t.Errorf("expected .agents/.gitignore to contain plugins.json, got: %s", string(agentsGitignoreData))
+		t.Errorf("expected .git/info/exclude to contain plugins.json, got: %s", string(agentsGitignoreData))
 	}
 
-	// 2. Verify GEMINI.md created with map include line
-	geminiPath := filepath.Join(repoDir, "GEMINI.md")
-	geminiData, err := os.ReadFile(geminiPath)
-	if err != nil {
-		t.Fatalf("expected GEMINI.md to exist: %v", err)
-	}
-	if !strings.Contains(string(geminiData), "@[memory map](.memory/views/MAP.md)") {
-		t.Errorf("GEMINI.md does not contain map include line: %s", string(geminiData))
-	}
 
 	// 3. Verify registry.json has repository entry
 	reg, err := config.LoadRegistry(dataDir)
@@ -180,18 +171,6 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 	geminiStr := string(geminiData)
 	if !strings.Contains(geminiStr, "# Existing Project Guidelines") {
 		t.Errorf("lost existing GEMINI.md content: %s", geminiStr)
-	}
-	if !strings.Contains(geminiStr, "@[memory map](.memory/views/MAP.md)") {
-		t.Errorf("missing map include line in GEMINI.md: %s", geminiStr)
-	}
-
-	// Run enroll a second time; ensure line is not duplicated
-	if err := RunEnroll(cmd, repoDir); err != nil {
-		t.Fatalf("second RunEnroll failed: %v", err)
-	}
-	geminiData2, _ := os.ReadFile(geminiPath)
-	if strings.Count(string(geminiData2), "@[memory map](.memory/views/MAP.md)") != 1 {
-		t.Errorf("duplicate map include lines found in GEMINI.md: %s", string(geminiData2))
 	}
 }
 
@@ -510,8 +489,8 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pre-populate .agents/.gitignore with an existing rule
-	gitignorePath := filepath.Join(agentsDir, ".gitignore")
+	// Pre-populate .git/info/exclude with an existing rule
+	gitignorePath := filepath.Join(repoDir, ".git", "info", "exclude")
 	if err := os.WriteFile(gitignorePath, []byte("local-secret.json\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +503,7 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
-	// Verify .agents/.gitignore contains both local-secret.json and plugins.json
+	// Verify .git/info/exclude contains both local-secret.json and plugins.json
 	giData, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatal(err)

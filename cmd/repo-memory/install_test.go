@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+
 )
 
 func TestInstallIdempotencyAndLayout(t *testing.T) {
@@ -201,6 +202,7 @@ func TestResolveWorkspacePluginDir(t *testing.T) {
 }
 
 func TestMigrationFromLegacyLayout(t *testing.T) {
+	t.Setenv("REPO_MEMORY_DATA_DIR", t.TempDir())
 	parentDir := t.TempDir()
 	legacyDir := filepath.Join(parentDir, "repo-memory")
 	if err := os.MkdirAll(filepath.Join(legacyDir, "sub"), 0755); err != nil {
@@ -210,6 +212,9 @@ func TestMigrationFromLegacyLayout(t *testing.T) {
 	if err := os.WriteFile(dummyFile, []byte("legacy data"), 0644); err != nil {
 		t.Fatalf("writing dummy legacy file: %v", err)
 	}
+
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
 
 	daemonDir := filepath.Join(parentDir, "repo-memory-daemon")
 	binPath := "/test/bin/repo-memory"
@@ -224,7 +229,7 @@ func TestMigrationFromLegacyLayout(t *testing.T) {
 	}
 
 	// Backup dir should exist with today's date
-	expectedBackupDir := filepath.Join(parentDir, "repo-memory.bak-"+time.Now().Format("20060102"))
+	expectedBackupDir := filepath.Join(tempHome, ".gemini", "antigravity", "sidecar_data", "repo-memory-daemon", "backups", "repo-memory.bak-"+time.Now().Format("20060102"))
 	if _, err := os.Stat(expectedBackupDir); err != nil {
 		t.Errorf("expected backup dir %s to exist: %v", expectedBackupDir, err)
 	}
