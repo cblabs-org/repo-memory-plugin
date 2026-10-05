@@ -52,7 +52,7 @@ var uninstallCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Successfully uninstalled repo-memory plugin from %s\n", pluginDir)
+		fmt.Printf("Successfully uninstalled repo-memory daemon plugin from %s\n", pluginDir)
 		if uninstallPurge {
 			fmt.Printf("Purged data directory at: %s\n", dataDir)
 		}
