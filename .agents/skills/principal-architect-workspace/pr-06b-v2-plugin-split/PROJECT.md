@@ -70,11 +70,11 @@ This refactor harmonises with the [pattern refinements](../../../../docs/antigra
                 └── SKILL.md
 ```
 
-Per-repo `.agents/plugins.json` (gitignored):
+Per-repo `.agents/plugins.json` (gitignored, **absolute paths required** — `~` not expanded):
 ```json
 {
   "entries": [
-    { "path": "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin" }
+    { "path": "/Users/<user>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin" }
   ]
 }
 ```
@@ -83,7 +83,7 @@ Per-repo `.agents/plugins.json` (gitignored):
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | [`wo1-validate-assumptions`](wo1-validate-assumptions/WORKORDER.md) | Validate the two platform assumptions the split depends on: (a) workspace-plugin/ nested inside a global plugin is NOT loaded globally; (b) `.agents/plugins.json` `path` entries support `~` expansion. Also verify extra files in sidecar dirs are ignored by the loader. Document results in `docs/experiments/phase0-plugin-split.md`. | standard | ☐ Planned |
+| 1 | [`wo1-validate-assumptions`](wo1-validate-assumptions/WORKORDER.md) | Validate the two platform assumptions the split depends on: (a) workspace-plugin/ nested inside a global plugin is NOT loaded globally; (b) `.agents/plugins.json` `path` entries support `~` expansion. Also verify extra files in sidecar dirs are ignored by the loader. Document results in `docs/experiments/phase0-plugin-split.md`. | standard | ☑ Complete |
 | 2 | [`wo2-install-restructure`](wo2-install-restructure/WORKORDER.md) | Restructure `cmd_install.go` and `packaging/antigravity/` to create the daemon + workspace-plugin directory layout. Daemon gets: `plugin.json` (`name: repo-memory-daemon`), `config.json` (`enabled: true`), `sidecars/tick/sidecar.json` (NO `agent_permissions`). Workspace-plugin gets: `plugin.json` (`name: repo-memory`), `hooks.json`, `mcp_config.json`. Update `ResolveAntigravityPluginDir` to return the daemon path. Add `ResolveWorkspacePluginDir`. Update `ensurePluginEnabled` for `repo-memory-daemon`. Add migration from old `repo-memory/` layout. | standard | ☐ Planned |
 | 3 | [`wo3-enrollment-flow`](wo3-enrollment-flow/WORKORDER.md) | Rename `init`→`enroll`, `leave`→`unenroll` (keep old names as hidden aliases). `enroll` writes `.agents/plugins.json` pointing to the workspace bundle, and adds `plugins.json` to `.agents/.gitignore` (or creates it). `unenroll` removes the entry. `enable`/`disable` toggle the `.agents/plugins.json` entry (already exist as commands, need updating). Update `cmd_doctor.go` to check workspace plugin reference is valid and provide install instructions for new clones. | standard | ☐ Planned |
 | 4 | [`wo4-tests-and-migration`](wo4-tests-and-migration/WORKORDER.md) | Update all test fixtures and references to the old plugin path. Add integration test: `install` → `enroll` → verify hooks fire → `unenroll` → verify hooks don't fire. Run full test suite. Migrate the live installed plugin on the user's machine: script or command that moves `repo-memory/` to `repo-memory-daemon/` layout. Verify with `go build`, `go vet`, `go test ./...`. | standard | ☐ Planned |
