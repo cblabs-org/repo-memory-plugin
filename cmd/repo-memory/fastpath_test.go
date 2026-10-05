@@ -87,17 +87,17 @@ func TestEnrolledMarker_InitAndLeaveIntegration(t *testing.T) {
 		t.Fatal("expected repo to be unenrolled initially")
 	}
 
-	// Run Init
+	// Run Enroll
 	var buf bytes.Buffer
-	cmdInit := initCmd
-	cmdInit.SetOut(&buf)
-	if err := RunInit(cmdInit, repoDir); err != nil {
-		t.Fatalf("RunInit failed: %v", err)
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&buf)
+	if err := RunEnroll(cmdEnroll, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
 	// Marker must now exist
 	if !config.IsEnrolledFast(repoDir) {
-		t.Error("expected IsEnrolledFast to return true after RunInit")
+		t.Error("expected IsEnrolledFast to return true after RunEnroll")
 	}
 	markerPath := config.EnrolledMarkerPath(repoDir)
 	fi, err := os.Stat(markerPath)
@@ -108,17 +108,17 @@ func TestEnrolledMarker_InitAndLeaveIntegration(t *testing.T) {
 		t.Errorf("expected 0-byte marker, got size %d", fi.Size())
 	}
 
-	// Run Leave
+	// Run Unenroll
 	buf.Reset()
-	cmdLeave := leaveCmd
-	cmdLeave.SetOut(&buf)
-	if err := RunLeave(cmdLeave, repoDir, false); err != nil {
-		t.Fatalf("RunLeave failed: %v", err)
+	cmdUnenroll := unenrollCmd
+	cmdUnenroll.SetOut(&buf)
+	if err := RunUnenroll(cmdUnenroll, repoDir, false); err != nil {
+		t.Fatalf("RunUnenroll failed: %v", err)
 	}
 
 	// Marker must now be removed
 	if config.IsEnrolledFast(repoDir) {
-		t.Error("expected IsEnrolledFast to return false after RunLeave")
+		t.Error("expected IsEnrolledFast to return false after RunUnenroll")
 	}
 	if _, err := os.Stat(markerPath); !os.IsNotExist(err) {
 		t.Errorf("expected marker file %s to be deleted", markerPath)

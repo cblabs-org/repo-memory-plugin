@@ -128,29 +128,47 @@ func TestGenerateSidecarJSON(t *testing.T) {
 		t.Errorf("expected display_name 'Repo Memory Tick', got %v", parsed["display_name"])
 	}
 
-	permissions, ok := parsed["agent_permissions"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected agent_permissions object")
-	}
-	grants, ok := permissions["access_grants"].([]interface{})
-	if !ok || len(grants) == 0 {
-		t.Errorf("expected access_grants in agent_permissions")
-	}
-	if _, ok := permissions["workspace_uris"]; !ok {
-		t.Errorf("expected workspace_uris in agent_permissions")
+	if _, ok := parsed["agent_permissions"]; ok {
+		t.Errorf("expected no agent_permissions in sidecar.json")
 	}
 }
 
-func TestGeneratePluginJSON(t *testing.T) {
-	content := antigravity.GeneratePluginJSON()
+func TestGenerateDaemonPluginJSON(t *testing.T) {
+	content := antigravity.GenerateDaemonPluginJSON()
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		t.Fatalf("GeneratePluginJSON produced invalid JSON: %v", err)
+		t.Fatalf("GenerateDaemonPluginJSON produced invalid JSON: %v", err)
+	}
+
+	if parsed["name"] != "repo-memory-daemon" {
+		t.Errorf("expected name 'repo-memory-daemon', got %v", parsed["name"])
+	}
+}
+
+func TestGenerateWorkspacePluginJSON(t *testing.T) {
+	content := antigravity.GenerateWorkspacePluginJSON()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		t.Fatalf("GenerateWorkspacePluginJSON produced invalid JSON: %v", err)
 	}
 
 	if parsed["name"] != "repo-memory" {
 		t.Errorf("expected name 'repo-memory', got %v", parsed["name"])
+	}
+}
+
+func TestGenerateConfigJSON(t *testing.T) {
+	content := antigravity.GenerateConfigJSON()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		t.Fatalf("GenerateConfigJSON produced invalid JSON: %v", err)
+	}
+
+	if parsed["enabled"] != true {
+		t.Errorf("expected enabled: true, got %v", parsed["enabled"])
 	}
 }
 

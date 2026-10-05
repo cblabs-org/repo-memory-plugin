@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/spf13/cobra"
 )
 
 var enableRepoFlag bool
@@ -31,6 +31,9 @@ func RunEnable(cmd *cobra.Command, repoOnly bool) error {
 		}
 		if err := config.SetRepoEnabled(repoRoot, true); err != nil {
 			return fmt.Errorf("enabling repository memory: %w", err)
+		}
+		if err := EnsureWorkspacePluginConfigured(repoRoot); err != nil {
+			return fmt.Errorf("configuring workspace plugin: %w", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Enabled repository memory for %s\n", repoRoot)
 		return nil
