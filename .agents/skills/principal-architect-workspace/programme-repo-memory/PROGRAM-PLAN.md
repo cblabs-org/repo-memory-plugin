@@ -58,6 +58,9 @@ PR-05-v2   Foundation (close-out, defect fixes, artifact capture, telemetry)
 PR-06-v2   Prototype Spike (X1, X3, X5, X8, X9)
   │
   ▼  ═══════ X-gate ═══════
+PR-06b-v2  Daemon + Workspace Bundle Architecture
+  │
+  ▼
 PR-07-v2   Storage (op log, dossiers, index, v1 removal, seeding)
   │
   ▼
@@ -187,6 +190,18 @@ PRs 01 through 05b are complete. Their PROJECT.md files and session logs are pre
 - SPEC v1.0 edits proposed and approved.
 
 ---
+
+## PR-06b-v2-plugin-split: Daemon + Workspace Bundle Architecture
+
+**Base:** `main`. **Interstitial** between PR-06 and PR-07.
+**v2 Design Sections:** §2.3 (Mechanics — plugin loading)
+
+**Objective:** Split the single global `repo-memory` plugin into a daemon (sidecar only) and workspace bundle (hooks/MCP/rules/skills loaded per-repo via `.agents/plugins.json`). Eliminates hook overhead in non-enrolled repos. Renames `init`→`enroll`, `leave`→`unenroll`.
+
+Motivated by X1 finding (plugin enablement bug) and X9 finding (bimodal hook contracts). Platform assumptions validated by Phase 0 experiment.
+
+---
+
 
 ## PR-07-v2-storage: Op Log, Dossiers, Index, v1 Removal & Seeding
 

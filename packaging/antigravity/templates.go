@@ -14,8 +14,11 @@ var MCPConfigJSONTemplate string
 //go:embed sidecar.json
 var SidecarJSONTemplate string
 
-//go:embed plugin.json
-var PluginJSONTemplate string
+//go:embed daemon_plugin.json
+var DaemonPluginJSONTemplate string
+
+//go:embed workspace_plugin.json
+var WorkspacePluginJSONTemplate string
 
 // RenderTemplate replaces <bin> with the provided binary path.
 // Backslashes in the binary path (e.g. on Windows) are JSON-escaped.
@@ -39,7 +42,17 @@ func GenerateSidecarJSON(binPath string) string {
 	return RenderTemplate(SidecarJSONTemplate, binPath)
 }
 
-// GeneratePluginJSON returns the static plugin.json manifest content.
-func GeneratePluginJSON() string {
-	return PluginJSONTemplate
+// GenerateDaemonPluginJSON returns the static daemon_plugin.json manifest content.
+func GenerateDaemonPluginJSON() string {
+	return DaemonPluginJSONTemplate
+}
+
+// GenerateWorkspacePluginJSON returns the static workspace_plugin.json manifest content.
+func GenerateWorkspacePluginJSON() string {
+	return WorkspacePluginJSONTemplate
+}
+
+// GenerateConfigJSON returns the static config.json content enabling the daemon plugin.
+func GenerateConfigJSON() string {
+	return "{\n  \"enabled\": true\n}\n"
 }

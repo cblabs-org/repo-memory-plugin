@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/spf13/cobra"
 )
 
 var disableRepoFlag bool
@@ -31,6 +31,9 @@ func RunDisable(cmd *cobra.Command, repoOnly bool) error {
 		}
 		if err := config.SetRepoEnabled(repoRoot, false); err != nil {
 			return fmt.Errorf("disabling repository memory: %w", err)
+		}
+		if err := RemoveWorkspacePluginConfigured(repoRoot); err != nil {
+			return fmt.Errorf("removing workspace plugin configuration: %w", err)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Disabled repository memory for %s\n", repoRoot)
 		return nil
