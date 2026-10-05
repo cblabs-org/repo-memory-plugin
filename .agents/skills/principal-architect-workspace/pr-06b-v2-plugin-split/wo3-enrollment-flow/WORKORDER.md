@@ -26,15 +26,15 @@ Read `docs/experiments/phase0-plugin-split.md` — it documents whether `~` expa
 ### Shared convention (§3 from pattern-refinements)
 Commands should be: `install`/`uninstall` (machine scope), `enroll`/`unenroll` (repo scope), `enable`/`disable` (toggle). This aligns with the bug-fixer-loop-plugin conventions.
 
-### .agents/plugins.json format
+### .agents/plugins.json format (absolute paths required — Phase 0 finding)
 ```json
 {
   "entries": [
-    { "path": "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin" }
+    { "path": "/Users/<user>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin" }
   ]
 }
 ```
-If `~` expansion doesn't work (per Phase 0 results), use the absolute path from the install location.
+**`~` and `$HOME` are NOT expanded** — the loader uses raw `filepath.Join`. `repo-memory enroll` must resolve the absolute path via `os.UserHomeDir()` at enrollment time.
 
 ## Line-Item Instructions
 
