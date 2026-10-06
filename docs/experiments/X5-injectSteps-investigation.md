@@ -110,26 +110,47 @@ Subagent response: NONE
 
 ---
 
-## Results Matrix
+## Results Matrix (Corrected After Second Review)
 
-| Discovery Level | Session Type | Hook Fires? | `injectSteps` Processed? | `SYSTEM_SDK` in Transcript? |
-|---|---|---|---|---|
-| **Workspace** `.agents/hooks.json` | `agy -p` (CLI) | ✅ | ✅ | ✅ (expected) |
-| **Workspace** `.agents/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
-| **Plugin** `<plugin>/hooks.json` | `agy -p` (CLI) | ✅ | ❌ | ❌ |
-| **Plugin** `<plugin>/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
+| Discovery Level | Session Type | Hook Fires? | `injectSteps` Processed? |
+|---|---|---|---|
+| **Plugin** `<plugin>/hooks.json` | `agy --add-dir . -p` (CLI) | ✅ | ✅ |
+| **Plugin** `<plugin>/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
+| **Workspace** `.agents/hooks.json` | `agy -p` (CLI) | ✅ | ✅ |
+| **Workspace** `.agents/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
 
-### What Still Works from Plugin-Level Hooks
+**Key correction from first investigation:** Plugin-level hooks DO support `injectSteps` for
+top-level CLI sessions when `--add-dir .` is used. The earlier failure was because the CLI
+invocation did not include `--add-dir .`, so `.agents/plugins.json` was not scanned and the
+workspace plugin's hooks were not discovered.
 
-- **PreToolUse** decisions (`allow`/`deny`/`ask`) — confirmed working, actively blocking
-  commands in this session
+### Transcript Recording Nuances
+
+1. **`SYSTEM_MESSAGE` steps omit `content` in transcript files.** Both `transcript.jsonl` and
+   `transcript_full.jsonl` only serialize `content` for certain step types (`USER_INPUT`,
+   `PLANNER_RESPONSE`, `EPHEMERAL_MESSAGE`, `ERROR_MESSAGE`). `SYSTEM_MESSAGE` entries always
+   omit `content` even when the message text was delivered to the model. This means you cannot
+   grep for message content in transcript files to verify `systemMessage` injection — you
+   must look for the presence of `SYSTEM_SDK` steps.
+
+2. **Subagent prompt delivery uses `SYSTEM_MESSAGE`/`SYSTEM` (not `SYSTEM_SDK`).** When
+   `invoke_subagent` spawns a subagent, the parent's prompt is delivered as a `SYSTEM_MESSAGE`
+   with `source: "SYSTEM"`. This step appears before any hook-injected steps. If `injectSteps`
+   worked, there would be TWO `SYSTEM_MESSAGE` steps: one from the hook (`SYSTEM_SDK`) and
+   one from the parent prompt delivery (`SYSTEM`).
+
+### What Works from Plugin-Level Hooks
+
+- **PreToolUse** decisions (`allow`/`deny`/`ask`) — confirmed working
 - **Stop** decisions (`continue`/`terminate`) — confirmed in prior experiments (X1)
 - **PostToolUse** observation — hook fires, receives tool output
+- **`injectSteps`** — works for CLI sessions with `--add-dir .`
 
-### What Does NOT Work from Plugin-Level Hooks
+### What Does NOT Work
 
-- **`injectSteps`** responses from `PreInvocation`, `PostInvocation`, `SessionStart` are
-  silently ignored
+- **`injectSteps` for `invoke_subagent` conversations** — the hook fires and returns valid
+  JSON, but the platform does not inject the steps into the subagent's context. This applies
+  to both workspace-level and plugin-level hooks.
 
 ---
 
@@ -161,52 +182,44 @@ agy --add-dir . -p "Do you see 'SHELLMIN-MARKER'?"
 
 ## Architectural Implications for v2
 
-### Problem
+### Corrected Understanding
 
-The v2 design calls for PreInvocation dossier delivery — injecting repository context into
-agent sessions via `injectSteps`. The current plugin architecture places hooks in
-`<plugin-root>/hooks.json`, which does **not** support `injectSteps` processing.
+Plugin-level hooks in `<plugin>/hooks.json` DO support `injectSteps` for top-level sessions
+(both CLI and IDE). The earlier failure was a test setup issue (`--add-dir .` was missing,
+so `.agents/plugins.json` was not scanned). **No split hook placement is needed.**
 
-### Solution
+All hooks can remain in the plugin's `hooks.json`:
+- `PreInvocation` (dossier injection) → `<plugin>/hooks.json` ✅
+- `PreToolUse` (boundary guard) → `<plugin>/hooks.json` ✅
+- `Stop` (session capture) → `<plugin>/hooks.json` ✅
+- `PostToolUse` (observation) → `<plugin>/hooks.json` ✅
 
-The `enroll` command must **write or merge the PreInvocation hook into the workspace's
-`.agents/hooks.json`**, not the plugin's `hooks.json`. This means:
+### Remaining Limitation: `invoke_subagent`
 
-1. **Split hook placement:**
-   - `PreInvocation` (dossier injection) → `.agents/hooks.json` (workspace level)
-   - `PreToolUse` (boundary guard) → `<plugin>/hooks.json` (plugin level, works)
-   - `Stop` (session capture) → `<plugin>/hooks.json` (plugin level, works)
-   - `PostToolUse` (observation) → `<plugin>/hooks.json` (plugin level, works)
+`injectSteps` does not work for `invoke_subagent` conversations. This means dossier delivery
+only reaches the top-level agent in a session (human-initiated chat). This is acceptable
+because:
+- Subagents inherit the parent's full context, including any injected messages
+- The primary use case is human-initiated sessions in enrolled repos
+- PA-spawned workers receive context via their WORKORDER prompt, not hook injection
 
-2. **`enroll` must merge, not overwrite:** The workspace may already have `.agents/hooks.json`
-   with hooks from other tools. The enroll command must parse the existing file, add/update
-   the `repo-memory` hook group, and write back — preserving other hook groups.
+### Design Note for `PreInvocation` on Subagents
 
-3. **`unenroll` must clean up:** Remove the `repo-memory` hook group from
-   `.agents/hooks.json`. If the file becomes empty (only contained our hooks), delete it.
-
-4. **IDE subagent limitation:** Even workspace-level hooks don't process `injectSteps` for
-   `invoke_subagent` conversations. This means dossier delivery only works for:
-   - Top-level CLI sessions (`agy -p`)
-   - Top-level IDE sessions (new chat, not spawned subagents)
-   
-   This is acceptable for the primary use case (human-initiated sessions in enrolled repos)
-   but means subagents spawned by the primary agent won't receive the dossier injection.
-   The primary agent's dossier context should propagate to subagents through the prompt
-   and system context inheritance.
+When `PreInvocation` fires on `invocationNum: 0` of a subagent, `initialNumSteps` is `0`
+and `userPrompt` is always `""` (the parent's prompt hasn't been delivered yet — it arrives
+as a `SYSTEM_MESSAGE` after hooks run). The hook must not require `userPrompt != ""` to
+inject baseline context. Check `invocationNum > 0` and fall back to baseline context when
+`userPrompt` is empty.
 
 ### Open Questions
 
 1. **Is the `invoke_subagent` limitation a bug or by design?** Subagents inherit their
    parent's customizations but may intentionally skip `injectSteps` to avoid duplicate
-   injections (the parent already has the injected context, and subagents inherit it).
+   injections (the parent already has the injected context).
 
-2. **Does the IDE (non-CLI) top-level session process `injectSteps` from workspace hooks?**
-   We only tested CLI (`agy -p`) and IDE subagents. A top-level IDE chat session may behave
-   like the CLI. This needs verification.
-
-3. **Will plugin-level `injectSteps` be supported in future versions?** The current behavior
-   may be intentional (security boundary) or an implementation gap.
+2. **Does the IDE (non-CLI) top-level session process `injectSteps`?** We tested CLI
+   (`agy -p`) and IDE subagents. A top-level IDE chat session likely processes `injectSteps`
+   the same as CLI. This needs verification.
 
 ---
 
@@ -219,5 +232,5 @@ The `enroll` command must **write or merge the PreInvocation hook into the works
 | `cmd/repo-memory/cmd_hook.go` | Temp: removed env gate for testing | Reverted |
 | `internal/harness/antigravity/v2_spike_channels.go` | Temp: added debug traces | Reverted |
 | `.agents/hooks.json` | Temp: workspace-level test hook | Deleted |
-| `/tmp/test_preinvocation.sh` | Temp: minimal shell script hook | Deleted |
-| `/tmp/x5_hook_trace.log` | Temp: debug trace output | Deleted |
+| `/tmp/test_preinvocation.sh` | Temp: BANANA-99 test hook | Deleted |
+| `/tmp/hook_payload.log` | Temp: payload trace | Deleted |

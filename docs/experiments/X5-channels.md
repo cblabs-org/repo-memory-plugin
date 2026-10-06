@@ -61,26 +61,24 @@ Spawned subagent `187dd387-936d-418f-ac03-526e8129c6e4` with a multi-step task.
 - ephemeralMessage is single-invocation scope (auto-excluded after PLANNER_RESPONSE)
 - Ideal for per-invocation dynamic context that shouldn't accumulate
 
-### `injectSteps` Discovery Level Findings
+### `injectSteps` Discovery Level Findings (Corrected)
 
-**Critical finding:** `injectSteps` response processing depends on the hooks.json discovery level:
+**Critical finding:** `injectSteps` works for top-level sessions but NOT for `invoke_subagent`:
 
-| Discovery Level | Hook Fires? | `injectSteps` Processed? | `SYSTEM_SDK` in Transcript? |
+| Discovery Level | Session Type | Hook Fires? | `injectSteps` Processed? |
 |---|---|---|---|
-| **Workspace** `.agents/hooks.json` + `agy -p` (CLI) | ✅ | ✅ | ✅ (expected per docs) |
-| **Workspace** `.agents/hooks.json` + `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
-| **Plugin** `<plugin-root>/hooks.json` + `agy -p` (CLI) | ✅ | ❌ | ❌ |
-| **Plugin** `<plugin-root>/hooks.json` + `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
+| **Plugin** `<plugin>/hooks.json` | `agy --add-dir . -p` (CLI) | ✅ | ✅ |
+| **Plugin** `<plugin>/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
+| **Workspace** `.agents/hooks.json` | `agy -p` (CLI) | ✅ | ✅ |
+| **Workspace** `.agents/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
 
-**Methodology:** Verified with both our Go binary and an absolute minimum shell script that
-only outputs `{"injectSteps":[...]}`. Debug traces confirm the hook fires, receives the
-correct payload, and returns valid JSON in ALL cases. The platform simply doesn't process
-`injectSteps` responses from plugin-level hooks or for `invoke_subagent` conversations.
+**Key correction:** The earlier conclusion that plugin-level hooks don't support `injectSteps`
+was wrong — the test setup omitted `--add-dir .`, preventing `.agents/plugins.json` from
+being scanned and the workspace plugin hooks from being discovered.
 
-**Implication for v2:** PreInvocation dossier delivery via `injectSteps` must use
-workspace-level `.agents/hooks.json` — the `enroll` command should write/merge the
-PreInvocation hook there, not in the plugin's `hooks.json`. Other hook events (PreToolUse
-decisions, Stop decisions) work correctly from plugin-level hooks.
+**Transcript note:** `SYSTEM_MESSAGE` steps in `transcript_full.jsonl` omit the `content`
+field. You cannot verify injection by grepping for message text — look for `SYSTEM_SDK` steps
+instead. See [X5-injectSteps-investigation.md](X5-injectSteps-investigation.md) for details.
 
 Expected transcript format per docs (when injection works):
 
