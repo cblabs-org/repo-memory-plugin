@@ -2,7 +2,7 @@
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
 > **Specification:** [SPEC.md](../../../SPEC.md) v0.10 + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3
-> **Status:** Executing — v2 pivot at PR-05. **8/19 complete** (PR-01 through PR-05b). PR-05-v2-foundation next.
+> **Status:** Executing — v2 pivot at PR-05. **9/19 complete** (PR-01 through PR-06b). PR-06 in review (PR #6). PR-05-v2-foundation next after X-gate.
 > **Base branch:** `main`
 > **Revision:** v2.1 (2026-10-04). Supersedes the v1 plan for PRs 05a onward. v2.1 applies the plan review (session 15).
 
@@ -86,7 +86,8 @@ Read side first: the early kill gate (X6-lite) tests whether delivered dossiers 
 | # | PR | Objective | Status | Depends On |
 |---|---|---|---|---|
 | 9 | `pr-05-v2-foundation` | Close PR-05b onto `main`; fix capture→episode, re-enable hooks safely, cost telemetry, artifact capture, probe-log cleanup, non-enrolled fast path | ☐ Planned | `main` + PR-05b branch |
-| 10 | `pr-06-v2-spike` | Prototype-validate platform mechanics: X1, X3, X5, X8, X9 (prototype on a spike branch, not merged) | ☐ Planned | PR-05-v2-foundation |
+| 10 | `pr-06-v2-spike` | Prototype-validate platform mechanics: X1, X3, X5, X8, X9 (prototype on a spike branch, not merged) | 🔄 **In Review** (PR #6) | PR-05-v2-foundation |
+| 10b | `pr-06b-v2-plugin-split` | Daemon + workspace bundle architecture | ✅ **Complete** (PR #5, merged) | PR-06-v2-spike |
 | 11 | `pr-07-v2-storage` | Op log, dossiers, atlas, scopes, index migration, v1 removal, dossier seeding (PA reports + time-cut lean-agent pass) | ☐ Planned | PR-06-v2-spike (X-gate) |
 | 12 | `pr-08-v2-delivery` | Channels, moments, injection ledger, compaction re-injection, pull tools, latency budgets | ☐ Planned | PR-07-v2-storage |
 | 13 | `pr-09-v2-x6-lite` | **Early kill gate:** pre-registered B1 replay with time-cut seeded dossiers | ☐ Planned | PR-08-v2-delivery |

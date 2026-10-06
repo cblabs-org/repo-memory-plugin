@@ -85,10 +85,10 @@ var hookCmd = &cobra.Command{
 			if !config.IsEnrolledFast(targetDir) {
 				if isPreToolUse {
 					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
-				} else {
+				} else if !strings.EqualFold(eventName, "PreInvocation") {
 					fmt.Fprintln(cmd.OutOrStdout(), `{}`)
+					return nil
 				}
-				return nil
 			}
 		}
 
@@ -154,6 +154,30 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), string(out))
 		return nil
+	}
+
+	// V2 spike: PreInvocation handler for injectSteps experiments
+	// Only active when REPO_MEMORY_V2_SPIKE is explicitly set and not "0"
+	if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "PreInvocation") {
+		spikeVal := os.Getenv("REPO_MEMORY_V2_SPIKE")
+		if spikeVal != "" && spikeVal != "0" {
+			payload := preReadPayload
+			if len(payload) == 0 {
+				var err error
+				payload, err = io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					return fmt.Errorf("reading hook payload: %w", err)
+				}
+			}
+			out, err := antigravity.V2SpikePreInvocation(payload)
+			if err != nil {
+				// Fail open for PreInvocation (it's NOT fail-closed like PreToolUse)
+				fmt.Fprintln(cmd.OutOrStdout(), "{}")
+				return nil
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+			return nil
+		}
 	}
 
 	valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
