@@ -109,6 +109,73 @@ func (idx *Index) initSchema() error {
 		kind TEXT,
 		PRIMARY KEY(source_id, target_id, kind)
 	);
+
+	CREATE TABLE IF NOT EXISTS entries (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		text TEXT NOT NULL,
+		source TEXT,
+		verified TEXT,
+		closes_when TEXT,
+		created_at TEXT,
+		updated_at TEXT
+	);
+
+	CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+		id,
+		dossier_scope,
+		text,
+		content=entries,
+		content_rowid=rowid
+	);
+
+	CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
+		INSERT INTO entries_fts(rowid, id, dossier_scope, text) VALUES (new.rowid, new.id, new.dossier_scope, new.text);
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
+		INSERT INTO entries_fts(entries_fts, rowid, id, dossier_scope, text) VALUES('delete', old.rowid, old.id, old.dossier_scope, old.text);
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+		INSERT INTO entries_fts(entries_fts, rowid, id, dossier_scope, text) VALUES('delete', old.rowid, old.id, old.dossier_scope, old.text);
+		INSERT INTO entries_fts(rowid, id, dossier_scope, text) VALUES (new.rowid, new.id, new.dossier_scope, new.text);
+	END;
+
+	CREATE TABLE IF NOT EXISTS entry_anchors (
+		entry_id TEXT NOT NULL,
+		anchor TEXT NOT NULL,
+		kind TEXT,
+		fingerprint TEXT,
+		FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_entry_anchors_anchor ON entry_anchors(anchor);
+
+	CREATE TABLE IF NOT EXISTS error_patterns (
+		entry_id TEXT NOT NULL,
+		command_prefix TEXT,
+		pattern TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS aliases (
+		old_scope TEXT NOT NULL,
+		new_scope TEXT NOT NULL,
+		created_at TEXT
+	);
+
+	CREATE TABLE IF NOT EXISTS entry_history (
+		id TEXT NOT NULL,
+		entry_id TEXT NOT NULL,
+		type TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		text TEXT,
+		reason TEXT,
+		superseded_by TEXT,
+		retired_at TEXT
+	);
 	`
 	_, err := idx.db.Exec(query)
 	if err != nil {
