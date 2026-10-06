@@ -110,47 +110,62 @@ Subagent response: NONE
 
 ---
 
-## Results Matrix (Corrected After Second Review)
+## Results Matrix (Corrected After Second and Third Review)
 
 | Discovery Level | Session Type | Hook Fires? | `injectSteps` Processed? |
 |---|---|---|---|
-| **Plugin** `<plugin>/hooks.json` | `agy --add-dir . -p` (CLI) | ✅ | ✅ |
-| **Plugin** `<plugin>/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
-| **Workspace** `.agents/hooks.json` | `agy -p` (CLI) | ✅ | ✅ |
-| **Workspace** `.agents/hooks.json` | `invoke_subagent` (IDE) | ✅ | ❌ |
+| **Plugin** `<plugin>/hooks.json` | `agy --add-dir . -p` (CLI) | ✅ | ✅ Confirmed |
+| **Plugin** `<plugin>/hooks.json` | `invoke_subagent` (IDE) | ✅ | ⚠️ Inconclusive |
+| **Workspace** `.agents/hooks.json` | `agy -p` (CLI) | ✅ | ✅ Confirmed |
+| **Workspace** `.agents/hooks.json` | `invoke_subagent` (IDE) | ✅ | ⚠️ Inconclusive |
 
-**Key correction from first investigation:** Plugin-level hooks DO support `injectSteps` for
-top-level CLI sessions when `--add-dir .` is used. The earlier failure was because the CLI
-invocation did not include `--add-dir .`, so `.agents/plugins.json` was not scanned and the
-workspace plugin's hooks were not discovered.
+### Why `invoke_subagent` is Inconclusive (Not Proven Broken)
+
+The BANANA-99 subagent test (`edda8c6e`) produced **mixed evidence**:
+
+- **Evidence FOR injection working:** The idle notification captured
+  `"most recent response: BANANA-99"` — the model output the secret code at some point,
+  which it could only know from the injected message.
+- **Evidence AGAINST:** The model's final `send_message` said "There is no secret code
+  visible in the context", and the transcript has no `SYSTEM_SDK` step.
+- **BUT:** The CLI test that **definitively worked** (model answered BANANA-99) ALSO has
+  **zero** `SYSTEM_SDK` steps in its transcript. This means `SYSTEM_SDK` steps may not be
+  recorded in transcripts at all, invalidating transcript-based verification entirely.
+
+The most likely explanation: injection worked initially (hence BANANA-99 in idle), but the
+flash_lite model got confused across multiple invocations (the test script injected on every
+invocation regardless of `invocationNum`, causing repeated injections that may have confused
+context). Per the authoritative second opinion, `injectSteps` SHOULD work for subagents.
 
 ### Transcript Recording Nuances
 
-1. **`SYSTEM_MESSAGE` steps omit `content` in transcript files.** Both `transcript.jsonl` and
+1. **`SYSTEM_MESSAGE` steps may not appear in transcripts at all.** The confirmed-working CLI
+   BANANA-99 test has zero `SYSTEM_SDK` steps in `transcript_full.jsonl` despite the model
+   clearly receiving the injected message. Transcript files cannot be used to verify or
+   disprove `injectSteps` injection.
+
+2. **`SYSTEM_MESSAGE` steps omit `content` when they DO appear.** Both `transcript.jsonl` and
    `transcript_full.jsonl` only serialize `content` for certain step types (`USER_INPUT`,
-   `PLANNER_RESPONSE`, `EPHEMERAL_MESSAGE`, `ERROR_MESSAGE`). `SYSTEM_MESSAGE` entries always
-   omit `content` even when the message text was delivered to the model. This means you cannot
-   grep for message content in transcript files to verify `systemMessage` injection — you
-   must look for the presence of `SYSTEM_SDK` steps.
+   `PLANNER_RESPONSE`, `EPHEMERAL_MESSAGE`, `ERROR_MESSAGE`).
 
-2. **Subagent prompt delivery uses `SYSTEM_MESSAGE`/`SYSTEM` (not `SYSTEM_SDK`).** When
-   `invoke_subagent` spawns a subagent, the parent's prompt is delivered as a `SYSTEM_MESSAGE`
-   with `source: "SYSTEM"`. This step appears before any hook-injected steps. If `injectSteps`
-   worked, there would be TWO `SYSTEM_MESSAGE` steps: one from the hook (`SYSTEM_SDK`) and
-   one from the parent prompt delivery (`SYSTEM`).
+3. **Subagent prompt delivery ordering.** When `invoke_subagent` spawns a subagent, the
+   conversation starts with `initialNumSteps: 0` and `userPrompt: ""`. PreInvocation hooks
+   fire FIRST, then the parent's prompt is delivered via the inter-agent messaging system as
+   a `SYSTEM_MESSAGE`. This means hooks run **before** the subagent has its initial prompt —
+   important for hook design (cannot rely on `userPrompt` being populated).
 
-### What Works from Plugin-Level Hooks
+### What is Confirmed Working
 
 - **PreToolUse** decisions (`allow`/`deny`/`ask`) — confirmed working
 - **Stop** decisions (`continue`/`terminate`) — confirmed in prior experiments (X1)
 - **PostToolUse** observation — hook fires, receives tool output
-- **`injectSteps`** — works for CLI sessions with `--add-dir .`
+- **`injectSteps`** for top-level sessions (CLI with `--add-dir .`) — confirmed
 
-### What Does NOT Work
+### What Needs Further Testing
 
-- **`injectSteps` for `invoke_subagent` conversations** — the hook fires and returns valid
-  JSON, but the platform does not inject the steps into the subagent's context. This applies
-  to both workspace-level and plugin-level hooks.
+- **`injectSteps` for `invoke_subagent`** — per authoritative documentation, this should work.
+  The test was inconclusive due to repeated injection (no `invocationNum` check) and model
+  confusion. Needs re-test with a script that only injects on `invocationNum: 0`.
 
 ---
 
@@ -194,11 +209,13 @@ All hooks can remain in the plugin's `hooks.json`:
 - `Stop` (session capture) → `<plugin>/hooks.json` ✅
 - `PostToolUse` (observation) → `<plugin>/hooks.json` ✅
 
-### Remaining Limitation: `invoke_subagent`
+### `invoke_subagent` Status
 
-`injectSteps` does not work for `invoke_subagent` conversations. This means dossier delivery
-only reaches the top-level agent in a session (human-initiated chat). This is acceptable
-because:
+Per authoritative documentation, `injectSteps` should work for `invoke_subagent` conversations.
+Our test was **inconclusive** — the idle notification captured "BANANA-99" (suggesting the
+model saw the injection), but the model's final response said "no secret code" (possibly due
+to the test script re-injecting on every invocation without checking `invocationNum`). Even
+if subagent injection doesn't work, this is acceptable because:
 - Subagents inherit the parent's full context, including any injected messages
 - The primary use case is human-initiated sessions in enrolled repos
 - PA-spawned workers receive context via their WORKORDER prompt, not hook injection
