@@ -1,12 +1,19 @@
 # repo-memory Addendum A: Provenance, Sharing and Hardening
 
-**Status:** Draft for review, revision 1
+**Status:** Draft for review, revision 2
 **Date:** 2026-10-06
 **Applies to:** SPEC v0.10 together with the [v2 design](design-v2-distillation-retrieval.md), revision 3.
 
-This addendum **adds** to those documents and replaces nothing in them. Where it changes an existing section, §14 lists the change.
+This addendum **adds** to those documents and replaces nothing in them. Where it changes an existing section, §16 lists the change.
 
-**For reviewers:** the questions we most want answered are in §17.
+**For reviewers:** the questions we most want answered are in §18.
+
+**Revisions:**
+
+| Rev | Changes |
+|---|---|
+| 1 | First draft |
+| 2 | Reorganised into three phases by how much each item couples memory to git (§4): **A** no new git coupling, **B** reads git history, **C** writes state to git. Commit links are split into derived local links (A1, phase B) and shared links (A11, phase C). Phase B handles rebases by `patch-id` remapping, so it needs no git writes. Phase C has a data-driven entry criterion. |
 
 ---
 
@@ -14,20 +21,19 @@ This addendum **adds** to those documents and replaces nothing in them. Where it
 
 A review of a comparable product (§2) found several techniques we don't have. The ones worth having are below. Each is designed here from scratch to fit our principles: P5 (truth from outcomes), P11 (never slow the loop), P12 (review gates sharing) and P13 (evidence independence).
 
-| # | Item | What it gives us | Priority |
+| Phase | # | Item | What it gives us |
 |---|---|---|---|
-| A1 | **Commit links** | Every commit an agent session contributed to is linked to that conversation and its notes, without rewriting commits | High |
-| A2 | **Line-level `why`** | `memory.why path:line` follows git blame to the commit, then the conversation, the notes and the entries | High |
-| A3 | **Shared evidence (opt-in)** | Evidence IDs cited by entries resolve on every machine, not only the author's | Medium |
-| A4 | **Layered scrubber** | Replaces today's four-regex stub. Shared rules can't be weakened locally. Any scanner failure blocks the write. | High |
-| A5 | **Spend guards and dry runs** | Cost estimates before any token-spending job. Frequency and volume limits are separate knobs. | High |
-| A6 | **Freshness, gaps and short-term recall** | Pull answers say how current memory is and where it has nothing. Unconsolidated notes are searchable at once. | Medium |
-| A7 | **Procedures become skills** | Repeatedly verified procedures are rendered as on-demand skills | Low |
-| A8 | **Managed instruction blocks** | Safe, reversible edits to `GEMINI.md` and **[R2]** `CLAUDE.md` | High (small) |
-| A9 | **External capture sources** | Sessions captured by other tools can be imported as events | Low |
-| A10 | **Evaluation discipline** | Paired, pre-registered comparisons for X6 and the B-series benchmarks | High |
-
-Suggested phasing is in §15.
+| **A** No new git coupling | A4 | **Layered scrubber** | Replaces today's four-regex stub. Shared rules can't be weakened locally. Any scanner failure blocks the write. |
+| | A5 | **Spend guards and dry runs** | Cost estimates before any token-spending job. Frequency and volume limits are separate knobs. |
+| | A6 | **Freshness, gaps and short-term recall** | Pull answers say how current memory is and where it has nothing. Unconsolidated notes are searchable at once. |
+| | A7 | **Procedures become skills** | Repeatedly verified procedures are rendered as on-demand skills |
+| | A8 | **Managed instruction blocks** | Safe, reversible edits to `GEMINI.md` and **[R2]** `CLAUDE.md` |
+| | A9 | **External capture sources** | Sessions captured by other tools can be imported as events |
+| | A10 | **Evaluation discipline** | Paired, pre-registered comparisons for X6 and the B-series benchmarks |
+| **B** Reads git history | A1 | **Commit links (derived, local)** | Every commit an agent session contributed to is linked to that conversation and its notes. Merges and reverts become outcomes we can attribute. |
+| | A2 | **Line-level `why`** | `memory.why path:line` follows git blame to the commit, then the conversation, the notes and the entries |
+| **C** Writes state to git | A11 | **Shared commit links** | A1's links travel with the repository, in git notes |
+| | A3 | **Shared evidence** | Evidence IDs cited by entries resolve on every machine, not only the author's |
 
 ---
 
@@ -37,7 +43,7 @@ Suggested phasing is in §15.
 
 **Rules this addendum follows:**
 - Every name, format, ref namespace, trailer, config key, command and data structure here is our own. None is copied from that product.
-- The git mechanisms used are standard, documented git features: notes, custom refs, plumbing commands, `patch-id`, trailers and `notes.rewriteRef`.
+- The git mechanisms used are standard, documented git features: blame, log, notes, custom refs, plumbing commands, `patch-id`, trailers and `notes.rewriteRef`.
 - Where an idea matches something that product does, this document says so, and the design here is derived from our own requirements.
 
 **Rules for implementers:**
@@ -50,11 +56,12 @@ Suggested phasing is in §15.
 ## 3. Goals and non-goals
 
 **Goals**
-- **AG1 Traceability.** From any line, commit or entry, reach the conversations, notes and outcomes behind it in one call.
-- **AG2 Portable evidence.** An entry's evidence can be checked on any machine that has the repository, when the team opts in.
+- **AG1 Traceability.** From any line, commit or entry, reach the conversations, notes and outcomes behind it in one call (phase B).
+- **AG2 Portable evidence.** An entry's evidence can be checked on any machine that has the repository, when the team opts in (phase C).
 - **AG3 Safe by construction.** Nothing leaves the private store without passing a scrubber that fails closed.
 - **AG4 Predictable cost.** Every token-spending job can be estimated first, and is bounded by frequency, volume and quota.
 - **AG5 Honest answers.** Pull answers state how fresh memory is and where it is silent.
+- **AG6 Coupling only where it pays.** Each extra dependency on git is taken on in its own phase, with its own entry criterion.
 
 **Non-goals** (these add to SPEC §1.2 and v2 §3)
 - Rewriting the user's commits, or prompting during `git commit`.
@@ -66,187 +73,51 @@ Suggested phasing is in §15.
 
 ---
 
-## 4. A1: Commit links
+## 4. Phases and git coupling
 
-### 4.1 Problem
+### 4.1 The baseline: how we use git today
 
-Notes record the branch and head commit at harvest (v2 §5.1), so we know which commit a conversation **started from**. We don't know which commits it **produced**. Without that, `memory.why` can't get from code to the reasoning behind it, and merges can't be attributed to the conversations that did the work.
+repo-memory already depends on git in these ways, and they are the baseline for phase A:
+- `.memory/` is committed. The memory PR on `memory/pending`, built in a dedicated worktree, is the only way shared knowledge is published (SPEC §6.8).
+- The repo ID is derived from the root commit (SPEC §4.6).
+- Notes record the current branch and HEAD (v2 §5.1). A branch merging moves its notes from the local lane to the shared lane (v2 §6 step 7).
+- Anchors are checked against the working tree (v2 §8.1).
 
-### 4.2 Link record
+### 4.2 The three phases
 
-```json
-{
-  "commit": "<full sha>",
-  "conversation": "<conversation id>",
-  "harness": "antigravity",
-  "strength": "observed",
-  "steps": [120, 188],
-  "notes": ["note-01M4…"],
-  "files": ["internal/core/scrub/scrub.go"],
-  "branch": "pr-07-scrub",
-  "linked_at": "2026-10-06T14:02:11Z"
-}
-```
+| Phase | Git coupling | Allowed git operations | What it adds |
+|---|---|---|---|
+| **A** | None beyond the baseline | The baseline, plus a read-only check that a commit object exists (`git cat-file -e`, used by A4 to recognise SHAs). A4 has a fallback for when git is unavailable. | Hardening, cost control, honest answers, skills, evaluation |
+| **B** | **Reads history** | Read-only: `log`, `blame`, `rev-list`, `patch-id`, `reflog`, `rev-parse`. Optionally `gh` reads. All results go into the rebuildable local index. | Provenance (A1) and code-to-reasoning answers (A2). Merges and reverts become outcomes we can attribute (P5). |
+| **C** | **Writes state to git** outside the working tree | Notes and custom refs written with plumbing; explicit fetch and push of our namespaces; one local config key; an optional `prepare-commit-msg` hook | Links and evidence shared between machines and developers |
 
-`strength` is one of:
+**Boundary rule.** Code for a later phase must not be needed by an earlier phase's features. Each phase is behind its own feature flag: `git.read_history`, then `git.write_state`. Turning a flag off returns repo-memory to the previous phase's behaviour, and nothing breaks.
 
-| Strength | Meaning | How it's derived |
+### 4.3 Entry criteria
+
+| Phase | Starts when | Exit gate |
 |---|---|---|
-| `observed` | The agent made this commit | The transcript has a commit tool call, and its output names the new commit. The short SHA is resolved with `git rev-parse`. |
-| `declared` | A person or tool stated the link | Optional commit trailer (§4.4) |
-| `inferred` | A human committed work the agent did | See below |
-| `merged-from` | A merge or squash commit that carries linked commits | See §4.5 |
+| **A** | Now. Most of it lands with PR-07 (§15). A7 additionally waits for X6 and Y6. | Y4 and Y5 pass |
+| **B** | v2's harvest path exists (PR-07), so `observed` links can be recorded when a note is harvested | Y1, Y2b and Y7 pass |
+| **C** | **Need is shown with data.** Phase B instruments `memory.stats` with: evidence IDs that couldn't be resolved locally, `why` answers missing links that exist only on another machine, and the number of machines or developers publishing to the memory PR. Phase C starts when a second developer or machine publishes regularly, and those counts are non-trivial. | Y2c and Y3 pass |
 
-**Inferred links.** The tick reads new commits since its cursor. For each commit with no `observed` or `declared` link, it computes for each conversation:
-
-> overlap = |files in the commit ∩ files the conversation edited| / |files in the commit|
-
-It then links every conversation where all of these hold:
-- overlap ≥ 0.5;
-- the conversation's last edit to those files came before the commit time, and within `links.window` (default 24 h);
-- no later conversation edited the same files before the commit.
-
-Several conversations can link to one commit.
-
-### 4.3 Storage
-
-- **Local:** a `commit_links` table in the index. It can be rebuilt from transcripts and git.
-- **Shared:** git notes under `refs/notes/repo-memory`, one JSON line per link. Notes hold IDs and strengths only, never transcript text, and they pass the scrubber (A4).
-  - Notes don't change commit SHAs.
-  - Notes aren't fetched or pushed unless a refspec asks for them, so other people's clones are unaffected.
-- **Sync:** follows the evidence sync setting (§6.4).
-  - **Fetch:** into `refs/notes/repo-memory-remote/<remote>`.
-  - **Merge:** with `git notes merge -s cat_sort_uniq`, which is a clean union for line-oriented notes.
-  - **Push:** the merged ref is pushed.
-
-### 4.4 Optional trailer
-
-The trailer is off by default (`links.trailer: off`). When it's on, `repo-memory init` installs a `prepare-commit-msg` git hook. The hook adds:
-
-```
-Repo-Memory-Conversation: <conversation id>
-```
-
-It does this only when exactly one conversation edited the staged files within the window. It is **never interactive**: prompts break agent commits and GUI git clients. If our binary isn't on `PATH`, the hook does nothing.
-
-### 4.5 Surviving history rewrites
-
-| Rewrite | Handling |
-|---|---|
-| Local `rebase`, `commit --amend` | `init` sets `notes.rewriteRef = refs/notes/repo-memory` in the repository's **local** config. Git then copies notes onto rewritten commits. |
-| Merge commit | A `merged-from` link on the merge commit lists the linked commits it brings in |
-| Squash merge, rebase-merge on a host | The tick already watches branches merging, for lane promotion (v2 §6 step 7). When a branch with linked commits disappears or is merged, the tick compares `git patch-id` of the branch's combined diff with each new commit on the target branch. A match adds a `merged-from` link. |
-| Squash merge with conflicts (patch-ids differ) | If `gh` is available and the subject ends in `(#N)`, the PR's commit list is used. Otherwise the links stay on the branch commits and are reported as unresolved in `memory.stats`. |
-
-### 4.6 Interaction with existing design
-
-- **The milestone gate** (v2 §5.1) already detects commits in the transcript. It now records the `observed` link too.
-- **Consolidation:** an entry whose evidence includes a note from a conversation linked to a merged commit gets that commit as further evidence. Merging is an outcome under P5. The P13 echo rule still applies: a linked commit only counts if the conversation changed an anchored file and passed a check.
+As a solo user on one machine you stay in phase B indefinitely, and lose nothing.
 
 ---
 
-## 5. A2: Line-level `why`
+# Phase A: no new git coupling
 
-### 5.1 Behaviour
+## 5. A4: Layered scrubber
 
-`memory.why` (SPEC §7.7) accepts `path:line`, `path:start-end` and `path#symbol`, as well as its current targets. The CLI equivalent is `repo-memory why <target>`.
-
-1. `git blame --porcelain` over the range gives the commits that last touched those lines.
-2. `commit_links` gives the conversations behind those commits, together with their strengths.
-3. From there it collects:
-   - notes from those conversations whose anchors cover the path;
-   - entries whose evidence cites those notes;
-   - current entries anchored to the path or symbol.
-4. For `path#symbol`, `git log -L :<symbol>:<path>` adds the symbol's earlier commits, where git's function matching supports the language.
-
-**Output** is bounded, at 800 tokens by default. Per commit it gives the short SHA, subject, date, link strength, conversation title, note item titles and entry IDs. After that come the current entries for the target, ranked as in v2 §8.3.
-
-### 5.2 Stated limits
-
-Every answer carries these as a single line:
-- **Links are per commit, not per line.** A line hand-edited inside an agent commit is still linked to that conversation.
-- **Blame follows rewrites.** After a squash, the answer comes through `merged-from` links.
-- **Uncommitted lines** are reported as "uncommitted (this working tree)", with the current conversation if it edited them.
-- **Quoted notes are historical evidence.** Verify them against the code before acting on them.
-
-### 5.3 Why this matters
-
-Today `memory.why` goes from entry to evidence. A2 adds the opposite direction, from code to reasoning. That's the question people actually ask: "why is this line like this?" Y7 measures it.
-
----
-
-## 6. A3: Shared evidence (opt-in)
-
-### 6.1 Problem
-
-Entries cite evidence such as `note-01M4…` or `E09`. Notes live in each developer's private evidence store (v2 §7.1), so on a teammate's machine:
-- `memory.why` dead-ends at an ID it can't resolve;
-- consolidation can't see the other machine's exposure lists, which weakens the P13 echo filter across machines.
-
-### 6.2 What can be shared
-
-`evidence.share` is set in `.memory/config.yaml`. It is a team decision.
-
-| Level | Shared | Default |
-|---|---|---|
-| `none` | Nothing. This is today's behaviour. | ✅ |
-| `notes` | Harvested notes, already scrubbed and linted (v2 §5.1), with their metadata: conversation ID, steps covered, model, harness version, branch, head commit, anchor check results, exposure list | |
-| `notes+summaries` | As `notes`, plus platform checkpoint summaries (v2 §5.3), after a second scrub | |
-
-Raw transcripts and episodes are **never** shared, at any level. SPEC §11.1 is unchanged.
-
-**Evidence isn't memory.** Nothing in the evidence refs is ever delivered. Delivery reads only the op log, which still goes through the memory PR. Sharing evidence therefore doesn't bypass P12 for knowledge. It does publish content without review, which is why the default is `none` and the scrubber fails closed.
-
-### 6.3 Storage
-
-There is one ref per object:
-
-```
-refs/repo-memory/evidence/<last two chars of ULID>/<ULID>
-```
-
-- Each ref points to a parentless commit whose tree holds `note.json`, and `summary.md` at `notes+summaries`.
-- Objects are written with plumbing only: `hash-object`, `mktree`, `commit-tree` and `update-ref`. The working tree, the index and HEAD are never touched.
-- **Immutable:** an object is never rewritten. A correction is a new object with `supersedes: <ULID>`.
-- **Why one ref per object:** no two machines ever write the same ref, so pushes never fail as non-fast-forward. Objects can also be fetched and pushed one at a time.
-- **Scale:** a few thousand objects a year is a few thousand refs. Git handles that comfortably with packed refs. Y3 checks it.
-
-### 6.4 Sync
-
-Sync is set per machine, in `<data-dir>/config.yaml`.
-
-| Setting | Values | Default |
-|---|---|---|
-| `evidence.sync` | `manual` (`repo-memory evidence push` and `pull`) or `tick` (at most hourly) | `manual` |
-| `evidence.remote` | A remote name, or a separate repository URL | Must be set explicitly when sharing is turned on |
-
-- **No git config changes.** The tick fetches with an explicit refspec (`'refs/repo-memory/*:refs/repo-memory/*'`) and never adds one to the remote's config. A user's `git fetch` is unaffected.
-- **No git hooks** are used for sync.
-- **Separate repository.** A URL keeps evidence out of a public code repository.
-- **Turning sharing on.** `repo-memory evidence enable --remote <r>` prints exactly what would be pushed and asks for confirmation. `repo-memory evidence pending` lists unpushed objects at any time.
-- **Failures** are reported in `memory.stats` and never block other work.
-
-**Retracting.** `repo-memory evidence retract <ULID>` deletes the local ref and pushes the deletion. The command warns that clones which already fetched the object keep their copy.
-
-### 6.5 Reading
-
-- **The index** includes fetched evidence objects.
-- **`memory.why`** resolves an evidence ID from the local store first, then the refs.
-- **Consolidation** reads exposure lists from shared notes, so the echo filter works across machines.
-
----
-
-## 7. A4: Layered scrubber
-
-### 7.1 Current state
+### 5.1 Current state
 
 `internal/core/scrub` is an empty package. Scrubbing is a private function in `internal/core/pipeline/compact/compact.go` (`scrubSecrets`) with four regexes. Two of them are harmful:
 - **every UUID** is replaced, and that includes conversation IDs;
 - **every hex string of 32 or more characters** is replaced, and that includes full git SHAs.
 
-A1 and A2 depend on both kinds of ID surviving.
+That damages evidence today, and phase B depends on both kinds of ID surviving.
 
-### 7.2 Design
+### 5.2 Design
 
 There is one package, `internal/core/scrub`, with one entry point:
 
@@ -260,23 +131,23 @@ func Scrub(text string, c Context) (Result, error)
 - episode compaction;
 - note harvest;
 - input prepared for the lean agent (v2 §5.6);
-- op publish (the existing second scan, SPEC §11.3);
-- evidence object writes (A3);
-- commit-link notes (A1).
+- op publish (the existing second scan, SPEC §11.3).
+
+In phase C it also runs on evidence objects and commit-link notes.
 
 **Layers**, applied in order:
 
 | # | Layer | Detects |
 |---|---|---|
 | 1 | **Structural** | Private-key blocks; credentialed URLs (`scheme://user:pass@host`); database connection strings; `Authorization:` headers; assignments to secret-like names (`*_TOKEN`, `*_SECRET`, `*_KEY`, `PASSWORD`, …); provider key formats with fixed prefixes. The provider list is our own table, maintained in the package. |
-| 2 | **Entropy** | Unlabelled tokens of 24 or more characters over base64 or hex alphabets above an entropy threshold. **Allowed through:** SHAs that resolve in this repository (`git cat-file -e`, batched); UUIDs and ULIDs present in the known-ID allow-set (conversations, steps, notes, entries); content from files matched by `scrub.skip_paths` (for example `go.sum` and lockfiles). |
+| 2 | **Entropy** | Unlabelled tokens of 24 or more characters over base64 or hex alphabets, above an entropy threshold. **Allowed through:** UUIDs and ULIDs in the known-ID allow-set (conversations, steps, notes, entries); hex strings of 7–40 characters that resolve as commit objects in this repository (`git cat-file -e`, batched); content from files matched by `scrub.skip_paths` (for example `go.sum` and lockfiles). **If git is unavailable,** a SHA-shaped string is kept only when it appears in a git context (git command output, `commit`, `sha` or `rev` labels), and is otherwise redacted. |
 | 3 | **PII** (opt-in) | Email addresses and phone numbers |
 | 4 | **Repo rules** | Label-to-regex rules, plus allow patterns, from `.memory/scrub.yaml` |
 | 5 | **Blobs** | Inline base64 images and binaries over 1 KiB, replaced by `«blob:image/png 23KiB sha256:ab12…»` |
 
 **Placeholders.** The existing format `«secret:<label>»` is kept. Optionally it gains a short keyed hash, as in `«secret:github-token#3f9a»`. The hash is an HMAC with a per-machine key, so repeats of one secret de-duplicate without revealing anything.
 
-### 7.3 Policy layering
+### 5.3 Policy layering
 
 | Layer | File | Can do |
 |---|---|---|
@@ -285,7 +156,7 @@ func Scrub(text string, c Context) (Result, error)
 
 The shared file decides what may enter shared lanes. One developer's local settings therefore can't weaken it.
 
-### 7.4 Failing closed
+### 5.4 Failing closed
 
 - **If any layer fails** (a bad regex in repo rules, a timeout, an error from a `git cat-file` batch), the write is refused.
   - **Tick jobs** retry and then dead-letter, as in SPEC §4.3.
@@ -293,20 +164,18 @@ The shared file decides what may enter shared lanes. One developer's local setti
 - **Hooks never wait on the scrubber** beyond the harvest budget: 2 ms for a 600-token note (Y4).
 - **`repo-memory doctor scrub`** reports counts by label and boundary, never values.
 
-### 7.5 Test corpora
+### 5.5 Test corpora
 
 | Corpus | Purpose |
 |---|---|
 | `testdata/scrub/planted/` | Secrets of every supported format, planted in realistic transcript steps |
 | `testdata/scrub/benign/` | Look-alikes that must survive: SHAs, conversation UUIDs, ULIDs, `go.sum` lines, ESP-IDF hex dumps, MAC addresses, partition tables and flash offsets |
 
-The gates are in Y4.
-
 ---
 
-## 8. A5: Spend guards and dry runs
+## 6. A5: Spend guards and dry runs
 
-### 8.1 Dry runs
+### 6.1 Dry runs
 
 Every job kind that spends tokens supports `--dry-run --json`. That covers the fallback, consolidation, backfill and gardening.
 
@@ -324,7 +193,7 @@ The estimate gives:
 
 **Calibration.** Each real run stores its estimate next to the actual usage reported in `agy`'s JSON output. The estimator scales by the rolling median of actual over estimate, and `memory.stats` reports that ratio.
 
-### 8.2 Guards
+### 6.2 Guards
 
 A job runs only when **every** guard passes:
 
@@ -344,36 +213,38 @@ They are set per machine, because quota is per user:
 spend:
   quota_floor: 0.25
   jobs:
-    fallback:      {min_interval: 1h,  max_items: 10}   # conversations
-    consolidation: {min_interval: 24h, max_items: 40}   # notes
-    backfill:      {min_interval: 6h,  max_items: 25}   # conversations
+    fallback:      {min_interval: 1h,   max_items: 10}  # conversations
+    consolidation: {min_interval: 24h,  max_items: 40}  # notes
+    backfill:      {min_interval: 6h,   max_items: 25}  # conversations
     gardening:     {min_interval: 168h, max_items: 20}  # dossiers
 ```
 
-### 8.3 Nothing spends without consent
+### 6.3 Nothing spends without consent
 
 `repo-memory init` never starts a token-spending job. It prints the backfill dry-run estimate and the command to start it. Backfill order follows SPEC §14: configured priority areas first, then the highest-churn areas.
 
 ---
 
-## 9. A6: Freshness, gaps and short-term recall
+## 7. A6: Freshness, gaps and short-term recall
 
-### 9.1 Freshness record
+### 7.1 Freshness record
 
 After each run, the tick writes `<data-dir>/<repo-id>/state/freshness.json`:
 - the op-log position the index was built from, and whether a rebuild is pending;
-- the index's head commit and how many commits it is behind HEAD;
+- the HEAD the index was built at, and whether HEAD has moved since. That's a baseline git read;
 - the size of the inbox and the time of the last consolidation;
 - the count of entries marked `suspect` (v2 §8.1).
 
-### 9.2 Effect on delivery
+### 7.2 Effect on delivery
 
 - **Push.** If the index is unreadable or older than the op log, hooks push nothing (degraded mode, SPEC §7.9). That beats pushing from a stale index. The anchor check at delivery still guards each individual entry.
 - **Pull.** Every `memory.brief`, `memory.why` and `memory.search` answer starts with one state line, for example:
 
-  > `memory: index at 5ad059e (3 behind HEAD) · 4 notes not yet consolidated · 2 entries suspect`
+  > `memory: index current to op log · HEAD moved since build · 4 notes not yet consolidated · 2 entries suspect`
 
-### 9.3 Gaps
+  In phase B the line can say how many commits behind HEAD the index is.
+
+### 7.3 Gaps
 
 `memory.brief` ends with up to three gap lines. A gap is either:
 - a dossier matched for the task whose coverage (SPEC §9.1) is below `gaps.threshold`; or
@@ -385,7 +256,7 @@ For example:
 
 Gaps are **pull-only by default**. `gaps.push: true` adds at most one gap line to the task-start push, only when the task's main scope has no dossier. This keeps to v2 §8.1.6: no overviews in pushes.
 
-### 9.4 Short-term recall
+### 7.4 Short-term recall
 
 Harvested notes are useful before consolidation runs, which can be a day later.
 - **Indexed within a tick.** The tick indexes inbox notes in full-text search, with status `unconsolidated` and their branch scope.
@@ -396,7 +267,45 @@ This keeps P11: hooks only spool, and the tick indexes within a minute.
 
 ---
 
+## 8. A8: Managed instruction blocks
+
+This replaces SPEC §4.6 step 2 ("adds the map include line"). `init` writes a delimited block into the harness's instruction file: `GEMINI.md`, and **[R2]** `CLAUDE.md`.
+
+```markdown
+<!-- repo-memory:begin v1 — managed by repo-memory; edits inside are overwritten -->
+@[memory atlas](.memory/ATLAS.md)
+<!-- repo-memory:end -->
+```
+
+- **Creating:** if the file doesn't exist, `init` creates it and records that in the registry. Otherwise the block is appended.
+- **Updating:** only the text between the markers is ever rewritten. The version tag allows upgrades, such as v2's move from `views/MAP.md` to `ATLAS.md`.
+- **Leaving:** `leave` removes the block. It deletes the file only if we created it and it is now empty.
+- **Duplicate or unbalanced markers:** `init` refuses, and `doctor` reports them.
+- **`AGENTS.md`** is still never touched (SPEC §12.2).
+
+---
+
+## 9. A10: Evaluation discipline
+
+This applies to X2, X6 and B1–B5. It should land before X6 runs.
+
+- **Paired design.** Every task runs under every arm (no memory, PA documents, dossiers) from the same commit, with the same model. Each arm runs at least 3 times, because agent runs vary. Per-task differences are the unit of analysis.
+- **Pre-registration.** The dataset file declares the arms, metrics, minimum effect sizes and the kill criterion **before** the first run. `repo-memory eval` refuses to compare runs whose dataset changed after the runs started.
+- **Statistics:**
+  - a Wilcoxon signed-rank test on per-task differences, or a paired t-test when differences are near-normal;
+  - Holm correction across metrics (tests passed, steps, tokens, repeats of known dead ends);
+  - each result reported as an effect size with a 95% confidence interval.
+- **Claims.** A metric counts as improved only if its corrected p < 0.05 **and** its effect is above the declared minimum.
+- **Report section.** Every evaluation report has a section titled **"What this does not show"**.
+- **Tooling.** `repo-memory eval compare <a.json> <b.json>` in `internal/eval` does the pairing, tests and correction.
+
+X6's kill criterion ("if dossiers don't beat no memory, stop") is evaluated this way.
+
+---
+
 ## 10. A7: Procedures become skills
+
+This has no git coupling, but it is **gated on X6 and Y6**. There's no point rendering skills from memory that hasn't been shown to help.
 
 ### 10.1 When
 
@@ -422,27 +331,9 @@ Generated always-on instruction files have been measured to hurt (v2 §2.2). Ski
 
 ---
 
-## 11. A8: Managed instruction blocks
+## 11. A9: External capture sources
 
-This replaces SPEC §4.6 step 2 ("adds the map include line"). `init` writes a delimited block into the harness's instruction file: `GEMINI.md`, and **[R2]** `CLAUDE.md`.
-
-```markdown
-<!-- repo-memory:begin v1 — managed by repo-memory; edits inside are overwritten -->
-@[memory atlas](.memory/ATLAS.md)
-<!-- repo-memory:end -->
-```
-
-- **Creating:** if the file doesn't exist, `init` creates it and records that in the registry. Otherwise the block is appended.
-- **Updating:** only the text between the markers is ever rewritten. The version tag allows upgrades, such as v2's move from `views/MAP.md` to `ATLAS.md`.
-- **Leaving:** `leave` removes the block. It deletes the file only if we created it and it is now empty.
-- **Duplicate or unbalanced markers:** `init` refuses, and `doctor` reports them.
-- **`AGENTS.md`** is still never touched (SPEC §12.2).
-
----
-
-## 12. A9: External capture sources
-
-Some users already run another tool that captures agent sessions, for example tools that store transcripts alongside commits in git. Importing those sessions as events extends coverage (SPEC G9) and gives the fallback more input.
+Some users already run another tool that captures agent sessions. Importing those sessions as events extends coverage (SPEC G9) and gives the fallback more input.
 
 ```go
 // internal/harness — beside Harness, not part of it
@@ -453,6 +344,7 @@ type CaptureSource interface {
 }
 ```
 
+- **Phase split.** The interface and file-based sources are phase A. Sources that store sessions in git refs or branches are read-only git reads, so they wait for phase B (`git.read_history`).
 - **Treated as import events** (SPEC §14) with `provenance: capture:<source>`. They are processed by the fallback (v2 §5.4) and the scrubber like everything else.
 - **De-duplicated:** if our own capture already holds the same harness conversation ID, our copy wins.
 - **Echo safety:** our injection ledger covers any conversation we delivered to, whoever captured it. A session with no ledger is marked `exposure: unknown`. Consolidation treats an item that repeats an existing entry from such a session as an echo (a no-op), which errs on the safe side.
@@ -462,109 +354,324 @@ type CaptureSource interface {
 
 ---
 
-## 13. A10: Evaluation discipline
+# Phase B: reading git history
 
-This applies to X2, X6 and B1–B5.
+Everything in this phase is **read-only**. Results go into the rebuildable local index (`index.sqlite`), and nothing is written to the repository, its refs or its config. It is gated by `git.read_history` (default on once phase B ships).
 
-- **Paired design.** Every task runs under every arm (no memory, PA documents, dossiers) from the same commit, with the same model. Each arm runs at least 3 times, because agent runs vary. Per-task differences are the unit of analysis.
-- **Pre-registration.** The dataset file declares the arms, metrics, minimum effect sizes and the kill criterion **before** the first run. `repo-memory eval` refuses to compare runs whose dataset changed after the runs started.
-- **Statistics:**
-  - a Wilcoxon signed-rank test on per-task differences, or a paired t-test when differences are near-normal;
-  - Holm correction across metrics (tests passed, steps, tokens, repeats of known dead ends);
-  - each result reported as an effect size with a 95% confidence interval.
-- **Claims.** A metric counts as improved only if its corrected p < 0.05 **and** its effect is above the declared minimum.
-- **Report section.** Every evaluation report has a section titled **"What this does not show"**.
-- **Tooling.** `repo-memory eval compare <a.json> <b.json>` in `internal/eval` does the pairing, tests and correction.
+## 12. A1: Commit links (derived, local)
 
-X6's kill criterion ("if dossiers don't beat no memory, stop") is evaluated this way.
+### 12.1 Problem
+
+Notes record the branch and head commit at harvest (v2 §5.1), so we know which commit a conversation **started from**. We don't know which commits it **produced**. That has two consequences:
+- `memory.why` can't get from code to the reasoning behind it.
+- **The P5 outcome signals can't be attributed.** SPEC P5 counts merges and reverts as outcomes, but we can't tell which conversation's work was merged or reverted.
+
+### 12.2 Link record
+
+There is one row per link in the `commit_links` table:
+
+| Field | Example |
+|---|---|
+| `commit` | full SHA |
+| `conversation` | conversation ID |
+| `harness` | `antigravity` |
+| `strength` | `observed` |
+| `steps` | `[120, 188]` |
+| `notes` | `["note-01M4…"]` |
+| `files` | `["internal/core/scrub/scrub.go"]` |
+| `branch` | `pr-07-scrub` |
+| `linked_at` | `2026-10-06T14:02:11Z` |
+
+`strength` is one of:
+
+| Strength | Meaning | How it's derived |
+|---|---|---|
+| `observed` | The agent made this commit | The transcript has a commit tool call, and its output names the new commit. The short SHA is resolved with `git rev-parse`. The milestone gate (v2 §5.1) already detects commits, so it records this link at harvest. |
+| `inferred` | A human committed work the agent did | See below |
+| `merged-from` | A merge or squash commit that carries linked commits | See §12.3 |
+
+A fourth strength, `declared`, arrives in phase C (§14.3).
+
+**Inferred links.** The tick reads new commits since its cursor (`git rev-list`). For each commit with no `observed` link, it computes for each conversation:
+
+> overlap = |files in the commit ∩ files the conversation edited| / |files in the commit|
+
+It then links every conversation where all of these hold:
+- overlap ≥ 0.5;
+- the conversation's last edit to those files came before the commit time, and within `links.window` (default 24 h);
+- no later conversation edited the same files before the commit.
+
+Several conversations can link to one commit.
+
+### 12.3 Surviving history rewrites, read-only
+
+Phase B writes nothing to git, so it can't use `notes.rewriteRef`. Instead it re-finds rewritten commits by their content.
+
+| Rewrite | Handling |
+|---|---|
+| Local `rebase`, `commit --amend`, cherry-pick | When the tick sees a new commit with no link, it compares that commit's `git patch-id` with the patch-ids of linked commits that are no longer reachable from any branch (found through the reflog). On a match, the link is copied to the new SHA with the same strength. An amend that changed the diff falls back to inferred linking. |
+| Merge commit | A `merged-from` link on the merge commit lists the linked commits it brings in |
+| Squash merge, rebase-merge on a host | The tick already watches branches merging, for lane promotion (v2 §6 step 7). When a branch with linked commits disappears or is merged, the tick compares `git patch-id` of the branch's combined diff with each new commit on the target branch. A match adds a `merged-from` link. |
+| Squash merge with conflicts (patch-ids differ) | If `gh` is available and the subject ends in `(#N)`, the PR's commit list is read (read-only). Otherwise the links stay on the branch commits and are reported as unresolved in `memory.stats`. |
+
+**Rebuilding.** The table can be rebuilt from this machine's transcripts plus git. Links for work done on other machines aren't visible until phase C.
+
+### 12.4 Outcomes for consolidation
+
+Commit links turn git history into outcome evidence (P5):
+
+| Git event | Evidence for the linked conversation's notes |
+|---|---|
+| The linked commit (or its `merged-from` successor) reaches the default branch | `merged`: human acceptance |
+| The linked commit is reverted (`This reverts commit <sha>`, or a patch-id inverse) | Refutation of note items anchored to the reverted files (SPEC §14 already treats reverts as refutation) |
+| The commit is still unmerged when its branch is deleted | No outcome: neither supports nor refutes |
+
+The P13 echo rule still applies. A merge counts as support for a repeated entry only if the conversation changed one of the entry's anchored files and then passed a check.
 
 ---
 
-## 14. Changes to existing sections
+## 13. A2: Line-level `why`
 
-| Section | Change |
-|---|---|
-| SPEC §4.6 step 2 | Replaced by managed blocks (A8). `init` also sets `notes.rewriteRef` in local config (A1). |
-| SPEC §5.6 and v2 §7.1 storage | Add the items listed below this table |
-| SPEC §7.7 pull tools | `memory.why` accepts `path:line`, `path:start-end` and `path#symbol` (A2). All pull answers start with a state line (A6). `memory.brief` ends with gap lines (A6). |
-| SPEC §7.9 degraded modes | A stale or unreadable index means no pushes (A6) |
-| SPEC §10.3 benchmarks | Paired, pre-registered design and reporting (A10) |
-| SPEC §11.1 privacy | Unchanged by default. `evidence.share` is an explicit, team-level exception that never covers transcripts or episodes (A3). |
-| SPEC §11.3 secrets | Replaced by the layered scrubber at every write boundary, failing closed (A4) |
-| SPEC §11.4 integrity | The lint also checks generated skills against regeneration (A7), and `.memory/scrub.yaml` for valid patterns (A4) |
-| SPEC §14 migration | Import sources generalised as `CaptureSource` (A9). Backfill never starts without consent (A5). |
-| SPEC §18.4 libraries | Secret scanning is the `scrub` package's own layers. Any third-party library is an optional layer-1 provider behind the same interface. |
-| v2 §5.1 harvest | Records `observed` commit links. Scrubs the note, or quarantines it. |
-| v2 §5.4 fallback, v2 §6 consolidation | Subject to A5 guards. Linked merged commits count as evidence (A1, under P13). |
-| v2 §6 gardening | May propose `render_as_skill` (A7) |
+### 13.1 Behaviour
+
+`memory.why` (SPEC §7.7) accepts `path:line`, `path:start-end` and `path#symbol`, as well as its current targets. The CLI equivalent is `repo-memory why <target>`.
+
+1. `git blame --porcelain` over the range gives the commits that last touched those lines.
+2. `commit_links` gives the conversations behind those commits, together with their strengths.
+3. From there it collects:
+   - notes from those conversations whose anchors cover the path;
+   - entries whose evidence cites those notes;
+   - current entries anchored to the path or symbol.
+4. For `path#symbol`, `git log -L :<symbol>:<path>` adds the symbol's earlier commits, where git's function matching supports the language. `memory.history(entity)` uses the same lookup.
+
+**Output** is bounded, at 800 tokens by default. Per commit it gives the short SHA, subject, date, link strength, conversation title, note item titles and entry IDs. After that come the current entries for the target, ranked as in v2 §8.3.
+
+**Commits with no link** still appear, with their subject and date. Git history alone is often a useful answer.
+
+### 13.2 Stated limits
+
+Every answer carries these as a single line:
+- **Links are per commit, not per line.** A line hand-edited inside an agent commit is still linked to that conversation.
+- **Blame follows rewrites.** After a squash, the answer comes through `merged-from` links.
+- **Uncommitted lines** are reported as "uncommitted (this working tree)", with the current conversation if it edited them.
+- **Quoted notes are historical evidence.** Verify them against the code before acting on them.
+
+### 13.3 Why this matters
+
+Today `memory.why` goes from entry to evidence. A2 adds the opposite direction, from code to reasoning. That's the question people actually ask: "why is this line like this?" Y7 measures it.
+
+---
+
+# Phase C: writing state to git
+
+Phase C exists only to **share** phase B's links and our evidence across machines and developers. It is gated by `git.write_state` (default off), and starts only when the criteria in §4.3 are met.
+
+**What it may write:**
+- notes under `refs/notes/repo-memory`;
+- refs under `refs/repo-memory/`;
+- one local config key (`notes.rewriteRef`);
+- optionally, a `prepare-commit-msg` hook.
+
+**What it never touches:** branches, the working tree, the index, HEAD, and the user's commits. The memory PR remains the only route for **knowledge**. Phase C carries only provenance and evidence, which are never delivered.
+
+## 14. A11: Shared commit links
+
+### 14.1 Storage
+
+- **Git notes** under `refs/notes/repo-memory`, one JSON line per link (the §12.2 fields).
+  - Notes hold IDs and strengths only, never transcript text, and they pass the scrubber (A4).
+  - Notes don't change commit SHAs.
+  - Notes aren't fetched or pushed unless a refspec asks for them, so other people's clones are unaffected.
+- **Rewrites.** `git.write_state` sets `notes.rewriteRef = refs/notes/repo-memory` in the repository's **local** config, so git copies notes onto rebased and amended commits. Phase B's patch-id remapping (§12.3) stays as the fallback.
+- **On read,** the local `commit_links` table merges its own rows with rows from notes. Notes add links for work done on other machines.
+
+### 14.2 Sync
+
+Sync follows the setting in §15.4.
+- **Fetch:** into `refs/notes/repo-memory-remote/<remote>`.
+- **Merge:** with `git notes merge -s cat_sort_uniq`, which is a clean union for line-oriented notes.
+- **Push:** the merged ref is pushed.
+
+### 14.3 Optional trailer
+
+The trailer is off by default (`links.trailer: off`). When it's on, `repo-memory init` installs a `prepare-commit-msg` git hook. The hook adds:
+
+```
+Repo-Memory-Conversation: <conversation id>
+```
+
+It does this only when exactly one conversation edited the staged files within the window. Links from the trailer have strength `declared`.
+- It is **never interactive**: prompts break agent commits and GUI git clients.
+- If our binary isn't on `PATH`, the hook does nothing.
+- Its value is that the trailer survives squash merges that phase B can't match (§12.3, last row).
+
+---
+
+## 15. A3: Shared evidence
+
+### 15.1 Problem
+
+Entries cite evidence such as `note-01M4…` or `E09`. Notes live in each developer's private evidence store (v2 §7.1), so on a teammate's machine:
+- `memory.why` dead-ends at an ID it can't resolve;
+- consolidation can't see the other machine's exposure lists, which weakens the P13 echo filter across machines.
+
+Phase B's `memory.stats` counters (§4.3) measure how often this happens.
+
+### 15.2 What can be shared
+
+`evidence.share` is set in `.memory/config.yaml`. It is a team decision.
+
+| Level | Shared | Default |
+|---|---|---|
+| `none` | Nothing. This is today's behaviour. | ✅ |
+| `notes` | Harvested notes, already scrubbed and linted (v2 §5.1), with their metadata: conversation ID, steps covered, model, harness version, branch, head commit, anchor check results, exposure list | |
+| `notes+summaries` | As `notes`, plus platform checkpoint summaries (v2 §5.3), after a second scrub | |
+
+Raw transcripts and episodes are **never** shared, at any level. SPEC §11.1 is unchanged.
+
+**Evidence isn't memory.** Nothing in the evidence refs is ever delivered. Delivery reads only the op log, which still goes through the memory PR. Sharing evidence therefore doesn't bypass P12 for knowledge. It does publish content without review, which is why the default is `none` and the scrubber fails closed.
+
+### 15.3 Storage
+
+There is one ref per object:
+
+```
+refs/repo-memory/evidence/<last two chars of ULID>/<ULID>
+```
+
+- Each ref points to a parentless commit whose tree holds `note.json`, and `summary.md` at `notes+summaries`.
+- Objects are written with plumbing only: `hash-object`, `mktree`, `commit-tree` and `update-ref`. The working tree, the index and HEAD are never touched.
+- **Immutable:** an object is never rewritten. A correction is a new object with `supersedes: <ULID>`.
+- **Why one ref per object:** no two machines ever write the same ref, so pushes never fail as non-fast-forward. Objects can also be fetched and pushed one at a time.
+- **Scale:** a few thousand objects a year is a few thousand refs. Git handles that comfortably with packed refs. Y3 checks it.
+
+### 15.4 Sync
+
+Sync is set per machine, in `<data-dir>/config.yaml`. The same settings cover commit-link notes (§14.2).
+
+| Setting | Values | Default |
+|---|---|---|
+| `evidence.sync` | `manual` (`repo-memory evidence push` and `pull`) or `tick` (at most hourly) | `manual` |
+| `evidence.remote` | A remote name, or a separate repository URL | Must be set explicitly when sharing is turned on |
+
+- **No fetch refspec is added.** The tick fetches with an explicit refspec (`'refs/repo-memory/*:refs/repo-memory/*'`) and never adds one to the remote's config. A user's `git fetch` is unaffected.
+- **No git hooks** are used for sync.
+- **Separate repository.** A URL keeps evidence out of a public code repository.
+- **Turning sharing on.** `repo-memory evidence enable --remote <r>` prints exactly what would be pushed and asks for confirmation. `repo-memory evidence pending` lists unpushed objects at any time.
+- **Failures** are reported in `memory.stats` and never block other work.
+
+**Retracting.** `repo-memory evidence retract <ULID>` deletes the local ref and pushes the deletion. The command warns that clones which already fetched the object keep their copy.
+
+### 15.5 Reading
+
+- **The index** includes fetched evidence objects.
+- **`memory.why`** resolves an evidence ID from the local store first, then the refs.
+- **Consolidation** reads exposure lists from shared notes, so the echo filter works across machines.
+
+---
+
+## 16. Changes to existing sections
+
+| Phase | Section | Change |
+|---|---|---|
+| A | SPEC §4.6 step 2 | Replaced by managed blocks (A8) |
+| A | SPEC §7.7 pull tools | All pull answers start with a state line. `memory.brief` ends with gap lines (A6). |
+| A | SPEC §7.9 degraded modes | A stale or unreadable index means no pushes (A6) |
+| A | SPEC §10.3 benchmarks | Paired, pre-registered design and reporting (A10) |
+| A | SPEC §11.3 secrets | Replaced by the layered scrubber at every write boundary, failing closed (A4) |
+| A | SPEC §11.4 integrity | The lint also checks generated skills against regeneration (A7), and `.memory/scrub.yaml` for valid patterns (A4) |
+| A | SPEC §14 migration | Import sources generalised as `CaptureSource` (A9). Backfill never starts without consent (A5). |
+| A | SPEC §18.4 libraries | Secret scanning is the `scrub` package's own layers. Any third-party library is an optional layer-1 provider behind the same interface. |
+| A | v2 §5.1 harvest | Scrubs the note, or quarantines it (A4) |
+| A | v2 §5.4 fallback, v2 §6 consolidation | Subject to A5 guards |
+| A | v2 §6 gardening | May propose `render_as_skill` (A7) |
+| B | SPEC §7.7 pull tools | `memory.why` accepts `path:line`, `path:start-end` and `path#symbol`. `memory.history` uses `git log -L` (A2). |
+| B | v2 §5.1 harvest | Records `observed` commit links (A1) |
+| B | v2 §6 consolidation | Merged and reverted linked commits count as outcomes, under P13 (A1) |
+| B | SPEC §10.4 observability | `memory.stats` counts unresolved evidence IDs, links missing because they exist only on other machines, and publishing machines. These are the phase C entry signals. |
+| C | SPEC §4.6 enrolment | With `git.write_state`, `init` sets `notes.rewriteRef` in local config, and optionally installs the trailer hook (A11) |
+| C | SPEC §11.1 privacy | Unchanged by default. `evidence.share` is an explicit, team-level exception that never covers transcripts or episodes (A3). |
 
 **Storage additions:**
 
 ```
-.memory/
-  scrub.yaml                                  shared scrub rules (A4)
-refs/notes/repo-memory                        commit → conversation links (A1)
-refs/repo-memory/evidence/<xx>/<ULID>         shared evidence objects (A3, opt-in)
-<data-dir>/<repo-id>/
-  scrub.local.yaml                            local additions only (A4)
-  quarantine/                                 notes that failed scrubbing (A4)
-  state/freshness.json                        (A6)
-index.sqlite: + commit_links, evidence_objects, inbox FTS (A1, A3, A6)
+Phase A
+  .memory/scrub.yaml                            shared scrub rules (A4)
+  <data-dir>/<repo-id>/scrub.local.yaml         local additions only (A4)
+  <data-dir>/<repo-id>/quarantine/              notes that failed scrubbing (A4)
+  <data-dir>/<repo-id>/state/freshness.json     (A6)
+  index.sqlite: + inbox FTS                     (A6)
+Phase B
+  index.sqlite: + commit_links, patch-id cache  (A1)
+Phase C
+  refs/notes/repo-memory                        commit → conversation links (A11)
+  refs/repo-memory/evidence/<xx>/<ULID>         shared evidence objects (A3)
+  index.sqlite: + evidence_objects              (A3)
 ```
 
-**New `.memory/config.yaml` keys** (shared): `links.trailer`, `links.window`, `evidence.share`, `scrub.*`, `gaps.threshold`, `gaps.push` and `skills.enabled`.
+**New config keys:**
 
-**New machine keys:** `evidence.sync`, `evidence.remote` and `spend.*`.
-
----
-
-## 15. Phasing
-
-| PR | Items | Why then |
+| Phase | Shared (`.memory/config.yaml`) | Machine (`<data-dir>/config.yaml`) |
 |---|---|---|
-| PR-07 (with the v2 foundation) | A4, A8, A5, A10 | The scrubber must exist before any new write path. A10 must be in place before X6 runs. A8 and A5 are small. |
-| PR-08 | A1, A2 | Needs the harvest path from PR-07 |
-| With v2 delivery | A6 | Changes the hooks' push decision |
-| After X6 passes | A3, A7, A9 | Only worth building if memory is shown to help |
+| A | `scrub.*`, `gaps.threshold`, `gaps.push`, `skills.enabled` | `spend.*` |
+| B | `links.window` | `git.read_history` |
+| C | `links.trailer`, `evidence.share` | `git.write_state`, `evidence.sync`, `evidence.remote` |
 
 ---
 
-## 16. Validation
+## 17. Phasing and validation
 
-| # | Experiment | Pass criterion |
+### 17.1 Schedule
+
+| Phase | PR | Items | Why then |
+|---|---|---|---|
+| A | PR-07 (with the v2 foundation) | A4, A5, A8, A10, plus the A9 interface | The scrubber must exist before any new write path. A10 must be in place before X6 runs. A8 and A5 are small. |
+| A | With v2 delivery | A6 | Changes the hooks' push decision |
+| A | After X6 passes | A7 | Only worth building if memory is shown to help |
+| B | PR-08 | A1, A2, git-backed A9 sources | Needs the harvest path from PR-07 |
+| C | When §4.3's criteria are met | A11, A3 | Only needed for more than one machine or developer |
+
+### 17.2 Experiments
+
+| Phase | # | Experiment | Pass criterion |
+|---|---|---|---|
+| A | Y4 | **Scrubber.** Run the planted and benign corpora (§5.5), plus 200 sampled transcript steps, with and without git available. | 100% recall on planted; ≤ 1% false positives on benign and the sample; ≤ 2 ms per 600-token note |
+| A | Y5 | **Estimator.** Compare dry-run estimates with actual usage over 20 jobs, after calibration. | Within ±30% |
+| A | Y6 | **Skills.** Replay 4 procedure-heavy tasks: entry pushes against the generated skill (A10 method). | The skill arm is no worse on success or steps |
+| B | Y1 | **Link accuracy.** Hand-label the conversation(s) behind 40 commits across this repository and esp32-app-foundation. | `observed` precision ≥ 0.95; `inferred` precision ≥ 0.80; recall reported |
+| B | Y2b | **Read-only rewrite survival.** On a scratch repository: amend, rebase, cherry-pick, merge, a clean squash merge and a squash merge with conflicts, without notes. | Links survive the first five. The sixth is reported as unresolved, or resolved through `gh`. |
+| B | Y7 | **Line-level `why`.** 20 "why is this line like this?" questions taken from history: `memory.why` against `git log` and blame alone. | `memory.why` is correct on more questions, with a significant paired effect |
+| C | Y2c | **Notes survival.** Repeat Y2b with `notes.rewriteRef` and the trailer, across two clones syncing notes. | No links lost; notes merge without conflicts |
+| C | Y3 | **Evidence ref scale.** 10,000 synthetic evidence refs: time to fetch and push, `git gc`, and the effect on a plain `git fetch` from a clone without the refspec. | Fetch and push of 50 new objects ≤ 5 s; plain `git fetch` unaffected |
+
+---
+
+## 18. Risks and open questions
+
+| Phase | Risk | Mitigation |
 |---|---|---|
-| Y1 | **Link accuracy.** Hand-label the conversation(s) behind 40 commits across this repository and esp32-app-foundation. | `observed` precision ≥ 0.95; `inferred` precision ≥ 0.80; recall reported |
-| Y2 | **Rewrite survival.** On a scratch repository: amend, rebase, merge, a clean squash merge and a squash merge with conflicts. | Links survive the first four. The fifth is reported as unresolved. |
-| Y3 | **Evidence ref scale.** 10,000 synthetic evidence refs: time to fetch and push, `git gc`, and the effect on a plain `git fetch` from a clone without the refspec. | Fetch and push of 50 new objects ≤ 5 s; plain `git fetch` unaffected |
-| Y4 | **Scrubber.** Run the planted and benign corpora (§7.5), plus 200 sampled transcript steps. | 100% recall on planted; ≤ 1% false positives on benign and the sample; ≤ 2 ms per 600-token note |
-| Y5 | **Estimator.** Compare dry-run estimates with actual usage over 20 jobs, after calibration. | Within ±30% |
-| Y6 | **Skills.** Replay 4 procedure-heavy tasks: entry pushes against the generated skill (A10 method). | The skill arm is no worse on success or steps |
-| Y7 | **Line-level `why`.** 20 "why is this line like this?" questions taken from history: `memory.why` against `git log` and blame alone. | `memory.why` is correct on more questions, with a significant paired effect |
-
----
-
-## 17. Risks and open questions
-
-| Risk | Mitigation |
-|---|---|
-| Inferred links attach the wrong conversation | Strength is shown on every answer. The overlap and window thresholds are tuned in Y1. `inferred` alone never counts as an outcome under P5. |
-| Shared evidence leaks something sensitive | Off by default. Notes are short and already distilled. The scrubber fails closed. A separate-repository option. `pending` and `retract` commands. |
-| Ref and notes clutter in users' clones | Nothing is fetched without our explicit refspec. Git config isn't changed beyond `notes.rewriteRef`. |
-| The scrubber removes IDs we rely on | The known-ID allow-set and SHA resolution (§7.2), checked by the benign corpus |
-| Scrubber false negatives | Layered detectors; shared rules; second scan before publish; the Y4 recall gate |
-| Generated skills hurt agents | Always reviewed; on-demand loading; gated by Y6 |
-| Importer formats drift | Version-pinned importers with fixture tests. An unknown version is skipped and reported. |
+| A | The scrubber removes IDs we rely on | The known-ID allow-set and SHA resolution, with a fallback for when git is unavailable (§5.2), checked by the benign corpus |
+| A | Scrubber false negatives | Layered detectors; shared rules; second scan before publish; the Y4 recall gate |
+| A | Generated skills hurt agents | Always reviewed; on-demand loading; gated by X6 and Y6 |
+| A | Importer formats drift | Version-pinned importers with fixture tests. An unknown version is skipped and reported. |
+| B | Inferred links attach the wrong conversation | Strength is shown on every answer. The overlap and window thresholds are tuned in Y1. `inferred` alone never counts as an outcome under P5. |
+| B | Patch-id remapping links the wrong commit (identical diffs on two branches) | Remap only to commits on the same branch, or its merge target; ambiguous matches are skipped and reported |
+| B | Squash merges on hosts lose links | `patch-id` and `gh` fallbacks; unresolved links counted. Phase C's trailer is the durable fix if it matters. |
+| C | Shared evidence leaks something sensitive | Off by default. Notes are short and already distilled. The scrubber fails closed. A separate-repository option. `pending` and `retract` commands. |
+| C | Ref and notes clutter in users' clones | Nothing is fetched without our explicit refspec. Git config isn't changed beyond `notes.rewriteRef`. |
+| C | Hosts reject or hide custom refs and notes | Y3 is run against the host in use, and the separate-repository option is available. Hosting UIs not showing notes is accepted: we read them, people don't need to. |
 
 **Questions for reviewers**
-1. Is `evidence.share: none` the right default, or should `notes` be the default for the `team` review profile?
+1. **Phase C criterion** (§4.3). Is "a second developer or machine publishes regularly, and the stats counters are non-trivial" the right trigger? Should a solo user with two machines enter phase C?
 2. Should inferred links require the commit author to match the conversation's machine user?
 3. Is git notes the right shared home for links, given that hosting UIs don't show notes? The alternative is evidence objects, keyed by commit.
-4. Should gap lines ever be pushed (`gaps.push`), or should they stay pull-only?
-5. Are the A7 thresholds (3 steps, 3 outcomes, 2 conversations, 30 days) too strict or too loose?
+4. Is `evidence.share: none` the right default, or should `notes` be the default for the `team` review profile?
+5. Should gap lines ever be pushed (`gaps.push`), or should they stay pull-only?
+6. Are the A7 thresholds (3 steps, 3 outcomes, 2 conversations, 30 days) too strict or too loose?
 
 ---
 
-## 18. Considered and not adopted
+## 19. Considered and not adopted
 
 | Idea | Why not |
 |---|---|
@@ -573,8 +680,9 @@ index.sqlite: + commit_links, evidence_objects, inbox FTS (A1, A3, A6)
 | A code-structure graph and impact analysis | P3: structure is read from the code. A code-graph tool can sit alongside us. |
 | Cross-repository ("global") facts | SPEC non-goal (§1.2). Harness-native personal memory covers it. |
 | Webhooks on memory changes | No consumer. The memory PR is the change feed. |
-| Interactive "link this commit?" prompts during `git commit` | They break agent commits and GUI git clients. Links are derived instead (§4.2). |
+| Interactive "link this commit?" prompts during `git commit` | They break agent commits and GUI git clients. Links are derived instead (§12.2). |
 | Line-level AI or human authorship tags | Not a memory goal, and fragile under rewrites |
 | Working-tree snapshots at every turn | We aren't a rewind tool. Harnesses already provide checkpoints. |
-| Starting backfill automatically at setup | It spends quota without consent (§8.3) |
+| Starting backfill automatically at setup | It spends quota without consent (§6.3) |
+| Writing git notes or refs in phase B, to survive rebases | Patch-id remapping achieves the same read-only (§12.3). Writing waits for a sharing need (phase C). |
 | Harness adapters as separate executables found on `PATH` | One binary (SPEC §18.1). Revisit for third-party harnesses after Release 2. |

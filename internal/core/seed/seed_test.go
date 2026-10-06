@@ -19,8 +19,8 @@ func TestParseCompletionReport(t *testing.T) {
 complete
 
 ### Changes Made
-- ` + "`path/to/file`" + ` — added new feature
-- ` + "`another/file`" + ` - fixed bug
+- ` + "`internal/core/seed/parser.go`" + ` — added new feature
+- ` + "`another/file.go`" + ` - fixed bug
 
 ### Decisions Made
 - Used strategy X
@@ -49,10 +49,10 @@ complete
 	if len(report.Changes) != 2 {
 		t.Fatalf("got %d changes, want 2", len(report.Changes))
 	}
-	if report.Changes[0].Path != "path/to/file" || report.Changes[0].Description != "added new feature" {
+	if report.Changes[0].Path != "internal/core/seed/parser.go" || report.Changes[0].Description != "added new feature" {
 		t.Errorf("got change 0: %+v", report.Changes[0])
 	}
-	if report.Changes[1].Path != "another/file" || report.Changes[1].Description != "fixed bug" {
+	if report.Changes[1].Path != "another/file.go" || report.Changes[1].Description != "fixed bug" {
 		t.Errorf("got change 1: %+v", report.Changes[1])
 	}
 
