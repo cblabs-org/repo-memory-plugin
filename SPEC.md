@@ -8,6 +8,7 @@
 | **Implementation** | One Go binary, `repo-memory` (§18) |
 | **Reference repo** | `esp32-app-foundation` (evidence in Appendix A) |
 | **Supersedes** | `repo-memory-plugin-architecture-analysis.md` (annotated critique kept for the record) |
+| **Addenda** | [Addendum A: provenance, sharing and hardening](docs/addendum-a-provenance-and-hardening.md) (draft, rev 1) |
 
 ---
 
