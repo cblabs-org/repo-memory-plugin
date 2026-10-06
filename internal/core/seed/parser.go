@@ -21,18 +21,15 @@ type CompletionReport struct {
 	WorkOrderName string
 }
 
+var backtickRe = regexp.MustCompile("`([^`]+)`")
+
 func extractBacktickPaths(s string) []string {
 	var paths []string
-	re := regexp.MustCompile("`([^`]+)`")
-	matches := re.FindAllStringSubmatch(s, -1)
+	matches := backtickRe.FindAllStringSubmatch(s, -1)
 	
 	seen := make(map[string]bool)
 	for _, match := range matches {
 		p := match[1]
-		p = strings.TrimPrefix(p, "**")
-		p = strings.TrimSuffix(p, "**:")
-		p = strings.TrimSuffix(p, "**")
-		
 		if (strings.Contains(p, "/") || strings.Contains(p, ".")) && !strings.Contains(p, " ") {
 			if !seen[p] {
 				seen[p] = true
