@@ -85,7 +85,7 @@ func TestReportToOps(t *testing.T) {
 	}
 
 	resolver := config.NewScopeResolver(nil, nil, nil)
-	opsList := seed.ReportToOps(report, resolver)
+	opsList := seed.ReportToOps(report, resolver, "", nil)
 
 	if len(opsList) != 3 {
 		t.Fatalf("expected 3 ops, got %d", len(opsList))
@@ -101,20 +101,20 @@ func TestReportToOps(t *testing.T) {
 			t.Errorf("bad anchors in op: %v", o.Fields["anchors"])
 		}
 
-		switch o.Fields["type"] {
+		switch o.Fields["entry_type"] {
 		case "decision":
 			foundDec = true
-			if !strings.HasPrefix(o.EntryID, "dec-") {
+			if !strings.HasPrefix(o.EntryID, "seed-") {
 				t.Errorf("bad dec prefix: %s", o.EntryID)
 			}
 		case "ruled-out":
 			foundRul = true
-			if !strings.HasPrefix(o.EntryID, "rul-") {
+			if !strings.HasPrefix(o.EntryID, "seed-") {
 				t.Errorf("bad rul prefix: %s", o.EntryID)
 			}
 		case "open-issue":
 			foundIssue = true
-			if !strings.HasPrefix(o.EntryID, "issue-") {
+			if !strings.HasPrefix(o.EntryID, "seed-") {
 				t.Errorf("bad issue prefix: %s", o.EntryID)
 			}
 		}

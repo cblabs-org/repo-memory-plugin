@@ -37,8 +37,17 @@ var seedCmd = &cobra.Command{
 			}
 		}
 
-		// Default scope resolver
-		resolver := config.NewScopeResolver(nil, nil, nil)
+		opts := seed.SeedOptions{
+			RepoRoot:     repoRoot,
+			BeforeCommit: seedBeforeCommit,
+			OpsDir:       seedOpsDir,
+		}
+
+		scopeCfg, _ := config.LoadScopeConfig(seedConfigPath)
+		anchors, _ := seed.ScanAllAnchors(seedPaDir, opts)
+		moduleScopes := config.DeriveModuleScopes(anchors)
+
+		resolver := config.NewScopeResolver(scopeCfg, moduleScopes, nil)
 
 		var opsWriter *ops.Writer
 		if !seedDryRun {
@@ -52,9 +61,9 @@ var seedCmd = &cobra.Command{
 		}
 
 		if seedBeforeCommit != "" {
-			return seed.SeedWithTimeCut(seedPaDir, opsWriter, resolver, seedBeforeCommit)
+			return seed.SeedWithTimeCut(seedPaDir, opsWriter, resolver, opts)
 		}
-		return seed.SeedFromWorkorders(seedPaDir, opsWriter, resolver)
+		return seed.SeedFromWorkorders(seedPaDir, opsWriter, resolver, opts)
 	},
 }
 

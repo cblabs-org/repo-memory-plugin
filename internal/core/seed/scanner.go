@@ -1,6 +1,7 @@
 package seed
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,12 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
+
+type SeedOptions struct {
+	RepoRoot     string
+	BeforeCommit string
+	OpsDir       string
+}
 
 func ScanWorkorders(paDir string) ([]string, error) {
 	var files []string
@@ -35,11 +42,11 @@ func ScanWorkorders(paDir string) ([]string, error) {
 	return files, err
 }
 
-func SeedFromWorkorders(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver) error {
-	return SeedWithTimeCut(paDir, opsWriter, resolver, "")
+func SeedFromWorkorders(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
+	return SeedWithTimeCut(paDir, opsWriter, resolver, opts)
 }
 
-func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, beforeCommit string) error {
+func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
 	files, err := ScanWorkorders(paDir)
 	if err != nil {
 		return err
@@ -48,19 +55,45 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 	seededOps := 0
 	workordersSeeded := 0
 
+	var existingIDs = make(map[string]bool)
+	if opts.OpsDir != "" {
+		reader := ops.NewReader(opts.OpsDir)
+		it := ops.NewIterator(reader, context.Background())
+		for batch, err := range it.Seq() {
+			if err != nil {
+				continue
+			}
+			for _, op := range batch.Ops {
+				existingIDs[op.EntryID] = true
+			}
+		}
+	}
+
 	for _, path := range files {
-		if beforeCommit != "" {
+		var content []byte
+
+		if opts.BeforeCommit != "" {
+			relPath := path
+			if opts.RepoRoot != "" {
+				relPath, _ = filepath.Rel(opts.RepoRoot, path)
+			}
 			// Use git to check if the workorder file existed at the given commit
-			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", beforeCommit, path))
-			if err := cmd.Run(); err != nil {
+			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relPath))
+			if opts.RepoRoot != "" {
+				cmd.Dir = opts.RepoRoot
+			}
+			out, err := cmd.Output()
+			if err != nil {
 				// file didn't exist at that commit or other error, skip
 				continue
 			}
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
+			content = out
+		} else {
+			var err error
+			content, err = os.ReadFile(path)
+			if err != nil {
+				return err
+			}
 		}
 
 		report, err := parseCompletionReportWithPath(string(content), path)
@@ -68,7 +101,7 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 			continue
 		}
 
-		newOps := ReportToOps(report, resolver)
+		newOps := ReportToOps(report, resolver, path, existingIDs)
 		if len(newOps) > 0 {
 			if opsWriter != nil {
 				batch := ops.NewBatch(newOps)
@@ -83,4 +116,47 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 
 	fmt.Printf("Seeded %d entries from %d workorders\n", seededOps, workordersSeeded)
 	return nil
+}
+
+func ScanAllAnchors(paDir string, opts SeedOptions) ([]string, error) {
+	files, err := ScanWorkorders(paDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var allAnchors []string
+	for _, path := range files {
+		var content []byte
+
+		if opts.BeforeCommit != "" {
+			relPath := path
+			if opts.RepoRoot != "" {
+				relPath, _ = filepath.Rel(opts.RepoRoot, path)
+			}
+			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relPath))
+			if opts.RepoRoot != "" {
+				cmd.Dir = opts.RepoRoot
+			}
+			out, err := cmd.Output()
+			if err != nil {
+				continue
+			}
+			content = out
+		} else {
+			var err error
+			content, err = os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		report, err := parseCompletionReportWithPath(string(content), path)
+		if err != nil || report == nil {
+			continue
+		}
+		for _, c := range report.Changes {
+			allAnchors = append(allAnchors, c.Path)
+		}
+	}
+	return allAnchors, nil
 }

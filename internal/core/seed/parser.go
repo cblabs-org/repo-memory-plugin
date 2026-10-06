@@ -39,9 +39,19 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 	
 	inCompletionReport := false
 	currentSection := ""
+	inCodeFence := false
 
 	for _, line := range lines {
 		trimLine := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimLine, "```") {
+			inCodeFence = !inCodeFence
+			continue
+		}
+
+		if inCodeFence {
+			continue
+		}
 		
 		if strings.HasPrefix(trimLine, "## Completion Report") {
 			inCompletionReport = true

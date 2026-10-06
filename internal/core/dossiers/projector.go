@@ -20,12 +20,13 @@ func NewProjector(opsReader *ops.Reader) *Projector {
 
 func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
 	dossiers := make(map[string]*Dossier)
+	entryIndex := make(map[string]string)
 
 	for batch, err := range p.reader.Iterate(ctx) {
 		if err != nil {
 			return nil, err
 		}
-		if err := applyBatch(dossiers, batch); err != nil {
+		if err := applyBatch(dossiers, entryIndex, batch); err != nil {
 			return nil, err
 		}
 	}
@@ -37,40 +38,21 @@ func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
 	return dossiers, nil
 }
 
-func (p *Projector) ProjectBefore(ctx context.Context, beforeCommit string) (map[string]*Dossier, error) {
-	dossiers := make(map[string]*Dossier)
-
-	for batch, err := range p.reader.IterateBefore(ctx, beforeCommit) {
-		if err != nil {
-			return nil, err
-		}
-		if err := applyBatch(dossiers, batch); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, d := range dossiers {
-		sortDossier(d)
-	}
-
-	return dossiers, nil
-}
-
-func applyBatch(dossiers map[string]*Dossier, batch *ops.OpBatch) error {
+func applyBatch(dossiers map[string]*Dossier, entryIndex map[string]string, batch *ops.OpBatch) error {
 	for _, op := range batch.Ops {
 		switch op.Type {
 		case ops.OpAdd:
-			applyAdd(dossiers, op)
+			applyAdd(dossiers, entryIndex, op)
 		case ops.OpAmend:
-			applyAmend(dossiers, op)
+			applyAmend(dossiers, entryIndex, op)
 		case ops.OpSupersede:
-			applySupersede(dossiers, op)
+			applySupersede(dossiers, entryIndex, op)
 		case ops.OpRetire:
-			applyRetire(dossiers, op)
+			applyRetire(dossiers, entryIndex, op)
 		case ops.OpMove:
-			applyMove(dossiers, op)
+			applyMove(dossiers, entryIndex, op)
 		case ops.OpSplit:
-			applySplit(dossiers, op)
+			applySplit(dossiers, entryIndex, op)
 		}
 	}
 	return nil
@@ -81,15 +63,14 @@ func getOrCreateDossier(dossiers map[string]*Dossier, scope string) *Dossier {
 	if !ok {
 		d = &Dossier{
 			Scope: scope,
-			// Default kind, can be overridden by ops
-			Kind: DossierKindModule,
+			Kind:  DossierKindModule,
 		}
 		dossiers[scope] = d
 	}
 	return d
 }
 
-func applyAdd(dossiers map[string]*Dossier, op ops.Op) {
+func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
 	d := getOrCreateDossier(dossiers, op.DossierScope)
 
 	if kind, ok := op.Fields["kind"].(string); ok {
@@ -144,10 +125,19 @@ func applyAdd(dossiers map[string]*Dossier, op ops.Op) {
 	}
 
 	d.Entries = append(d.Entries, entry)
+	entryIndex[op.EntryID] = op.DossierScope
 }
 
-func applyAmend(dossiers map[string]*Dossier, op ops.Op) {
-	d := getOrCreateDossier(dossiers, op.DossierScope)
+func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	scope := op.DossierScope
+	if scope == "" || dossiers[scope] == nil {
+		scope = entryIndex[op.EntryID]
+	}
+	if scope == "" {
+		return // Cannot resolve scope
+	}
+	
+	d := getOrCreateDossier(dossiers, scope)
 
 	if kind, ok := op.Fields["kind"].(string); ok {
 		d.Kind = DossierKind(kind)
@@ -201,8 +191,16 @@ func applyAmend(dossiers map[string]*Dossier, op ops.Op) {
 	}
 }
 
-func applySupersede(dossiers map[string]*Dossier, op ops.Op) {
-	d := getOrCreateDossier(dossiers, op.DossierScope)
+func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	scope := op.DossierScope
+	if scope == "" || dossiers[scope] == nil {
+		scope = entryIndex[op.EntryID]
+	}
+	if scope == "" {
+		return
+	}
+	
+	d := getOrCreateDossier(dossiers, scope)
 	var newID string
 	if nid, ok := op.Fields["new_entry_id"].(string); ok {
 		newID = nid
@@ -230,11 +228,12 @@ func applySupersede(dossiers map[string]*Dossier, op ops.Op) {
 
 	newEntry := Entry{
 		ID:           newID,
-		DossierScope: op.DossierScope,
+		DossierScope: scope,
 		Source:       op.Source,
 		CreatedAt:    op.Timestamp,
 		UpdatedAt:    op.Timestamp,
 	}
+	
 	if text, ok := op.Fields["text"].(string); ok {
 		newEntry.Text = text
 	}
@@ -243,11 +242,57 @@ func applySupersede(dossiers map[string]*Dossier, op ops.Op) {
 	} else if found {
 		newEntry.Type = entryToMove.Type
 	}
+	
+	if anchors, ok := op.Fields["anchors"].([]any); ok {
+		for _, a := range anchors {
+			if s, ok := a.(string); ok {
+				newEntry.Anchors = append(newEntry.Anchors, s)
+			}
+		}
+	} else if anchorsStr, ok := op.Fields["anchors"].([]string); ok {
+		newEntry.Anchors = append(newEntry.Anchors, anchorsStr...)
+	} else if found {
+		newEntry.Anchors = entryToMove.Anchors
+	}
+
+	if evidence, ok := op.Fields["evidence"].([]any); ok {
+		for _, ev := range evidence {
+			if s, ok := ev.(string); ok {
+				newEntry.Evidence = append(newEntry.Evidence, s)
+			}
+		}
+	} else if evStr, ok := op.Fields["evidence"].([]string); ok {
+		newEntry.Evidence = append(newEntry.Evidence, evStr...)
+	} else if found {
+		newEntry.Evidence = entryToMove.Evidence
+	}
+
+	if verified, ok := op.Fields["verified"].(string); ok {
+		newEntry.Verified = verified
+	} else if found {
+		newEntry.Verified = entryToMove.Verified
+	}
+	
+	if closesWhen, ok := op.Fields["closes_when"].(string); ok {
+		newEntry.ClosesWhen = closesWhen
+	} else if found {
+		newEntry.ClosesWhen = entryToMove.ClosesWhen
+	}
+
 	d.Entries = append(d.Entries, newEntry)
+	entryIndex[newID] = scope
 }
 
-func applyRetire(dossiers map[string]*Dossier, op ops.Op) {
-	d := getOrCreateDossier(dossiers, op.DossierScope)
+func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	scope := op.DossierScope
+	if scope == "" || dossiers[scope] == nil {
+		scope = entryIndex[op.EntryID]
+	}
+	if scope == "" {
+		return
+	}
+	
+	d := getOrCreateDossier(dossiers, scope)
 	var reason string
 	if r, ok := op.Fields["reason"].(string); ok {
 		reason = r
@@ -273,13 +318,21 @@ func applyRetire(dossiers map[string]*Dossier, op ops.Op) {
 	}
 }
 
-func applyMove(dossiers map[string]*Dossier, op ops.Op) {
+func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
 	toScope, _ := op.Fields["to_dossier"].(string)
 	if toScope == "" {
 		return
 	}
 	
-	fromD := getOrCreateDossier(dossiers, op.DossierScope)
+	fromScope := op.DossierScope
+	if fromScope == "" || dossiers[fromScope] == nil {
+		fromScope = entryIndex[op.EntryID]
+	}
+	if fromScope == "" {
+		return
+	}
+	
+	fromD := getOrCreateDossier(dossiers, fromScope)
 	toD := getOrCreateDossier(dossiers, toScope)
 
 	var entryToMove Entry
@@ -298,11 +351,33 @@ func applyMove(dossiers map[string]*Dossier, op ops.Op) {
 	if found {
 		fromD.Entries = keep
 		toD.Entries = append(toD.Entries, entryToMove)
+		entryIndex[op.EntryID] = toScope
 	}
 }
 
-func applySplit(dossiers map[string]*Dossier, op ops.Op) {
-	fromD := getOrCreateDossier(dossiers, op.DossierScope)
+func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	fromScope := op.DossierScope
+	if fromScope == "" || dossiers[fromScope] == nil {
+		// Just take the scope of one of the entries to move? Split operates on DossierScope primarily in the previous impl. 
+		// If DossierScope is empty, we don't know which dossier is being split easily, unless we check entryMoves.
+		// Let's see if we can resolve it from entryMoves.
+		if entryMoves, ok := op.Fields["entry_moves"].(map[string]any); ok {
+			for id := range entryMoves {
+				fromScope = entryIndex[id]
+				break
+			}
+		} else if entryMovesStr, ok := op.Fields["entry_moves"].(map[string]string); ok {
+			for id := range entryMovesStr {
+				fromScope = entryIndex[id]
+				break
+			}
+		}
+	}
+	if fromScope == "" {
+		return
+	}
+	
+	fromD := getOrCreateDossier(dossiers, fromScope)
 
 	if newDossiers, ok := op.Fields["new_dossiers"].([]any); ok {
 		for _, nd := range newDossiers {
@@ -334,6 +409,7 @@ func applySplit(dossiers map[string]*Dossier, op ops.Op) {
 			e.DossierScope = destScope
 			e.UpdatedAt = op.Timestamp
 			toD.Entries = append(toD.Entries, e)
+			entryIndex[e.ID] = destScope
 		} else {
 			keep = append(keep, e)
 		}
