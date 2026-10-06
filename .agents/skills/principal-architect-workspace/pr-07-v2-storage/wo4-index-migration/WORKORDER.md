@@ -199,4 +199,65 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ## Completion Report (written by the worker at task completion)
 
-<!-- Template — append this section when done -->
+### Status
+Completed
+
+### Changes Made
+- Modified `internal/core/index/index.go`:
+  - Updated `initSchema()` with new tables: `entries`, `entries_fts` (FTS5 external content referencing `entries` rowid with insert/update/delete sync triggers), `entry_anchors` (with index `idx_entry_anchors_anchor`), `error_patterns`, `aliases`, and `entry_history`.
+  - Retained all existing tables (`episodes_fts`, `entities`, `entity_relations`, `claims`, `anchors`, `relations`, `conditions`) for backward compatibility.
+- Created `internal/core/index/entries.go`:
+  - `UpsertEntry(ctx, entry)`: Inserts or updates entries and synchronizes anchors when provided.
+  - `GetEntry(ctx, id)`: Fetches an entry by ID, mapping all fields and loading associated anchors. Returns `ErrNotFound` on `sql.ErrNoRows`.
+  - `DeleteEntry(ctx, id)`: Deletes an entry and its associated anchors and error patterns; triggers automatic deletion in `entries_fts`.
+  - `ListEntriesByScope(ctx, scope)`: Lists all active entries belonging to a given dossier scope with anchors attached.
+  - `SearchEntries(ctx, query)`: Full-text search over `entries_fts` ordered by BM25 relevance score, returning complete hydrated entries.
+  - `InsertErrorPattern(ctx, entryID, commandPrefix, pattern, scope)`: Registers command patterns for failure-signature entries.
+  - `LookupErrorPatterns(ctx, commandPrefix)`: Finds error patterns matching commands by prefix, universal pattern, or exact match.
+  - `UpsertAlias(ctx, oldScope, newScope)`: Records or updates dossier scope aliases.
+  - `ResolveAlias(ctx, scope)`: Traverses alias replacement chains with loop protection (depth cap 10 and visited set).
+  - `InsertHistory(ctx, entry, reason)`: Records retired/superseded entry snapshots into `entry_history`.
+  - `GetHistory(ctx, entryID)`: Retrieves historical entry revisions for an entry.
+- Created `internal/core/index/entry_anchors.go`:
+  - `UpsertEntryAnchors(ctx, entryID, anchors)`: Atomically replaces anchors for an entry.
+  - `LookupByAnchor(ctx, anchor)`: Returns matching entry IDs using prefix `LIKE` matching.
+  - `LookupByAnchorExact(ctx, anchor)`: Returns entry IDs matching the exact anchor string.
+- Modified `internal/core/index/rebuild.go`:
+  - `RebuildFromOpLog(ctx, opsReader)`: Clears all v2 tables and rebuilds index state from scratch:
+    - Projects dossiers via `dossiers.NewProjector(opsReader).Project(ctx)`.
+    - Upserts entries and anchors.
+    - Registers error patterns for failure-signature entries.
+    - Preserves retired/superseded history entries.
+    - Extracts split ops and registers scope aliases via `config.BuildAliasMap(opsReader, ctx)`.
+  - Maintained `Rebuild` and added `RebuildV1Index = Rebuild` for backward compatibility.
+- Created `internal/core/index/v2_test.go`:
+  - `TestEntry_RoundTrip`: Validates upsert, get, update, delete, and scope listing.
+  - `TestSearchEntries_FTS5`: Validates FTS5 full-text queries, boolean logic, empty queries, and index synchronization on deletion.
+  - `TestEntryAnchors_Lookup`: Validates prefix lookup and anchor replacement.
+  - `TestLookupByAnchorExact`: Validates exact matching distinction from prefix matching.
+  - `TestErrorPatterns`: Validates command matching, prefix lookups, and non-matching behavior.
+  - `TestAliases_ResolveChain`: Validates multi-hop alias resolution, no-op resolution, and self-mapping.
+  - `TestEntryHistory`: Validates recording and retrieval of retired/superseded records.
+  - `TestRebuildFromOpLog_EndToEnd`: End-to-end test writing real op batches, rebuilding, and asserting entries, anchors, error patterns, history, and alias projections.
+  - `TestBackwardCompatibility_EntitiesAndClaims`: Validates existing entity registry and claims indexing still function properly.
+
+### Decisions Made
+- Used FTS5 external content table (`content=entries, content_rowid=rowid`) with SQLite triggers for automatic insert, update, and delete synchronization between `entries` and `entries_fts`.
+- Anchors are stored normalized in `entry_anchors`, with `LookupByAnchor` executing a `LIKE ?` prefix query and `LookupByAnchorExact` performing exact match.
+- `GetEntry` and scope listings hydrate anchors from `entry_anchors` so caller receives fully populated `dossiers.Entry` objects.
+- Preserved existing `Rebuild` function signature and added `RebuildV1Index` alias so callers like `cmd/repo-memory/cmd_reindex.go` compile without changes.
+
+### Verification Results
+1. `go build ./...` - Passed cleanly.
+2. `go test -v ./internal/core/index/...` - All 11 tests passed.
+3. `go test -race ./internal/core/index/...` - Passed with 0 data races.
+4. `go vet ./internal/core/index/...` - Passed with 0 warnings.
+5. Backward compatibility verified for `episodes_fts`, `entities`, and `claims`.
+6. Git commit: `694dca9 feat(index): migrate SQLite schema to v2 entries/anchors/aliases`.
+
+### Blockers
+None.
+
+### Out-of-Scope Findings
+None.
+
