@@ -2,17 +2,14 @@ package index
 
 import (
 	"context"
-
 	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
 	_ "modernc.org/sqlite"
-
 )
 
-// Index provides SQLite FTS indexing over episodes.
+// Index provides SQLite FTS indexing over episodes and v2 entries.
 type Index struct {
 	db *sql.DB
 }
@@ -64,43 +61,6 @@ func (idx *Index) initSchema() error {
 		id TEXT PRIMARY KEY,
 		kind TEXT,
 		name TEXT
-	);
-	
-	CREATE TABLE IF NOT EXISTS claims (
-		id TEXT PRIMARY KEY,
-		type TEXT,
-		title TEXT,
-		status TEXT,
-		relevant_when TEXT,
-		apply TEXT,
-		verified_at TEXT,
-		body TEXT
-	);
-	
-	CREATE TABLE IF NOT EXISTS anchors (
-		claim_id TEXT,
-		kind TEXT,
-		ref TEXT,
-		fp TEXT,
-		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
-	);
-	
-	CREATE TABLE IF NOT EXISTS relations (
-		source_id TEXT,
-		relation_type TEXT,
-		target_id TEXT,
-		FOREIGN KEY(source_id) REFERENCES claims(id) ON DELETE CASCADE
-	);
-	
-	CREATE TABLE IF NOT EXISTS conditions (
-		claim_id TEXT,
-		context TEXT,
-		key TEXT,
-		ref TEXT,
-		state TEXT,
-		target TEXT,
-		result TEXT,
-		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
 	);
 	
 	CREATE TABLE IF NOT EXISTS entity_relations (
@@ -242,68 +202,4 @@ func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]Epis
 		results = append(results, r)
 	}
 	return results, rows.Err()
-}
-
-// InsertClaim inserts or updates a claim and its related tables in the index.
-func (idx *Index) IndexClaim(ctx context.Context, claim *claims.Claim) error {
-	tx, err := idx.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := `INSERT OR REPLACE INTO claims (id, type, title, status, relevant_when, apply, verified_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = tx.ExecContext(ctx, query, claim.ID, claim.Type, claim.Title, claim.Status, claim.RelevantWhen, claim.Apply, claim.VerifiedAt, claim.Body)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM anchors WHERE claim_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	for _, a := range claim.Anchors {
-		_, err = tx.ExecContext(ctx, `INSERT INTO anchors (claim_id, kind, ref, fp) VALUES (?, ?, ?, ?)`, claim.ID, a.Kind, a.Ref, a.FP)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM relations WHERE source_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	if claim.Relations != nil {
-		for _, target := range claim.Relations.Supports {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "supports", target)
-		}
-		for _, target := range claim.Relations.Contradicts {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "contradicts", target)
-		}
-		for _, target := range claim.Relations.Supersedes {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "supersedes", target)
-		}
-		for _, target := range claim.Relations.Explains {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "explains", target)
-		}
-		for _, target := range claim.Relations.Refines {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "refines", target)
-		}
-		for _, target := range claim.Relations.DependsOn {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "depends_on", target)
-		}
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM conditions WHERE claim_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	for k, v := range claim.Conditions {
-		_, err = tx.ExecContext(ctx, `INSERT INTO conditions (claim_id, key, result) VALUES (?, ?, ?)`, claim.ID, k, v)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
 }

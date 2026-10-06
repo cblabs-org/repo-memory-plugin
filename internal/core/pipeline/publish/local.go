@@ -8,18 +8,38 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
 )
 
 var (
-	ErrSensitiveContent = errors.New("claim contains sensitive content")
-	ErrUntrustedModel   = errors.New("claim from untrusted model")
-	ErrUnverifiedClaim  = errors.New("claim is unverified")
+	ErrSensitiveContent = errors.New("item contains sensitive content")
+	ErrUntrustedModel   = errors.New("item from untrusted model")
+	ErrUnverifiedItem   = errors.New("item is unverified")
 )
 
+type Provenance struct {
+	ExtractorModel  string `json:"extractor_model,omitempty"`
+	ReconcilerModel string `json:"reconciler_model,omitempty"`
+}
+
+type Review struct {
+	State string `json:"state,omitempty"`
+	By    string `json:"by,omitempty"`
+	At    string `json:"at,omitempty"`
+}
+
+type Item struct {
+	ID         string            `json:"id"`
+	Title      string            `json:"title"`
+	Body       string            `json:"body"`
+	Status     string            `json:"status"`
+	VerifiedAt string            `json:"verified_at,omitempty"`
+	Provenance *Provenance       `json:"provenance,omitempty"`
+	Review     *Review           `json:"review,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
 type Indexer interface {
-	IndexClaim(ctx context.Context, claim *claims.Claim) error
+	IndexItem(ctx context.Context, item *Item) error
 }
 
 type LocalPublisher struct {
@@ -36,34 +56,34 @@ func NewLocalPublisher(dataDir, repoID string, indexer Indexer) *LocalPublisher 
 	}
 }
 
-func (p *LocalPublisher) Publish(ctx context.Context, claim *claims.Claim) error {
+func (p *LocalPublisher) Publish(ctx context.Context, item *Item) error {
 	// Security gating: check for sensitive content
-	if isSensitive(claim.Title) || isSensitive(claim.Body) {
+	if isSensitive(item.Title) || isSensitive(item.Body) {
 		return ErrSensitiveContent
 	}
 
-	// Security gating: block unverified claims
-	if claim.Status != claims.StatusVerified && claim.Status != claims.StatusMerged && claim.Status != claims.StatusConfirmed {
-		if claim.VerifiedAt == "" {
-			return ErrUnverifiedClaim
+	// Security gating: block unverified items
+	if item.Status != "verified" && item.Status != "merged" && item.Status != "confirmed" {
+		if item.VerifiedAt == "" {
+			return ErrUnverifiedItem
 		}
 	}
 
 	// External provenance gating
-	if claim.Provenance != nil {
-		if strings.Contains(strings.ToLower(claim.Provenance.ExtractorModel), "untrusted") || 
-		   strings.Contains(strings.ToLower(claim.Provenance.ReconcilerModel), "untrusted") {
+	if item.Provenance != nil {
+		if strings.Contains(strings.ToLower(item.Provenance.ExtractorModel), "untrusted") ||
+			strings.Contains(strings.ToLower(item.Provenance.ReconcilerModel), "untrusted") {
 			return ErrUntrustedModel
 		}
 	}
 
 	// Mark as unreviewed
-	if claim.Review == nil {
-		claim.Review = &claims.Review{}
+	if item.Review == nil {
+		item.Review = &Review{}
 	}
-	claim.Review.State = "unreviewed"
-	claim.Review.By = "system"
-	claim.Review.At = time.Now().Format(time.RFC3339)
+	item.Review.State = "unreviewed"
+	item.Review.By = "system"
+	item.Review.At = time.Now().Format(time.RFC3339)
 
 	// Ensure pending directory exists
 	pendingDir := filepath.Join(p.dataDir, p.repoID, "pending")
@@ -71,21 +91,17 @@ func (p *LocalPublisher) Publish(ctx context.Context, claim *claims.Claim) error
 		return fmt.Errorf("creating pending directory: %w", err)
 	}
 
-	// Write claim
-	data, err := claims.Write(claim)
-	if err != nil {
-		return fmt.Errorf("formatting claim: %w", err)
-	}
-
-	filePath := filepath.Join(pendingDir, claim.ID+".md")
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return fmt.Errorf("writing claim: %w", err)
+	// Write item
+	filePath := filepath.Join(pendingDir, item.ID+".md")
+	content := fmt.Sprintf("# %s\n\n%s\n", item.Title, item.Body)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing item: %w", err)
 	}
 
 	// Immediate indexing
 	if p.indexer != nil {
-		if err := p.indexer.IndexClaim(ctx, claim); err != nil {
-			return fmt.Errorf("indexing claim: %w", err)
+		if err := p.indexer.IndexItem(ctx, item); err != nil {
+			return fmt.Errorf("indexing item: %w", err)
 		}
 	}
 
