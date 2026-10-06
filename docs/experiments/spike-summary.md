@@ -6,7 +6,7 @@
 |---|---|---|---|
 | X1 | Stop-continue for turn notes | ✅ Works | Gate: terminationReason=NO_TOOL_CALL, fullyIdle, executionNum=0 |
 | X3 | Quota visibility | ✅ API available | `/usage` JSON exposes exact `remaining_fraction` and `reset_time` |
-| X5 | systemMessage/userMessage channels | ❌ Not supported | Must redesign delivery for PR-08 |
+| X5 | systemMessage/userMessage channels | ✅ Works (corrected) | Use `injectSteps` with nested `systemMessage` object |
 | X8 | Lean agent for distillation | ⚠ Partial | File resolution fails dynamically; must use `define_subagent` |
 | X9 | Hook contracts | ✅ Documented | PreToolUse is fail-closed; others fail-open |
 | Phase 0 | Plugin split & architecture | ✅ Validated | Nested dirs isolated; sidecars tolerate configs; absolute paths required |
@@ -25,7 +25,7 @@
 | §5.4 Sidecar fallback / Lean agent | ⚠ Changed | Must use `define_subagent` instead of file-based discovery (X8) |
 | §6 Consolidation | Untested | Data processing pipeline |
 | §7 Storage | Untested | Data models and index schema |
-| §8 Retrieval and delivery | ❌ Changed | `systemMessage` injection in `PreInvocation` not supported; need alternative |
+| §8 Retrieval and delivery | ✅ Confirmed | `systemMessage` via `PreInvocation` `injectSteps` works (initial test used wrong JSON shape) |
 | §9 Cost model | ⚠ Changed | Token tracking via transcripts is impossible (missing metadata) |
 | §10 Portability | Untested | Claude Code specific |
 
@@ -37,15 +37,16 @@
 - **Hook contracts:** PreToolUse correctly defaults to fail-closed, other hooks fail-open.
 - **Nested Plugin Isolation:** Nested bundles inside global plugins are isolated and ignored globally until explicitly enrolled.
 - **Sidecar configs:** Sidecars tolerate extraneous config files.
+- **PreInvocation Message Injection (corrected):** `systemMessage`, `userMessage`, and `ephemeralMessage` all work via the `injectSteps` response format. Initial test used wrong JSON shape (bare string instead of nested object for `systemMessage`, missing `injectSteps` wrapper).
 
 **Invalidated:**
-- **PreInvocation Message Injection:** The platform ignores `systemMessage` and `userMessage` fields returned from `PreInvocation` hooks.
-- **File-based Agent Resolution:** Natively resolving a lean agent dynamically via files fails; it requires a daemon restart or API registration (`define_subagent`).
+- **File-based Agent Resolution:** Natively resolving a lean agent dynamically via files fails; it requires a daemon restart or API registration (`define_subagent`). `agy --agent` silently falls back to default agent on resolution failure.
 - **Token Metadata Visibility:** `transcript_full.jsonl` does not expose token usage metrics (`gen_metadata` is absent).
 - **Path Expansion:** Antigravity does not expand `~` or `$HOME` in `.agents/plugins.json`; absolute paths are strictly required.
 
 ## Open Questions for PR-07+
 
-1. **Alternative Delivery Mechanisms:** Since `PreInvocation` ignores injected messages, how do we deliver context? Do we mutate the prompt directly or leverage `PreToolUse` fast paths?
-2. **Lean Agent Registration:** How exactly will we orchestrate `define_subagent` dynamically in the distillation pipeline?
-3. **Cost Tracking:** Without token metadata in transcripts, how will the sidecar track and bound its LLM token costs? Do we rely entirely on `/usage` quota diffs?
+1. **Lean Agent Registration:** How exactly will we orchestrate `define_subagent` dynamically in the distillation pipeline? Or does `agy --agent` work after a daemon restart?
+2. **Cost Tracking:** Without token metadata in transcripts, how will the sidecar track and bound its LLM token costs? Do we rely entirely on `/usage` quota diffs?
+3. **CHECKPOINT Survival:** Do injected `systemMessage` steps survive context compaction? Needs deliberate testing with a long session.
+
