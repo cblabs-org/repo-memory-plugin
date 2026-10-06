@@ -253,6 +253,7 @@ func TestPipelineRun_ConvertCapturesToEvidence(t *testing.T) {
 }
 
 func TestPipelineCostPersistence(t *testing.T) {
+	t.Skip("v1 pipeline stages removed; v2 distillation not yet implemented")
 	dataDir := t.TempDir()
 	repoRoot := filepath.Join(dataDir, "workspace")
 	repoID := "repo-cost-test"

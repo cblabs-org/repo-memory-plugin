@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| *(none)* | — | — | — |
+| pr-07-v2-storage | 🔄 In Review — WO6/6 complete, PR #9 staged | Ops, Dossiers, Index, Scopes, Seeding | [PROJECT.md](../pr-07-v2-storage/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
