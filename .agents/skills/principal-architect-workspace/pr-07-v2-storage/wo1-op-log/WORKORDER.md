@@ -76,7 +76,7 @@ Each entry has:
 # Line-Item Instructions
 
 ## 1. Op Types and Models
-- [ ] Create `internal/core/ops/op.go` with the op type definitions:
+- [x] Create `internal/core/ops/op.go` with the op type definitions:
   - Define an `OpType` string enum: `add`, `amend`, `supersede`, `retire`, `move`, `split`
   - Define an `Op` struct containing:
     - `Type OpType` — the operation type
@@ -100,37 +100,37 @@ Each entry has:
     - `split`: DossierScope required; Fields must include `new_dossiers` (list of new scope names) and `entry_moves` (map of entry ID → new scope)
 
 ## 2. Op File I/O
-- [ ] Create `internal/core/ops/writer.go`:
+- [x] Create `internal/core/ops/writer.go`:
   - `type Writer struct` with a base directory (the `.memory/ops/` path)
   - `func (w *Writer) Write(batch OpBatch) error` — writes the batch as JSON to `.memory/ops/<yyyy-mm>/<batch-id>.json`, creating the month directory if needed. Use `os.MkdirAll`. Use indented JSON for git readability.
   - `func NewWriter(baseDir string) *Writer`
 
-- [ ] Create `internal/core/ops/reader.go`:
+- [x] Create `internal/core/ops/reader.go`:
   - `type Reader struct` with a base directory
   - `func (r *Reader) ReadBatch(path string) (*OpBatch, error)` — reads and validates a single batch file
   - `func NewReader(baseDir string) *Reader`
 
 ## 3. Op Log Iterator
-- [ ] Create `internal/core/ops/iterator.go`:
+- [x] Create `internal/core/ops/iterator.go`:
   - `type Iterator struct` — iterates over all op batches in chronological order
   - `func (r *Reader) Iterate(ctx context.Context) iter.Seq2[*OpBatch, error]` — yields batches in ULID order (which is chronological). Walk month directories in order, then files within each month in ULID order.
   - `func (r *Reader) IterateAfter(ctx context.Context, afterBatchID string) iter.Seq2[*OpBatch, error]` — yields only batches after the given batch ID (for incremental processing)
   - `func (r *Reader) IterateBefore(ctx context.Context, beforeCommit string) iter.Seq2[*OpBatch, error]` — yields only batches whose `CreatedAt` is before the given commit's timestamp. This is the time-cut mechanism needed for X6. The `beforeCommit` is a git commit hash; resolve its timestamp via `git log -1 --format=%cI <commit>`.
 
 ## 4. Validation
-- [ ] Create `internal/core/ops/validate.go`:
+- [x] Create `internal/core/ops/validate.go`:
   - `func ValidateOp(op Op) error` — validates a single op against the rules defined above
   - `func ValidateBatch(batch OpBatch) error` — validates all ops in a batch
   - Return clear error messages indicating which field is missing/invalid
 
 ## 5. v1 Events Store Retirement
-- [ ] Archive existing v1 events data:
+- [x] Archive existing v1 events data:
   - In the **code**, add a migration function `internal/core/ops/migrate.go`:
     - `func MigrateV1Events(eventsDir, archiveDir string) error` — moves `.memory/events/` to `.memory/archive/v1-events/` if it exists. This is a simple directory rename.
   - Do NOT remove `internal/core/events/` Go package yet — that will be done in WO5 alongside the other v1 removals. Just add a `// Deprecated: use internal/core/ops instead. Will be removed in WO5.` comment to the package doc.
 
 ## 6. Tests
-- [ ] Create `internal/core/ops/ops_test.go` (or split across files):
+- [x] Create `internal/core/ops/ops_test.go` (or split across files):
   - Test `ValidateOp` for each op type: valid ops pass, missing required fields fail with clear errors
   - Test `Writer.Write` + `Reader.ReadBatch` round-trip: write a batch, read it back, verify identical
   - Test `Reader.Iterate`: write 3 batches across 2 months, iterate, verify chronological order
@@ -156,4 +156,38 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ## Completion Report (written by the worker at task completion)
 
-<!-- Template — append this section when done -->
+### Status
+Completed
+
+### Changes Made
+- Created `internal/core/ops/op.go`: defines `OpType` (`add`, `amend`, `supersede`, `retire`, `move`, `split`), provenance constants, `Op`, `OpBatch`, and ULID helper constructors (`NewBatchID`, `NewBatchIDWithTime`, `NewEntryID`, `NewEntryIDWithTime`, `NewBatch`).
+- Created `internal/core/ops/validate.go`: implements `ValidateOp` with validation rules per op type and `ValidateBatch`. Supports both Go typed structs and unmarshaled JSON maps/slices.
+- Created `internal/core/ops/writer.go`: implements `Writer.Write(batch)` targeting `.memory/ops/<yyyy-mm>/<batch-id>.json`.
+- Created `internal/core/ops/reader.go`: implements `Reader.ReadBatch(path)` with path resolution and batch validation.
+- Created `internal/core/ops/iterator.go`: implements `Iterator` (supporting push `Seq()` and pull `Next()`), `Reader.Iterate`, `Reader.IterateAfter`, and `Reader.IterateBefore` with git commit timestamp resolution (`git log -1 --format=%cI`).
+- Created `internal/core/ops/migrate.go`: implements `MigrateV1Events` directory migration from `.memory/events/` to `.memory/archive/v1-events/`.
+- Created `internal/core/ops/doc.go`: package documentation for `ops`.
+- Updated `internal/core/events/doc.go`: added deprecation notice for v1 events store.
+- Created `internal/core/ops/ops_test.go`: comprehensive unit test suite covering validation rules, writer/reader round-trip, chronological iteration, `IterateAfter`, `IterateBefore` via git commit, context cancellation, v1 migration, and edge cases.
+
+### Decisions Made
+- Used standard `github.com/oklog/ulid/v2` matching existing codebase patterns for ULID generation.
+- Designed `Iterator` to support both Go 1.23+ range sequence iteration (`iter.Seq2[*OpBatch, error]`) and pull iteration (`Next() (*OpBatch, error)` via `iter.Pull2`).
+- Made `split` validation accept both native Go slices/maps and JSON unmarshaled `[]any`/`map[string]any` to ensure round-trip validation seamlessly passes.
+- Supported `WithGitDir` on `Reader` to enable testing and flexible repository location resolution for `IterateBefore`.
+
+### Verification Results
+- `go build ./...`: passed cleanly.
+- `go test -v ./internal/core/ops/...`: passed (10 test suites, all green).
+- `go vet ./internal/core/ops/...`: passed with 0 warnings.
+- External import verification: package is completely self-contained.
+
+### Dead Ends & Warnings
+None.
+
+### Out-of-Scope Findings
+None.
+
+### Blockers
+None.
+
