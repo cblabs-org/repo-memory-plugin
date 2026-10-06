@@ -80,6 +80,16 @@ func getOrCreateDossier(dossiers map[string]*Dossier, scope string) *Dossier {
 }
 
 func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	// If entry already exists, treat as amend (or move if scope differs)
+	if existingScope, exists := entryIndex[op.EntryID]; exists {
+		if existingScope != op.DossierScope && op.DossierScope != "" {
+			// Scope changed — treat as move + amend
+			applyMove(dossiers, entryIndex, op)
+		}
+		applyAmend(dossiers, entryIndex, op)
+		return
+	}
+
 	d := getOrCreateDossier(dossiers, op.DossierScope)
 
 	if kind, ok := op.Fields["kind"].(string); ok {

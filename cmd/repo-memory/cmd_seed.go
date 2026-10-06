@@ -26,17 +26,14 @@ var seedCmd = &cobra.Command{
 	Short: "Seed memory ops from Principal Architect completion reports",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoRoot, err := gitops.FindRepoRoot(".")
-		if err == nil {
-			if seedPaDir == ".agents/skills/principal-architect-workspace/" {
-				seedPaDir = filepath.Join(repoRoot, seedPaDir)
-			}
-			if seedOpsDir == ".memory/ops/" {
-				seedOpsDir = filepath.Join(repoRoot, seedOpsDir)
-			}
-			if seedConfigPath == ".memory/config.yaml" {
-				seedConfigPath = filepath.Join(repoRoot, seedConfigPath)
-			}
+		if err != nil {
+			return fmt.Errorf("finding repo root: %w", err)
 		}
+
+		// Always resolve to absolute paths
+		seedPaDir, _ = filepath.Abs(seedPaDir)
+		seedOpsDir, _ = filepath.Abs(seedOpsDir)
+		seedConfigPath, _ = filepath.Abs(seedConfigPath)
 
 		opts := seed.SeedOptions{
 			RepoRoot:     repoRoot,
@@ -48,11 +45,20 @@ var seedCmd = &cobra.Command{
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("loading scope config: %w", err)
 		}
-		anchors, err := seed.ScanAllAnchors(seedPaDir, opts)
+
+		parsed, err := seed.ScanAndParse(seedPaDir, opts)
 		if err != nil {
-			return fmt.Errorf("scanning anchors: %w", err)
+			return fmt.Errorf("scanning workorders: %w", err)
 		}
-		moduleScopes := config.DeriveModuleScopes(anchors)
+
+		// Derive anchors from parsed results
+		var allAnchors []string
+		for _, pw := range parsed {
+			for _, c := range pw.Report.Changes {
+				allAnchors = append(allAnchors, c.Path)
+			}
+		}
+		moduleScopes := config.DeriveModuleScopes(allAnchors)
 
 		resolver := config.NewScopeResolver(scopeCfg, moduleScopes, nil)
 
@@ -67,10 +73,8 @@ var seedCmd = &cobra.Command{
 			fmt.Printf("Seeding from %s to %s...\n", seedPaDir, seedOpsDir)
 		}
 
-		if seedBeforeCommit != "" {
-			return seed.SeedWithTimeCut(seedPaDir, opsWriter, resolver, opts)
-		}
-		return seed.SeedFromWorkorders(seedPaDir, opsWriter, resolver, opts)
+		// Seed from pre-parsed results
+		return seed.SeedFromParsed(parsed, opsWriter, resolver, opts)
 	},
 }
 

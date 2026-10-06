@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
@@ -43,13 +44,18 @@ func ScanWorkorders(paDir string) ([]string, error) {
 }
 
 func SeedFromWorkorders(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
-	return SeedWithTimeCut(paDir, opsWriter, resolver, opts)
+	parsed, err := ScanAndParse(paDir, opts)
+	if err != nil {
+		return err
+	}
+	return SeedFromParsed(parsed, opsWriter, resolver, opts)
 }
 
 type ParsedWorkorder struct {
-	Path    string
-	RelPath string
-	Report  *CompletionReport
+	Path       string
+	RelPath    string
+	Report     *CompletionReport
+	CommitTime time.Time
 }
 
 func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
@@ -63,7 +69,11 @@ func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 		var content []byte
 		relPath := path
 		if opts.RepoRoot != "" {
-			relPath, _ = filepath.Rel(opts.RepoRoot, path)
+			var err error
+			relPath, err = filepath.Rel(opts.RepoRoot, path)
+			if err != nil {
+				return nil, fmt.Errorf("cannot relativize %s against %s: %w", path, opts.RepoRoot, err)
+			}
 		}
 
 		if opts.BeforeCommit != "" {
@@ -89,21 +99,30 @@ func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 			continue
 		}
 
+		var commitTime time.Time
+		cmd := exec.Command("git", "log", "-1", "--format=%cI", "--", relPath)
+		if opts.RepoRoot != "" {
+			cmd.Dir = opts.RepoRoot
+		}
+		out, err := cmd.Output()
+		if err == nil {
+			t, err := time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
+			if err == nil {
+				commitTime = t
+			}
+		}
+
 		results = append(results, &ParsedWorkorder{
-			Path:    path,
-			RelPath: relPath,
-			Report:  report,
+			Path:       path,
+			RelPath:    relPath,
+			Report:     report,
+			CommitTime: commitTime,
 		})
 	}
 	return results, nil
 }
 
-func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
-	pws, err := ScanAndParse(paDir, opts)
-	if err != nil {
-		return err
-	}
-
+func SeedFromParsed(parsed []*ParsedWorkorder, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
 	seededOps := 0
 	workordersSeeded := 0
 
@@ -113,7 +132,7 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 		it := ops.NewIterator(reader, context.Background())
 		for batch, err := range it.Seq() {
 			if err != nil {
-				continue
+				return fmt.Errorf("reading existing ops for dedup: %w", err)
 			}
 			for _, op := range batch.Ops {
 				existingIDs[op.EntryID] = true
@@ -121,8 +140,8 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 		}
 	}
 
-	for _, pw := range pws {
-		newOps := ReportToOps(pw.Report, resolver, pw.RelPath, existingIDs)
+	for _, pw := range parsed {
+		newOps := ReportToOps(pw.Report, resolver, pw.RelPath, pw.CommitTime, existingIDs)
 		if len(newOps) > 0 {
 			if opsWriter != nil {
 				batch := ops.NewBatch(newOps)
@@ -137,19 +156,4 @@ func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.Scope
 
 	fmt.Printf("Seeded %d entries from %d workorders\n", seededOps, workordersSeeded)
 	return nil
-}
-
-func ScanAllAnchors(paDir string, opts SeedOptions) ([]string, error) {
-	pws, err := ScanAndParse(paDir, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	var allAnchors []string
-	for _, pw := range pws {
-		for _, c := range pw.Report.Changes {
-			allAnchors = append(allAnchors, c.Path)
-		}
-	}
-	return allAnchors, nil
 }

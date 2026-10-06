@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
@@ -49,10 +50,10 @@ complete
 	if len(report.Changes) != 2 {
 		t.Fatalf("got %d changes, want 2", len(report.Changes))
 	}
-	if report.Changes[0].Path != "internal/core/seed/parser.go" || report.Changes[0].Description != "added new feature" {
+	if report.Changes[0].Path != "internal/core/seed/parser.go" || report.Changes[0].Description != "`internal/core/seed/parser.go` — added new feature" {
 		t.Errorf("got change 0: %+v", report.Changes[0])
 	}
-	if report.Changes[1].Path != "another/file.go" || report.Changes[1].Description != "fixed bug" {
+	if report.Changes[1].Path != "another/file.go" || report.Changes[1].Description != "`another/file.go` - fixed bug" {
 		t.Errorf("got change 1: %+v", report.Changes[1])
 	}
 
@@ -85,7 +86,7 @@ func TestReportToOps(t *testing.T) {
 	}
 
 	resolver := config.NewScopeResolver(nil, nil, nil)
-	opsList := seed.ReportToOps(report, resolver, "", nil)
+	opsList := seed.ReportToOps(report, resolver, "", time.Time{}, nil)
 
 	if len(opsList) != 3 {
 		t.Fatalf("expected 3 ops, got %d", len(opsList))

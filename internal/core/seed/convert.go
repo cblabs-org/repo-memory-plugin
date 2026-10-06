@@ -15,7 +15,7 @@ func generateDeterministicID(relPath string, section string, bulletText string) 
 	return fmt.Sprintf("seed-%x", hash[:4])
 }
 
-func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path string, existingIDs map[string]bool) []ops.Op {
+func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path string, commitTime time.Time, existingIDs map[string]bool) []ops.Op {
 	var result []ops.Op
 
 	if report == nil {
@@ -32,7 +32,10 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 		dossierScope = report.ProjectName
 	}
 	
-	now := time.Now()
+	now := commitTime
+	if now.IsZero() {
+		now = time.Now()
+	}
 
 	for _, dec := range report.Decisions {
 		entryID := generateDeterministicID(path, "dec", dec)
