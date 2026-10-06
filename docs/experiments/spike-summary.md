@@ -53,8 +53,8 @@
 3. **Agent frontmatter traps.** `name` and `description` are REQUIRED (silent drop). `model:` only accepts tier names (`inherit`, `flash_lite`, `flash`, `pro`). `mainAgent`/`subagent` booleans control discovery. `hidden: true` only hides from UI picker.
 4. **Stop continuation cap:** 10 (v1.1.9).
 
-## Open Questions for PR-07+
+## Resolved Questions
 
-1. **Cost Tracking:** Without token metadata in transcripts, how will the sidecar track and bound its LLM token costs? Do we rely entirely on `/usage` quota diffs?
-2. **CHECKPOINT Survival:** Do injected `systemMessage` steps survive context compaction? Needs deliberate testing with a long session (scheduled for X11 in PR-08).
-3. **`invoke_subagent` injection:** Inconclusive in testing but should work per docs. Will be confirmed in PR-08 delivery implementation.
+1. **Cost Tracking:** Without token metadata in transcripts, the sidecar relies entirely on `/usage` quota diffs. **Accepted** — no alternative available.
+2. **CHECKPOINT Survival:** Assume injected `systemMessage` steps do NOT survive context compaction. The mitigation is compaction re-injection (PR-08 WO5, X11): scan backwards to detect compaction events, re-inject a consolidated `systemMessage` of still-relevant entries ≤ 1k tokens, re-arm first-entry and first-touch deduplication.
+3. **`invoke_subagent` injection:** Inconclusive in testing but should work per docs. Will be confirmed in PR-08 delivery implementation. Either way, acceptable — subagents inherit parent context.
