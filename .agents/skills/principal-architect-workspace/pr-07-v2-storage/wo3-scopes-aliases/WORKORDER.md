@@ -59,7 +59,7 @@ Build the scope and alias system that routes entries to the correct dossier. Sco
 # Line-Item Instructions
 
 ## 1. Declared Scopes Config
-- [ ] Create `internal/core/config/scopes.go`:
+- [x] Create `internal/core/config/scopes.go`:
   - Define `ScopeConfig` struct:
     - `Topics []DeclaredScope` — architectural topics
     - `Externals []DeclaredScope` — external systems
@@ -73,7 +73,7 @@ Build the scope and alias system that routes entries to the correct dossier. Sco
   - `func LoadScopeConfig(configPath string) (*ScopeConfig, error)` — reads from `config.yaml` under a `scopes:` key. Use `gopkg.in/yaml.v3` (already in the project). If the `scopes:` key is missing, return an empty config (not an error).
 
 ## 2. Derived Module Scopes
-- [ ] Add to `internal/core/config/scopes.go`:
+- [x] Add to `internal/core/config/scopes.go`:
   - `type ModuleScope struct`:
     - `Name string` — derived scope name (e.g. `core/transcript-parser`)
     - `PathGlobs []string` — file paths that belong to this module
@@ -87,7 +87,7 @@ Build the scope and alias system that routes entries to the correct dossier. Sco
     - Return deduplicated, sorted module scopes
 
 ## 3. Alias Resolution
-- [ ] Add to `internal/core/config/scopes.go`:
+- [x] Add to `internal/core/config/scopes.go`:
   - `type AliasMap struct` — maps old scope names to new ones (from `split` ops)
   - `func BuildAliasMap(opsReader *ops.Reader, ctx context.Context) (*AliasMap, error)`:
     - Iterate all ops, collect `split` ops
@@ -98,7 +98,7 @@ Build the scope and alias system that routes entries to the correct dossier. Sco
     - Prevent infinite loops (max depth 10)
 
 ## 4. Scope Resolver
-- [ ] Add to `internal/core/config/scopes.go`:
+- [x] Add to `internal/core/config/scopes.go`:
   - `type ScopeResolver struct` — combines declared scopes, derived module scopes, and aliases
   - `func NewScopeResolver(config *ScopeConfig, modules []ModuleScope, aliases *AliasMap) *ScopeResolver`
   - `func (r *ScopeResolver) ResolveScope(anchors []string, keywords []string) string`:
@@ -109,7 +109,7 @@ Build the scope and alias system that routes entries to the correct dossier. Sco
   - `func (r *ScopeResolver) AllScopes() []string` — returns all known scope names (declared + derived + from aliases)
 
 ## 5. Tests
-- [ ] Create `internal/core/config/scopes_test.go`:
+- [x] Create `internal/core/config/scopes_test.go`:
   - Test `LoadScopeConfig` with a sample YAML that has topics, externals, and procedures
   - Test `LoadScopeConfig` with missing `scopes:` key returns empty config
   - Test `DeriveModuleScopes` with sample file paths, verify rollup and naming
@@ -134,4 +134,40 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ## Completion Report (written by the worker at task completion)
 
-<!-- Template — append this section when done -->
+### Status
+Completed
+
+### Changes Made
+- Created `internal/core/config/scopes.go`:
+  - `ScopeConfig` & `DeclaredScope`: Implemented schema for hand-declared architectural topics, external systems, and procedure areas with YAML decoding (supporting `tool_names` and `toolNames`).
+  - `LoadScopeConfig(configPath string)`: Reads scopes from `config.yaml` under `scopes:`, gracefully returning an empty configuration when the key is omitted or the file does not exist.
+  - `ModuleScope` & `DeriveModuleScopes(anchors []string)`: Derives module scopes from file path anchors, rolling up directories with ≤ 2 files to the nearest meaningful parent directory under `internal/`, `cmd/`, or repo root. Slugs names with hyphenated directory segments (`_` -> `-`), extracts anchor symbols, deduplicates, and sorts scopes.
+  - `AliasMap` & `BuildAliasMap(opsReader, ctx)`: Extracts `split` ops from `ops.Reader`, recording old dossier scopes to replacement scopes. `Resolve(scope string)` resolves alias chains with cycle prevention and depth capped at 10.
+  - `ScopeResolver`: Combines declared scopes, derived module scopes, and aliases. `ResolveScope(anchors, keywords)` resolves by aliases first, then module scopes via path prefix match, then declared scopes via keyword/tool/command matching. Implemented `AllScopes()` and `ScopeKind()`.
+- Created `internal/core/config/scopes_test.go`:
+  - `TestLoadScopeConfig_SampleYAML`: Validates parsing of topics, externals, and procedures.
+  - `TestLoadScopeConfig_MissingScopesKey`: Validates fallback to empty config when key or file is missing.
+  - `TestDeriveModuleScopes_RollupAndNaming`: Validates rollup threshold (≤ 2 files), naming/slugification, symbol extraction, and sorting.
+  - `TestBuildAliasMap_SplitOps`: Validates alias map construction from real `ops.OpBatch` split ops and chain resolution.
+  - `TestAliasMap_ResolveChainAndCycle`: Validates multi-step chains, cycle termination, unknown scopes, and nil map safety.
+  - `TestScopeResolver_ResolveScope`: Validates alias precedence, module prefix matching, symbol matching, and keyword matching.
+  - `TestScopeResolver_AllScopesAndScopeKind`: Validates retrieval of all known scope names and kind mappings.
+
+### Decisions Made
+- Anchors and path segments are normalized with forward slashes and underscores converted to hyphens to ensure consistent kebab-case scope names matching the v2 design.
+- `ScopeResolver.ResolveScope` prioritizes aliases first, then module scopes (path prefix match), then declared scopes (keywords, tool names, commands), resolving through aliases at every step.
+- `AliasMap.Resolve` protects against recursive alias loops using both a visited-set cycle detector and a maximum recursion depth of 10.
+- `ScopeKind` connects resolved scope names to `dossiers.DossierKind` (`module`, `topic`, `external`, `procedure`).
+
+### Verification Results
+- `go build ./...`: passed cleanly.
+- `go test -v ./internal/core/config/...`: all tests passed (7 suites, all green).
+- `go vet ./internal/core/config/...`: passed with 0 warnings.
+- `go test ./internal/core/...`: all tests passed.
+- Git commit created on branch `pr-07-v2-storage/wo3-scopes-aliases`: `fdb82ed feat(config): add scope resolver with declared, derived & alias support`.
+
+### Blockers
+None.
+
+### Out-of-Scope Findings
+None.
