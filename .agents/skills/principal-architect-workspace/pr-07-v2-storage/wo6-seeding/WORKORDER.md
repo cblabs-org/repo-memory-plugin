@@ -168,3 +168,27 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ## Completion Report (written by the worker at task completion)
 
 <!-- Template — append this section when done -->
+
+### Status
+complete
+
+### Changes Made
+- `internal/core/seed/parser.go` — Added completion report parsing
+- `internal/core/seed/convert.go` — Added mapping from parsed report to `ops.Op`
+- `internal/core/seed/scanner.go` — Added workspace walk and OpBatch emission with time-cut support
+- `cmd/repo-memory/cmd_seed.go` — Added `seed` subcommand
+- `cmd/repo-memory/main.go` — Wired `seed` command to `rootCmd`
+- `internal/core/seed/seed_test.go` — Added comprehensive tests
+
+### Decisions Made
+- Used `ruled-out` type with prefix `rul-` as default mapping for Dead Ends.
+- Used `ops.NewBatch` to properly emit batched ops from the seeded list.
+
+### Dead Ends & Warnings
+(none)
+
+### Out-of-Scope Findings
+(none)
+
+### Blockers
+(none)
