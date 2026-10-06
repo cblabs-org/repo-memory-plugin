@@ -61,24 +61,34 @@ Spawned subagent `187dd387-936d-418f-ac03-526e8129c6e4` with a multi-step task.
 - ephemeralMessage is single-invocation scope (auto-excluded after PLANNER_RESPONSE)
 - Ideal for per-invocation dynamic context that shouldn't accumulate
 
-### Transcript Recording Observation
+### `injectSteps` Discovery Level Findings
 
-Per the Antigravity documentation, injected messages should appear in `transcript_full.jsonl`
-with `"source": "SYSTEM_SDK"`. In our tests, the agent confirmed seeing the injected
-`systemMessage` and quoted the marker back verbatim, but **no `SYSTEM_SDK` step appeared in
-the transcript files**. The injected content is visible to the model but not recorded as a
-discrete transcript step.
+**Critical finding:** `injectSteps` response processing depends on the hooks.json discovery level:
 
-Expected transcript format per docs:
+| Discovery Level | Hook Fires? | `injectSteps` Processed? | `SYSTEM_SDK` in Transcript? |
+|---|---|---|---|
+| **Workspace** `.agents/hooks.json` + `agy -p` (CLI) | ✅ | ✅ | ✅ (expected per docs) |
+| **Workspace** `.agents/hooks.json` + `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
+| **Plugin** `<plugin-root>/hooks.json` + `agy -p` (CLI) | ✅ | ❌ | ❌ |
+| **Plugin** `<plugin-root>/hooks.json` + `invoke_subagent` (IDE) | ✅ | ❌ | ❌ |
+
+**Methodology:** Verified with both our Go binary and an absolute minimum shell script that
+only outputs `{"injectSteps":[...]}`. Debug traces confirm the hook fires, receives the
+correct payload, and returns valid JSON in ALL cases. The platform simply doesn't process
+`injectSteps` responses from plugin-level hooks or for `invoke_subagent` conversations.
+
+**Implication for v2:** PreInvocation dossier delivery via `injectSteps` must use
+workspace-level `.agents/hooks.json` — the `enroll` command should write/merge the
+PreInvocation hook there, not in the plugin's `hooks.json`. Other hook events (PreToolUse
+decisions, Stop decisions) work correctly from plugin-level hooks.
+
+Expected transcript format per docs (when injection works):
 
 | `injectSteps` Variant | Transcript `source` | Transcript `type` |
 |---|---|---|
 | `systemMessage` | `SYSTEM_SDK` | `SYSTEM_MESSAGE` |
 | `ephemeralMessage` | `SYSTEM_SDK` | `EPHEMERAL_MESSAGE` |
 | `userMessage` | `SYSTEM_SDK` | `USER_INPUT` |
-
-This may be a version-specific behavior or a subagent-specific issue (all tests used
-`invoke_subagent`). Needs further investigation with top-level CLI sessions (`agy -p`).
 
 ### Test D: Direct hook output verification
 
