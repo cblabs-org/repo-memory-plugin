@@ -54,7 +54,7 @@ func TestEnrollUnenrollFlow(t *testing.T) {
 		filepath.Join(tempPluginDir, "config.json"),
 		filepath.Join(tempPluginDir, "sidecars", "tick", "sidecar.json"),
 		filepath.Join(wsPluginDir, "plugin.json"),
-		filepath.Join(wsPluginDir, "hooks.json"),
+		filepath.Join(wsPluginDir, "hooks", "hooks.json"),
 		filepath.Join(wsPluginDir, "mcp_config.json"),
 	}
 	for _, p := range requiredPaths {

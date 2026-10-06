@@ -56,7 +56,7 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 			mustContain: "repo-memory",
 		},
 		{
-			relPath:     filepath.Join("workspace-plugin", "repo-memory", "hooks.json"),
+			relPath:     filepath.Join("workspace-plugin", "repo-memory", "hooks", "hooks.json"),
 			mustContain: "/test/bin/repo-memory hook antigravity",
 		},
 		{

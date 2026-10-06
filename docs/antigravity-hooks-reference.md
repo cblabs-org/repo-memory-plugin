@@ -32,7 +32,7 @@
 Hooks are discovered from (in order):
 1. `~/.gemini/antigravity/hooks.json` (global)
 2. `<workspace>/.agents/hooks.json` (workspace-level)
-3. `<plugin-root>/hooks.json` (per-plugin, loaded via `plugin.json` or `.agents/plugins.json`)
+3. `<plugin-root>/hooks/hooks.json` (per-plugin, loaded via `plugin.json` or `.agents/plugins.json`)
 
 ---
 
