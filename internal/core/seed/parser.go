@@ -2,6 +2,7 @@ package seed
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -18,6 +19,28 @@ type CompletionReport struct {
 	Findings      []string
 	ProjectName   string
 	WorkOrderName string
+}
+
+func extractBacktickPaths(s string) []string {
+	var paths []string
+	re := regexp.MustCompile("`([^`]+)`")
+	matches := re.FindAllStringSubmatch(s, -1)
+	
+	seen := make(map[string]bool)
+	for _, match := range matches {
+		p := match[1]
+		p = strings.TrimPrefix(p, "**")
+		p = strings.TrimSuffix(p, "**:")
+		p = strings.TrimSuffix(p, "**")
+		
+		if (strings.Contains(p, "/") || strings.Contains(p, ".")) && !strings.Contains(p, " ") {
+			if !seen[p] {
+				seen[p] = true
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
 }
 
 func ParseCompletionReport(content string) (*CompletionReport, error) {
@@ -52,7 +75,6 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 		return nil, nil // No completion report found
 	}
 	
-	_ = true
 	currentSection := ""
 	inCodeFence := false
 
@@ -98,29 +120,14 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 			if strings.HasPrefix(trimLine, "- ") {
 				item := strings.TrimPrefix(trimLine, "- ")
 				
-				var pathPart, descPart string
-				if idx := strings.Index(item, " — "); idx != -1 {
-					pathPart = item[:idx]
-					descPart = item[idx+len(" — "):]
-				} else if idx := strings.Index(item, " - "); idx != -1 {
-					pathPart = item[:idx]
-					descPart = item[idx+len(" - "):]
-				} else {
-					pathPart = item
-					descPart = ""
+				paths := extractBacktickPaths(item)
+				desc := item
+				for _, p := range paths {
+					report.Changes = append(report.Changes, Change{
+						Path:        p,
+						Description: desc,
+					})
 				}
-				
-				pathPart = strings.Trim(pathPart, "` ")
-				descPart = strings.TrimSpace(descPart)
-				
-				if strings.Contains(pathPart, " ") || (!strings.Contains(pathPart, "/") && !strings.Contains(pathPart, ".")) {
-					continue
-				}
-				
-				report.Changes = append(report.Changes, Change{
-					Path:        pathPart,
-					Description: descPart,
-				})
 			}
 		case "Decisions Made":
 			if strings.HasPrefix(trimLine, "- ") {
