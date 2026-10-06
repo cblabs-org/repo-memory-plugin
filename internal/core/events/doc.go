@@ -1,5 +1,7 @@
 // Package events provides storage and schemas for claim reviews and answers.
 //
+// Deprecated: use internal/core/ops instead. Will be removed in WO5.
+//
 // Replay Order (for PR-10):
 // When replaying events to reconstruct state, the events MUST be replayed
 // in chronological order based on their 'at' timestamps. If timestamps are
