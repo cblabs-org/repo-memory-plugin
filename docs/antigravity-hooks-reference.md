@@ -29,10 +29,34 @@
 
 ## `hooks.json` Discovery Paths
 
-Hooks are discovered from (in order):
-1. `~/.gemini/antigravity/hooks.json` (global)
-2. `<workspace>/.agents/hooks.json` (workspace-level)
-3. `<plugin-root>/hooks/hooks.json` (per-plugin, loaded via `plugin.json` or `.agents/plugins.json`)
+Antigravity discovers `hooks.json` from:
+
+1. **Workspace:** `<workspace>/.agents/hooks.json` (or `.agent/hooks.json`)
+2. **Global:** `~/.gemini/config/hooks.json`
+3. **Plugin:** `<plugin-root>/hooks.json` (e.g., `~/.gemini/config/plugins/<name>/hooks.json`
+   or `<workspace>/.agents/plugins/<name>/hooks.json`)
+
+### `<plugin>/hooks.json` vs `<plugin>/hooks/hooks.json`
+
+**At runtime, Antigravity ONLY loads `<plugin-root>/hooks.json`.** It never reads
+`<plugin-root>/hooks/hooks.json` directly. The `hooks/hooks.json` path is Claude Code's
+convention, not Antigravity's.
+
+**Why `hooks/hooks.json` can appear to work:** When you run `agy plugin install <path>` or
+`agy plugin import [claude|gemini]` on a pure Claude Code plugin (containing
+`.claude-plugin/plugin.json` and no top-level `plugin.json`) or a Gemini CLI extension
+(`gemini-extension.json`), the CLI's foreign-plugin importer stages the extension by reading
+`<source>/hooks/hooks.json` (interpolating `${extensionPath}` and `${workspacePath}`) and
+writing the result to `~/.gemini/config/plugins/<name>/hooks.json` at the plugin root.
+However, if the directory already contains a native Antigravity manifest (`plugin.json`,
+`.antigravity-plugin/plugin.json`, or `.gemini-plugin/plugin.json`), `agy plugin install`
+treats it as a native plugin and copies the directory as-is without staging.
+
+**For dual-host (Antigravity + Claude Code) plugins:** The hook schema itself differs between
+hosts — Antigravity's `hooks.json` has a top-level `<hook-group-name>` map key wrapping the
+event arrays and sets `cwd` to `<plugin-root>`, whereas Claude Code's `hooks/hooks.json` puts
+`"hooks": { "<Event>": [...] }` at the top level. A dual-host repository can safely keep both
+at their respective paths without collision.
 
 ---
 
