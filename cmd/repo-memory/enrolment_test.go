@@ -328,6 +328,7 @@ func TestKillSwitch_Subcommands(t *testing.T) {
 func TestHookSubcommand_FastPath(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_V2_SPIKE", "0") // Disable V2 spike handler so fast-path test reaches the stub
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
