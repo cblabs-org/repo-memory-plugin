@@ -184,12 +184,9 @@ func RunInstall(pluginDir, binPath string) error {
 	}
 
 	// 3. Write and verify hooks.json with safety validation
-	// Plugin hooks must be at <plugin-root>/hooks/hooks.json (NOT <plugin-root>/hooks.json)
-	hooksDir := filepath.Join(wsDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("creating hooks directory %s: %w", hooksDir, err)
-	}
-	hooksPath := filepath.Join(hooksDir, "hooks.json")
+	// Workspace plugin hooks live at <plugin-root>/hooks.json
+	// (NOT <plugin-root>/hooks/hooks.json — that path is for a different plugin layout)
+	hooksPath := filepath.Join(wsDir, "hooks.json")
 	if err := os.WriteFile(hooksPath, []byte(hooksContent), 0644); err != nil {
 		return fmt.Errorf("writing file %s: %w", hooksPath, err)
 	}
