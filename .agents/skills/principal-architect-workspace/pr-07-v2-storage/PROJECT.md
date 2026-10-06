@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-07-v2-storage
 > **Base branch:** `main` (after PR-06 X-gate passed at `6065c8d`)
-> **Status:** 🔄 Active — WO2/6 (dossier schema & renderer)
+> **Status:** 🔄 **In Review** — GitHub PR #9. All 6 WOs complete.
 > **SPEC:** [SPEC.md](../../../../SPEC.md) v0.10 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 > **Human Approval:** Autonomous execution authority granted (2026-10-06)
