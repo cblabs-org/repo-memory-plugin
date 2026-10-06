@@ -50,7 +50,7 @@ func parseMarkdownEntries(md string) map[string]parsedEntry {
 	return entries
 }
 
-func DetectHandEdits(rendered string, onDisk string) ([]ops.Op, error) {
+func DetectHandEdits(rendered string, onDisk string, dossierScope string) ([]ops.Op, error) {
 	if rendered == onDisk {
 		return nil, nil
 	}
@@ -64,14 +64,24 @@ func DetectHandEdits(rendered string, onDisk string) ([]ops.Op, error) {
 	for id, onDiskEntry := range onDiskEntries {
 		renderedEntry, ok := renderedEntries[id]
 		if !ok {
+			entryType := string(EntryTypeInvariant)
+			for et, prefix := range EntryTypePrefixes {
+				if strings.HasPrefix(id, prefix) {
+					entryType = string(et)
+					break
+				}
+			}
+
 			// Possibly a new entry added by hand, but ID must be valid. We assume it's valid.
 			newOps = append(newOps, ops.Op{
 				Type:         ops.OpAdd,
 				EntryID:      id,
+				DossierScope: dossierScope,
 				Timestamp:    now,
 				Source:       ops.SourceHuman,
 				Fields: map[string]any{
-					"text": onDiskEntry.text,
+					"entry_type": entryType,
+					"text":       onDiskEntry.text,
 				},
 			})
 		} else if renderedEntry.text != onDiskEntry.text {
@@ -79,6 +89,7 @@ func DetectHandEdits(rendered string, onDisk string) ([]ops.Op, error) {
 			newOps = append(newOps, ops.Op{
 				Type:         ops.OpAmend,
 				EntryID:      id,
+				DossierScope: dossierScope,
 				Timestamp:    now,
 				Source:       ops.SourceHuman,
 				Fields: map[string]any{
