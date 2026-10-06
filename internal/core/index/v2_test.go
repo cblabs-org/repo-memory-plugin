@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/entities"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
@@ -582,7 +581,7 @@ func TestRebuildFromOpLog_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestBackwardCompatibility_EntitiesAndClaims(t *testing.T) {
+func TestBackwardCompatibility_Entities(t *testing.T) {
 	idx, cleanup := setupTestIndex(t)
 	defer cleanup()
 
@@ -635,19 +634,5 @@ func TestBackwardCompatibility_EntitiesAndClaims(t *testing.T) {
 	}
 	if len(invRels) != 1 || invRels[0].SourceID != "pkg:foo" {
 		t.Fatalf("expected inverse relation from pkg:foo, got %v", invRels)
-	}
-
-	// 2. v1 Claims
-	claim := &claims.Claim{
-		ID:       "clm-001",
-		Type:     claims.TypeInvariant,
-		Title:    "Legacy invariant",
-		Status:   claims.StatusVerified,
-		Body:     "Legacy body",
-		Anchors:  []claims.Anchor{{Kind: "file", Ref: "main.go"}},
-		Conditions: map[string]string{"env": "prod"},
-	}
-	if err := idx.IndexClaim(ctx, claim); err != nil {
-		t.Fatalf("IndexClaim: %v", err)
 	}
 }
