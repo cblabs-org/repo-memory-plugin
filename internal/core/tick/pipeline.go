@@ -16,7 +16,6 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/publish"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
@@ -195,38 +194,3 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 	return nil
 }
 
-func (p *PipelineExecutor) processPublish(ctx context.Context) error {
-	for {
-		if err := p.checkBudget(nil); err != nil {
-			return err
-		}
-
-		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindPublish)
-		if err != nil {
-			if errors.Is(err, jobs.ErrNoJobAvailable) {
-				break
-			}
-			return err
-		}
-
-		publisher := publish.NewLocalPublisher(p.dataDir, p.repoID, nil)
-		item := &publish.Item{
-			ID:         job.Payload,
-			Title:      job.Payload,
-			Body:       job.Payload,
-			Status:     "verified",
-			VerifiedAt: time.Now().Format(time.RFC3339),
-		}
-		if err := publisher.Publish(ctx, item); err != nil {
-			if errors.Is(err, harness.ErrQuotaExhausted) {
-				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-				return err
-			}
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		_ = p.store.Complete(ctx, job.ID, &jobs.Cost{})
-	}
-	return nil
-}

@@ -90,7 +90,7 @@ func TestDossiersRoundTrip(t *testing.T) {
 	}
 
 	// hand edits detection
-	newOps, err := DetectHandEdits(rendered1, string(onDisk))
+	newOps, err := DetectHandEdits(rendered1, string(onDisk), "core")
 	if err != nil {
 		t.Fatalf("DetectHandEdits error: %v", err)
 	}
