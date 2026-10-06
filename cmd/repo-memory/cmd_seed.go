@@ -30,10 +30,16 @@ var seedCmd = &cobra.Command{
 			return fmt.Errorf("finding repo root: %w", err)
 		}
 
-		// Always resolve to absolute paths
-		seedPaDir, _ = filepath.Abs(seedPaDir)
-		seedOpsDir, _ = filepath.Abs(seedOpsDir)
-		seedConfigPath, _ = filepath.Abs(seedConfigPath)
+		// Resolve relative paths against repo root, not cwd
+		resolve := func(p string) string {
+			if filepath.IsAbs(p) {
+				return p
+			}
+			return filepath.Join(repoRoot, p)
+		}
+		seedPaDir = resolve(seedPaDir)
+		seedOpsDir = resolve(seedOpsDir)
+		seedConfigPath = resolve(seedConfigPath)
 
 		opts := seed.SeedOptions{
 			RepoRoot:     repoRoot,

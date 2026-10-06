@@ -144,7 +144,7 @@ func SeedFromParsed(parsed []*ParsedWorkorder, opsWriter *ops.Writer, resolver *
 		newOps := ReportToOps(pw.Report, resolver, pw.RelPath, pw.CommitTime, existingIDs)
 		if len(newOps) > 0 {
 			if opsWriter != nil {
-				batch := ops.NewBatch(newOps)
+				batch := ops.NewBatchWithTime(newOps, pw.CommitTime)
 				if err := opsWriter.Write(batch); err != nil {
 					return err
 				}
