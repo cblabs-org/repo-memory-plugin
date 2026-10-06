@@ -27,8 +27,6 @@ func ParseCompletionReport(content string) (*CompletionReport, error) {
 func parseCompletionReportWithPath(content string, path string) (*CompletionReport, error) {
 	report := &CompletionReport{}
 
-	// If we have a path, we can try to derive ProjectName and WorkOrderName
-	// Path pattern: .../pr-07-v2-storage/wo6-seeding/WORKORDER.md
 	if path != "" {
 		dir := filepath.Dir(path)
 		report.WorkOrderName = filepath.Base(dir)
@@ -37,11 +35,28 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 
 	lines := strings.Split(content, "\n")
 	
-	inCompletionReport := false
+	lastReportIdx := -1
+	inCodeFencePass1 := false
+	for i, line := range lines {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "```") {
+			inCodeFencePass1 = !inCodeFencePass1
+			continue
+		}
+		if !inCodeFencePass1 && strings.HasPrefix(trim, "## Completion Report") {
+			lastReportIdx = i
+		}
+	}
+
+	if lastReportIdx == -1 {
+		return nil, nil // No completion report found
+	}
+	
+	_ = true
 	currentSection := ""
 	inCodeFence := false
 
-	for _, line := range lines {
+	for _, line := range lines[lastReportIdx+1:] {
 		trimLine := strings.TrimSpace(line)
 
 		if strings.HasPrefix(trimLine, "```") {
@@ -53,18 +68,7 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 			continue
 		}
 		
-		if strings.HasPrefix(trimLine, "## Completion Report") {
-			inCompletionReport = true
-			continue
-		}
-		
-		if !inCompletionReport {
-			continue
-		}
-
 		if strings.HasPrefix(trimLine, "## ") && currentSection != "" && !strings.HasPrefix(trimLine, "## Completion Report") {
-			// A new ## section means we exited Completion Report
-			inCompletionReport = false
 			break
 		}
 
@@ -77,15 +81,22 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 			continue
 		}
 
+		// Template filtering
+		itemVal := strings.TrimPrefix(trimLine, "- ")
+		if itemVal == "Decision description and rationale" || 
+		   itemVal == "What was attempted, why it failed, and what to avoid" ||
+		   itemVal == "Finding description and suggested action" ||
+		   strings.Contains(itemVal, "path/to/file") ||
+		   itemVal == "`path/to/file` — what changed and why" {
+			continue
+		}
+
 		switch currentSection {
 		case "Status":
 			report.Status = trimLine
 		case "Changes Made":
 			if strings.HasPrefix(trimLine, "- ") {
 				item := strings.TrimPrefix(trimLine, "- ")
-				// Format: `path/to/file` — description
-				// or `path/to/file` - description
-				// or `path/to/file`: description
 				
 				var pathPart, descPart string
 				if idx := strings.Index(item, " — "); idx != -1 {
@@ -101,6 +112,10 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 				
 				pathPart = strings.Trim(pathPart, "` ")
 				descPart = strings.TrimSpace(descPart)
+				
+				if strings.Contains(pathPart, " ") || (!strings.Contains(pathPart, "/") && !strings.Contains(pathPart, ".")) {
+					continue
+				}
 				
 				report.Changes = append(report.Changes, Change{
 					Path:        pathPart,
@@ -120,10 +135,6 @@ func parseCompletionReportWithPath(content string, path string) (*CompletionRepo
 				report.Findings = append(report.Findings, strings.TrimPrefix(trimLine, "- "))
 			}
 		}
-	}
-
-	if !inCompletionReport && report.Status == "" && len(report.Changes) == 0 && len(report.Decisions) == 0 {
-		return nil, nil // No completion report found
 	}
 
 	return report, nil

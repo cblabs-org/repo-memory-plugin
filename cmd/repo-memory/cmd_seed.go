@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -43,8 +44,14 @@ var seedCmd = &cobra.Command{
 			OpsDir:       seedOpsDir,
 		}
 
-		scopeCfg, _ := config.LoadScopeConfig(seedConfigPath)
-		anchors, _ := seed.ScanAllAnchors(seedPaDir, opts)
+		scopeCfg, err := config.LoadScopeConfig(seedConfigPath)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("loading scope config: %w", err)
+		}
+		anchors, err := seed.ScanAllAnchors(seedPaDir, opts)
+		if err != nil {
+			return fmt.Errorf("scanning anchors: %w", err)
+		}
 		moduleScopes := config.DeriveModuleScopes(anchors)
 
 		resolver := config.NewScopeResolver(scopeCfg, moduleScopes, nil)
