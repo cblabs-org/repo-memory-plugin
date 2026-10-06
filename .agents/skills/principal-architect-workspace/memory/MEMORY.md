@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| *(none)* | — | — | — |
+| pr-07-v2-storage | WO1/6 — op-log active | Ops, Dossiers, Index, Scopes, Seeding | [PROJECT.md](../pr-07-v2-storage/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
