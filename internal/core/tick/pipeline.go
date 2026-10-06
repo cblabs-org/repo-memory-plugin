@@ -1,4 +1,3 @@
-
 package tick
 
 import (
@@ -6,24 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
-	claimstore "github.com/cblabs-org/repo-memory-plugin/internal/core/claims/store"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/extract"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/publish"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/reconcile"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/triage"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/verify"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
@@ -35,7 +28,6 @@ type PipelineExecutor struct {
 	repoID      string
 	store       *jobs.Store
 	epStore     *episode.Store
-	claimStore  *claimstore.Store
 	idx         *index.Index
 	cfg         config.RepoConfig
 	budgetLimit int
@@ -55,10 +47,6 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 
 	repoDataDir := filepath.Join(t.dataDir, repoID)
 	epStore := episode.NewStore(t.dataDir, repoID)
-	claimStore, err := claimstore.New(filepath.Join(repoDataDir, "claims"))
-	if err != nil {
-		return fmt.Errorf("opening claim store: %w", err)
-	}
 	idx, err := index.NewIndex(filepath.Join(repoDataDir, "index.sqlite"))
 	if err != nil {
 		return fmt.Errorf("opening index: %w", err)
@@ -72,7 +60,6 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 		repoID:      repoID,
 		store:       store,
 		epStore:     epStore,
-		claimStore:  claimStore,
 		idx:         idx,
 		cfg:         cfg,
 		budgetLimit: cfg.Budgets.DailyTokens,
@@ -149,25 +136,7 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.processTriage(ctx); err != nil {
-		return err
-	}
-
-	if err := p.processExtract(ctx); err != nil {
-		return err
-	}
-
-	if err := p.processReconcile(ctx); err != nil {
-		return err
-	}
-
-	if err := p.processVerify(ctx); err != nil {
-		return err
-	}
-
-	if err := p.processPublish(ctx); err != nil {
-		return err
-	}
+	log.Println("v1 pipeline stages removed; v2 distillation not yet implemented")
 
 	return nil
 }
@@ -226,294 +195,6 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 	return nil
 }
 
-type extractPayload struct {
-	EpisodeID string `json:"episode_id"`
-	Result    triage.TriageResult `json:"result"`
-}
-
-func (p *PipelineExecutor) processTriage(ctx context.Context) error {
-	for {
-		if err := p.checkBudget(nil); err != nil {
-			return err
-		}
-
-		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindTriage)
-		if err != nil {
-			if errors.Is(err, jobs.ErrNoJobAvailable) {
-				break
-			}
-			return err
-		}
-
-		epID := job.Payload
-		ep, err := p.epStore.Read(epID)
-		if err != nil {
-			if errors.Is(err, harness.ErrQuotaExhausted) {
-				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-				return err
-			}
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		tcfg := triage.Config{Subsystems: []string{}}
-		for _, s := range p.cfg.Subsystems {
-			tcfg.Subsystems = append(tcfg.Subsystems, s.Title)
-		}
-
-		tracker := newUsageTracker(p.hk)
-		triager := triage.NewTriager(tracker, tcfg, triage.DefaultWindowsConfig())
-		res, err := triager.Process(ctx, []*episode.Episode{ep})
-		if err != nil {
-			if errors.Is(err, harness.ErrQuotaExhausted) {
-				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-				return err
-			}
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		if tRes, ok := res[ep.Header.EpisodeID]; ok && tRes.Keep {
-			payload := extractPayload{EpisodeID: epID, Result: tRes}
-			b, _ := json.Marshal(payload)
-			extractJob := &jobs.Job{
-				Kind:           jobs.KindExtract,
-				Priority:       jobs.PriorityNormal,
-				IdempotencyKey: "extract-" + epID,
-				Payload:        string(b),
-			}
-			_, _ = p.store.Enqueue(ctx, extractJob)
-		}
-
-		cost := tracker.Cost()
-if err := p.checkBudget(&cost); err != nil {
-	_ = p.store.Complete(ctx, job.ID, &cost)
-	return err
-}
-_ = p.store.Complete(ctx, job.ID, &cost)
-	}
-	return nil
-}
-
-func (p *PipelineExecutor) processExtract(ctx context.Context) error {
-	var wg sync.WaitGroup
-	errCh := make(chan error, 1)
-
-	// Concurrency rule: extraction must be parallel. Spawn 3 workers.
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				if err := p.checkBudget(nil); err != nil {
-					return
-				}
-
-				job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindExtract)
-				if err != nil {
-					if !errors.Is(err, jobs.ErrNoJobAvailable) {
-						select {
-						case errCh <- err:
-						default:
-						}
-					}
-					return
-				}
-
-				var payload extractPayload
-				if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
-					p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-					continue
-				}
-
-				ep, err := p.epStore.Read(payload.EpisodeID)
-				if err != nil {
-					p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-					continue
-				}
-
-				tracker := newUsageTracker(p.hk)
-				extractor := extract.NewExtractor(tracker, 16000)
-				triageMap := map[string]triage.TriageResult{ep.Header.EpisodeID: payload.Result}
-				
-				results, err := extractor.Extract(ctx, []*episode.Episode{ep}, triageMap)
-				if err != nil {
-					p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-					continue
-				}
-
-				// Enqueue Reconcile jobs
-				for _, res := range results {
-					for i := range res.Candidates {
-						cand := res.Candidates[i]
-						cand.EpisodeID = payload.EpisodeID // Force it to be the SessionID
-						cb, _ := json.Marshal(cand)
-						reconcileJob := &jobs.Job{
-							Kind:           jobs.KindReconcile,
-							Priority:       jobs.PriorityNormal,
-							IdempotencyKey: "reconcile-" + payload.EpisodeID + "-" + cand.Statement,
-							Payload:        string(cb),
-						}
-						_, _ = p.store.Enqueue(ctx, reconcileJob)
-					}
-				}
-
-				cost := tracker.Cost()
-if err := p.checkBudget(&cost); err != nil {
-	_ = p.store.Complete(ctx, job.ID, &cost)
-	select { case errCh <- err: default: }
-	return
-}
-_ = p.store.Complete(ctx, job.ID, &cost)
-			}
-		}()
-	}
-
-	wg.Wait()
-	select {
-	case err := <-errCh:
-		return err
-	default:
-		return nil
-	}
-}
-
-func (p *PipelineExecutor) processReconcile(ctx context.Context) error {
-	for {
-		if err := p.checkBudget(nil); err != nil {
-			return err
-		}
-
-		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindReconcile)
-		if err != nil {
-			if errors.Is(err, jobs.ErrNoJobAvailable) {
-				break
-			}
-			return err
-		}
-
-		var cand extract.Candidate
-		if err := json.Unmarshal([]byte(job.Payload), &cand); err != nil {
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		sessionID := cand.EpisodeID
-		if sessionID == "" || strings.HasPrefix(sessionID, "ep-") {
-			// Extract from idempotency key: reconcile-pa-filename-ULID-statement
-			// Find the ULID which is 26 uppercase chars and digits
-			parts := strings.Split(job.IdempotencyKey, "-")
-			for i, pPart := range parts {
-				if len(pPart) == 26 && i >= 2 {
-					sessionID = strings.Join(parts[1:i+1], "-")
-					cand.EpisodeID = sessionID
-					break
-				}
-			}
-		}
-
-		ep, err := p.epStore.Read(sessionID)
-		if err != nil {
-			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to read session %q: %v", sessionID, err), 5*time.Minute)
-			continue
-		}
-
-		tracker := newUsageTracker(p.hk)
-		reconciler := reconcile.NewReconciler(tracker, p.claimStore)
-		actions, err := reconciler.Reconcile(ctx, ep, []extract.Candidate{cand})
-		if err != nil {
-			if errors.Is(err, harness.ErrQuotaExhausted) {
-				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-				return err
-			}
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		for _, action := range actions {
-			if action.Op == reconcile.OpCreate || action.Op == reconcile.OpRefine || action.Op == reconcile.OpPromote {
-				verifyJob := &jobs.Job{
-					Kind:           jobs.KindVerify,
-					Priority:       jobs.PriorityNormal,
-					IdempotencyKey: "verify-" + action.Candidate.Statement,
-					Payload:        action.Candidate.Statement, // Just need something to link to claim
-				}
-				
-				// Reconciler already modifies claimStore in applyAction!
-				// But we need the actual claim ID.
-				// For WO7 simplicity, if the action is applied, we assume it's verifiable.
-				// We need the claim ID from somewhere. We might need to pull it.
-				// Since Reconciler applies action and saves the claim, we can just trigger Verify on all claims.
-				// Wait, Reconcile applies actions which update claims.
-				// For verify, we just need to pass the target claim IDs.
-				
-				_, _ = p.store.Enqueue(ctx, verifyJob)
-			}
-		}
-
-		cost := tracker.Cost()
-if err := p.checkBudget(&cost); err != nil {
-	_ = p.store.Complete(ctx, job.ID, &cost)
-	return err
-}
-_ = p.store.Complete(ctx, job.ID, &cost)
-	}
-	return nil
-}
-
-func (p *PipelineExecutor) processVerify(ctx context.Context) error {
-	for {
-		if err := p.checkBudget(nil); err != nil {
-			return err
-		}
-
-		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindVerify)
-		if err != nil {
-			if errors.Is(err, jobs.ErrNoJobAvailable) {
-				break
-			}
-			return err
-		}
-		
-		// In a real implementation we would fetch the specific claim.
-		// Since Reconcile just proposes claims, Verify can verify all unverified claims.
-		claimsList, err := p.claimStore.ListAll()
-		var targetClaims []*claims.Claim
-		for _, c := range claimsList {
-			if c.Status == claims.StatusHypothesis || c.Status == claims.StatusObserved {
-				targetClaims = append(targetClaims, c)
-			}
-		}
-
-		tracker := newUsageTracker(p.hk)
-		verifier := verify.NewVerifier(tracker, p.claimStore, p.repoRoot)
-		if err := verifier.VerifyClaims(ctx, targetClaims); err != nil {
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		for _, c := range targetClaims {
-			if c.Status == claims.StatusVerified {
-				publishJob := &jobs.Job{
-					Kind:           jobs.KindPublish,
-					Priority:       jobs.PriorityNormal,
-					IdempotencyKey: "publish-" + c.ID,
-					Payload:        c.ID,
-				}
-				_, _ = p.store.Enqueue(ctx, publishJob)
-			}
-		}
-
-		cost := tracker.Cost()
-if err := p.checkBudget(&cost); err != nil {
-	_ = p.store.Complete(ctx, job.ID, &cost)
-	return err
-}
-_ = p.store.Complete(ctx, job.ID, &cost)
-	}
-	return nil
-}
-
 func (p *PipelineExecutor) processPublish(ctx context.Context) error {
 	for {
 		if err := p.checkBudget(nil); err != nil {
@@ -528,20 +209,19 @@ func (p *PipelineExecutor) processPublish(ctx context.Context) error {
 			return err
 		}
 
-		claimID := job.Payload
-		claim, err := p.claimStore.Read(claimID)
-		if err != nil {
+		publisher := publish.NewLocalPublisher(p.dataDir, p.repoID, nil)
+		item := &publish.Item{
+			ID:         job.Payload,
+			Title:      job.Payload,
+			Body:       job.Payload,
+			Status:     "verified",
+			VerifiedAt: time.Now().Format(time.RFC3339),
+		}
+		if err := publisher.Publish(ctx, item); err != nil {
 			if errors.Is(err, harness.ErrQuotaExhausted) {
 				p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 				return err
 			}
-			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
-			continue
-		}
-
-		publisher := publish.NewLocalPublisher(p.dataDir, p.repoID, p.idx)
-		if err := publisher.Publish(ctx, claim); err != nil {
-			// If not verified, publisher might error. We can fail the job.
 			p.store.Fail(ctx, job.ID, err.Error(), 5*time.Minute)
 			continue
 		}
