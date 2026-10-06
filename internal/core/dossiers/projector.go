@@ -2,6 +2,7 @@ package dossiers
 
 import (
 	"context"
+	"iter"
 	"sort"
 	"strings"
 
@@ -18,11 +19,11 @@ func NewProjector(opsReader *ops.Reader) *Projector {
 	}
 }
 
-func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
+func (p *Projector) projectFromSeq(seq iter.Seq2[*ops.OpBatch, error]) (map[string]*Dossier, error) {
 	dossiers := make(map[string]*Dossier)
 	entryIndex := make(map[string]string)
 
-	for batch, err := range p.reader.Iterate(ctx) {
+	for batch, err := range seq {
 		if err != nil {
 			return nil, err
 		}
@@ -36,6 +37,14 @@ func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
 	}
 
 	return dossiers, nil
+}
+
+func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
+	return p.projectFromSeq(p.reader.Iterate(ctx))
+}
+
+func (p *Projector) ProjectBefore(ctx context.Context, beforeCommit string) (map[string]*Dossier, error) {
+	return p.projectFromSeq(p.reader.IterateBefore(ctx, beforeCommit))
 }
 
 func applyBatch(dossiers map[string]*Dossier, entryIndex map[string]string, batch *ops.OpBatch) error {
@@ -129,9 +138,9 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 }
 
 func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
-	scope := op.DossierScope
-	if scope == "" || dossiers[scope] == nil {
-		scope = entryIndex[op.EntryID]
+	scope := entryIndex[op.EntryID]
+	if scope == "" {
+		scope = op.DossierScope
 	}
 	if scope == "" {
 		return // Cannot resolve scope
@@ -192,9 +201,9 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 }
 
 func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
-	scope := op.DossierScope
-	if scope == "" || dossiers[scope] == nil {
-		scope = entryIndex[op.EntryID]
+	scope := entryIndex[op.EntryID]
+	if scope == "" {
+		scope = op.DossierScope
 	}
 	if scope == "" {
 		return
@@ -284,9 +293,9 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 }
 
 func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
-	scope := op.DossierScope
-	if scope == "" || dossiers[scope] == nil {
-		scope = entryIndex[op.EntryID]
+	scope := entryIndex[op.EntryID]
+	if scope == "" {
+		scope = op.DossierScope
 	}
 	if scope == "" {
 		return
@@ -324,9 +333,9 @@ func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op op
 		return
 	}
 	
-	fromScope := op.DossierScope
-	if fromScope == "" || dossiers[fromScope] == nil {
-		fromScope = entryIndex[op.EntryID]
+	fromScope := entryIndex[op.EntryID]
+	if fromScope == "" {
+		fromScope = op.DossierScope
 	}
 	if fromScope == "" {
 		return

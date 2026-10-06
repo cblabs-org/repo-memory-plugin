@@ -10,8 +10,8 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
-func generateDeterministicID(path string, section string, index int) string {
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", path, section, index)))
+func generateDeterministicID(relPath string, section string, bulletText string) string {
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", relPath, section, bulletText)))
 	return fmt.Sprintf("seed-%x", hash[:4])
 }
 
@@ -34,8 +34,8 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 	
 	now := time.Now()
 
-	for i, dec := range report.Decisions {
-		entryID := generateDeterministicID(path, "dec", i)
+	for _, dec := range report.Decisions {
+		entryID := generateDeterministicID(path, "dec", dec)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
 		}
@@ -53,8 +53,8 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 		})
 	}
 
-	for i, de := range report.DeadEnds {
-		entryID := generateDeterministicID(path, "rul", i)
+	for _, de := range report.DeadEnds {
+		entryID := generateDeterministicID(path, "rul", de)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
 		}
@@ -72,8 +72,8 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 		})
 	}
 
-	for i, finding := range report.Findings {
-		entryID := generateDeterministicID(path, "issue", i)
+	for _, finding := range report.Findings {
+		entryID := generateDeterministicID(path, "issue", finding)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
 		}

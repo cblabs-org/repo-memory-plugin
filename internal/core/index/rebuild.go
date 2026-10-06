@@ -17,6 +17,14 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 		return fmt.Errorf("ops reader cannot be nil")
 	}
 
+	projector := dossiers.NewProjector(opsReader)
+	dossierMap, err := projector.Project(ctx)
+	if err != nil {
+		return fmt.Errorf("projecting dossiers: %w", err)
+	}
+
+
+
 	tx, err := idx.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin rebuild tx: %w", err)
@@ -31,14 +39,8 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 	}
 	_, _ = tx.ExecContext(ctx, "INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
 
-	projector := dossiers.NewProjector(opsReader)
-	dossierMap, err := projector.Project(ctx)
-	if err != nil {
-		return fmt.Errorf("projecting dossiers: %w", err)
-	}
-
 	insertEntryQuery := `
-		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
+		INSERT OR REPLACE INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	insertAnchorQuery := `INSERT INTO entry_anchors (entry_id, anchor) VALUES (?, ?)`

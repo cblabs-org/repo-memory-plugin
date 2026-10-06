@@ -46,93 +46,27 @@ func SeedFromWorkorders(paDir string, opsWriter *ops.Writer, resolver *config.Sc
 	return SeedWithTimeCut(paDir, opsWriter, resolver, opts)
 }
 
-func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
-	files, err := ScanWorkorders(paDir)
-	if err != nil {
-		return err
-	}
-
-	seededOps := 0
-	workordersSeeded := 0
-
-	var existingIDs = make(map[string]bool)
-	if opts.OpsDir != "" {
-		reader := ops.NewReader(opts.OpsDir)
-		it := ops.NewIterator(reader, context.Background())
-		for batch, err := range it.Seq() {
-			if err != nil {
-				continue
-			}
-			for _, op := range batch.Ops {
-				existingIDs[op.EntryID] = true
-			}
-		}
-	}
-
-	for _, path := range files {
-		var content []byte
-
-		if opts.BeforeCommit != "" {
-			relPath := path
-			if opts.RepoRoot != "" {
-				relPath, _ = filepath.Rel(opts.RepoRoot, path)
-			}
-			// Use git to check if the workorder file existed at the given commit
-			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relPath))
-			if opts.RepoRoot != "" {
-				cmd.Dir = opts.RepoRoot
-			}
-			out, err := cmd.Output()
-			if err != nil {
-				// file didn't exist at that commit or other error, skip
-				continue
-			}
-			content = out
-		} else {
-			var err error
-			content, err = os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-		}
-
-		report, err := parseCompletionReportWithPath(string(content), path)
-		if err != nil || report == nil {
-			continue
-		}
-
-		newOps := ReportToOps(report, resolver, path, existingIDs)
-		if len(newOps) > 0 {
-			if opsWriter != nil {
-				batch := ops.NewBatch(newOps)
-				if err := opsWriter.Write(batch); err != nil {
-					return err
-				}
-			}
-			seededOps += len(newOps)
-			workordersSeeded++
-		}
-	}
-
-	fmt.Printf("Seeded %d entries from %d workorders\n", seededOps, workordersSeeded)
-	return nil
+type ParsedWorkorder struct {
+	Path    string
+	RelPath string
+	Report  *CompletionReport
 }
 
-func ScanAllAnchors(paDir string, opts SeedOptions) ([]string, error) {
+func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 	files, err := ScanWorkorders(paDir)
 	if err != nil {
 		return nil, err
 	}
 
-	var allAnchors []string
+	var results []*ParsedWorkorder
 	for _, path := range files {
 		var content []byte
+		relPath := path
+		if opts.RepoRoot != "" {
+			relPath, _ = filepath.Rel(opts.RepoRoot, path)
+		}
 
 		if opts.BeforeCommit != "" {
-			relPath := path
-			if opts.RepoRoot != "" {
-				relPath, _ = filepath.Rel(opts.RepoRoot, path)
-			}
 			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relPath))
 			if opts.RepoRoot != "" {
 				cmd.Dir = opts.RepoRoot
@@ -154,7 +88,66 @@ func ScanAllAnchors(paDir string, opts SeedOptions) ([]string, error) {
 		if err != nil || report == nil {
 			continue
 		}
-		for _, c := range report.Changes {
+
+		results = append(results, &ParsedWorkorder{
+			Path:    path,
+			RelPath: relPath,
+			Report:  report,
+		})
+	}
+	return results, nil
+}
+
+func SeedWithTimeCut(paDir string, opsWriter *ops.Writer, resolver *config.ScopeResolver, opts SeedOptions) error {
+	pws, err := ScanAndParse(paDir, opts)
+	if err != nil {
+		return err
+	}
+
+	seededOps := 0
+	workordersSeeded := 0
+
+	var existingIDs = make(map[string]bool)
+	if opts.OpsDir != "" {
+		reader := ops.NewReader(opts.OpsDir)
+		it := ops.NewIterator(reader, context.Background())
+		for batch, err := range it.Seq() {
+			if err != nil {
+				continue
+			}
+			for _, op := range batch.Ops {
+				existingIDs[op.EntryID] = true
+			}
+		}
+	}
+
+	for _, pw := range pws {
+		newOps := ReportToOps(pw.Report, resolver, pw.RelPath, existingIDs)
+		if len(newOps) > 0 {
+			if opsWriter != nil {
+				batch := ops.NewBatch(newOps)
+				if err := opsWriter.Write(batch); err != nil {
+					return err
+				}
+			}
+			seededOps += len(newOps)
+			workordersSeeded++
+		}
+	}
+
+	fmt.Printf("Seeded %d entries from %d workorders\n", seededOps, workordersSeeded)
+	return nil
+}
+
+func ScanAllAnchors(paDir string, opts SeedOptions) ([]string, error) {
+	pws, err := ScanAndParse(paDir, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var allAnchors []string
+	for _, pw := range pws {
+		for _, c := range pw.Report.Changes {
 			allAnchors = append(allAnchors, c.Path)
 		}
 	}
