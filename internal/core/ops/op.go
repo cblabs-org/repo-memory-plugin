@@ -90,7 +90,11 @@ func NewBatch(ops []Op) OpBatch {
 // NewBatchWithTime creates an OpBatch using the given timestamp for CreatedAt and BatchID.
 // Use this for back-dated batches (e.g. seeding from historical data) so that
 // IterateBefore/IterateBeforeTime filters work correctly.
+// Falls back to time.Now() if t is zero (e.g. uncommitted workorder files).
 func NewBatchWithTime(batchOps []Op, t time.Time) OpBatch {
+	if t.IsZero() {
+		t = time.Now()
+	}
 	ts := t.UTC()
 	return OpBatch{
 		Version:   1,
