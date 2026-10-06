@@ -2,36 +2,46 @@
 
 > **Programme:** repo-memory
 > **PR:** pr-07-v2-storage
-> **Base branch:** `pr-06-v2-spike`
-> **Status:** ☐ Planned
-> **SPEC:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3
+> **Base branch:** `main` (after PR-06 X-gate passed at `6065c8d`)
+> **Status:** 🔄 **In Review** — GitHub PR #9. All 6 WOs complete.
+> **SPEC:** [SPEC.md](../../../../SPEC.md) v0.10 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
+> **Human Approval:** Autonomous execution authority granted (2026-10-06)
 
 ## Objective
 
-Build the storage layer and a way to produce dossiers **without** turn notes or consolidation. That way the read side can be tested (X6-lite) before distillation is built.
+Build the storage layer and a way to produce dossiers **without** turn notes or consolidation. This lets the read side be tested (X6-lite in PR-09) before distillation is built.
+
+**Key deliverables:**
+1. An append-only op log replacing the v1 events store
+2. Dossier schema, renderer, and atlas
+3. Scopes and aliases for routing
+4. SQLite index migration (claims→entries)
+5. v1 pipeline stage removal (keep executor, job chaining, local publish)
+6. Seeding: produce dossiers from PA reports and evidence without turn notes
 
 ## Design & SPEC Sections
 
-- **v2 Design rev 3:** §5.5 (Seeding from PA reports & evidence), §7.1–7.5 (Op log, dossier schema & rendering, history, atlas, hand-edit reconciliation), §6 (Splits and aliases)
-- **SPEC:** Storage layer updates, op-log format, dossier schema, and retirement of v1 events store
+- **v2 Design rev 3:** §5.5, §7.1–7.5 (Op log, dossiers, entries, atlas, index), §6 (Consolidation — splits/aliases)
+- **SPEC:** §5.6 (Index), §6 (Knowledge management), §6.8 (Two-lane publish)
 
-## Dependencies & Gate Preconditions
+## Dependencies
 
-- **Base branch:** `pr-06-v2-spike`
-- **Dependencies:** PR-06-v2-spike
-- **Gate Preconditions:** **The X-gate must have passed.** All validation exit criteria from PR-06 (X1, X9, X5, X8, X3) must be met and the proposed SPEC v1.0 edits must be approved by the user before work on PR-07 begins.
+- **Base:** `main` at `6065c8d` (PR-06 merged, X-gate passed)
+- **Carries forward:** Headless executor, job chaining, local-publish worktree (PR-05a/05b)
+- **Retires:** v1 events store (`.memory/events/`), v1 pipeline stages (triage, extract, reconcile, verify), claims store, views generator
+- **Informs:** PR-08 delivery (needs dossiers), PR-09 X6-lite (needs time-cut seeded dossiers)
 
 ## Work Order Ledger
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | `wo1-op-log` | `internal/core/ops/`: op types (`add`, `amend`, `supersede`, `retire`, `move`, `split`), op file schema (one JSON file per batch, named by ULID), and the layout `.memory/ops/<yyyy-mm>/<ulid>.json`. Writer, reader and iterator; validation rules per op type. **Retire the v1 events store** (`.memory/events/`, PR-04 wo7). Migrate anything worth keeping into ops; otherwise archive it (PD26). | standard | ☐ Planned |
-| 2 | `wo2-dossier-schema-renderer` | `internal/core/dossiers/`: dossier kinds; the entry schema (ID, the eight types, required fields per type, anchors, evidence links, verified stamp, `closes_when`); required sections (Purpose and boundaries; Invariants; Ruled out, failure signatures and gotchas) plus optional sections omitted when empty; a cap of about 3k tokens. Render dossiers and `ATLAS.md` from the op log, fully or incrementally; superseded and retired entries go to `.history.md`. Detect hand edits and convert them to ops. | architect | ☐ Planned |
-| 3 | `wo3-scopes-aliases` | `internal/core/config/scopes.go`: declared scopes (topics, external systems, procedures) in `.memory/config.yaml`; derived module scopes (package directory rolled up to a parent until there are enough entries, using the entity extractor); aliases from `split` ops; alias resolution for `memory.brief`. | standard | ☐ Planned |
-| 4 | `wo4-index-migration` | `internal/core/index/`: replace the claims, anchors and relations tables with tables for entries, anchors (with fingerprints), error patterns (command prefix, pattern, dossier scope), aliases and history. Add FTS5 over entries, synopses and checkpoint summaries. Rebuild from the op log via pointer-file swap; update `repo-memory reindex`. | standard | ☐ Planned |
-| 5 | `wo5-v1-removal` | Remove the v1 stages (`internal/core/pipeline/triage`, `extract`, `reconcile`, `verify`), the views generator and their tick wiring. **Keep** the headless executor, job chaining, local-publish worktree and 429 handling from PR-05a/05b, generalised for the lean agent. No broken imports; tests green. | standard | ☐ Planned |
-| 6 | `wo6-seeding` | A path to dossiers without turn notes. (a) A deterministic PA completion-report parser ("Decisions Made", "Dead Ends & Warnings" → notes, `source: pa`). (b) A one-off lean-agent seeding pass over evidence (checkpoint summaries, artifacts, compacted transcripts) that emits ops directly, with output validated in Go. (c) A **`--before <commit>` time cut** that excludes all evidence at or after a commit, as X6 requires. Seeded entries are tagged `source: seed` and reviewed by a human before use. | architect | ☐ Planned |
+| 1 | [wo1-op-log](wo1-op-log/WORKORDER.md) | Op types, file schema, layout `.memory/ops/<yyyy-mm>/<ulid>.json`, writer/reader/iterator, validation rules, v1 events retirement | standard | ✅ Complete |
+| 2 | [wo2-dossier-schema-renderer](wo2-dossier-schema-renderer/WORKORDER.md) | Dossier kinds, entry schema (8 types), renderer, atlas, history, cap linting (~3k tokens), hand-edit detection → ops | architect | 🔄 Active |
+| 3 | wo3-scopes-aliases | Declared scopes in `config.yaml`, derived module scopes (entity extractor), aliases from `split` ops, alias resolution for `memory.brief` | standard | ☐ Planned |
+| 4 | wo4-index-migration | Replace claims/anchors/relations tables → entries/anchors/error-patterns/aliases/history + FTS5 over entries. Rebuild from op log via pointer-file swap. | standard | ☐ Planned |
+| 5 | wo5-v1-removal | Remove `internal/core/pipeline/{triage,extract,reconcile,verify}`, views generator, tick wiring. **Keep** executor, job chaining, local-publish worktree, 429 handling. Tests green. | standard | ☐ Planned |
+| 6 | wo6-seeding | (a) PA completion-report parser → notes. (b) Lean-agent one-off evidence pass → ops. (c) `--before <commit>` time cut for X6. (d) `source: seed` tagging, human review. | architect | ☐ Planned |
 
 ## Exit Criteria
 
@@ -42,18 +52,46 @@ Build the storage layer and a way to produce dossiers **without** turn notes or 
 - v1 stages removed and tests green; the executor and publish code are reused.
 - Time-cut seeded dossiers produced for the dogfood repo and reviewed by the user.
 
-## Human Tasks
+## Modules & Components
 
-- Review the time-cut seeded dossiers (needed by PR-07 exit).
+| Module | Package | Status |
+|---|---|---|
+| Op Log | `internal/core/ops/` | WO1 — new |
+| Dossiers | `internal/core/dossiers/` | WO2 — new |
+| Scopes & Aliases | `internal/core/config/scopes.go` | WO3 — new |
+| Index (v2) | `internal/core/index/` | WO4 — migrate |
+| v1 Pipeline | `internal/core/pipeline/{triage,extract,reconcile,verify}` | WO5 — remove |
+| v1 Events | `internal/core/events/` | WO1 — retire/archive |
+| v1 Claims | `internal/core/claims/` | WO5 — remove |
+| v1 Views | `internal/core/views/` | WO5 — remove |
+| Seeding | `internal/core/seed/` | WO6 — new |
 
 ## Risks
 
 | Risk | Mitigation | Owner |
 |---|---|---|
-| **v1 removal breaks imports or builds** | Verify executor and publish code reuse; ensure no broken imports; keep tests green | PR-07 |
-| **Scope derivation issues** | Verify scope derivation gives sensible module assignments on the dogfood repo | PR-07 |
-| **Several developers publish at once** | Op log never conflicts (ULID-named batches); dossiers re-render deterministically | PR-07 |
+| Op log schema doesn't support all needed op types | Design from v2 §7.1; validate against dossier renderer in WO2 | WO1 |
+| Seeded dossiers too shallow for X6-lite | PA report parser + lean-agent pass; user review before X6 | WO6 |
+| v1 removal breaks existing functionality | Keep executor and publish; run all tests after removal | WO5 |
+| Index migration loses FTS capability | Build new schema alongside old, swap atomically | WO4 |
 
 ## Session Log
 
-*(Empty, ready for use)*
+### 2026-10-06 — Project kickoff (Chief Architect)
+- Project workspace activated. 6 WOs decomposed per PROGRAM-PLAN.md.
+- Base: `main` at `6065c8d` after PR-06 X-gate passed.
+- WO1 (op-log) spawned as first worker.
+
+### 2026-10-06 — WO1 complete (op-log)
+- Worker delivered `internal/core/ops/` (1824 lines across 8 files):
+  - `op.go`: Op/OpBatch structs, ULID helpers, provenance constants
+  - `validate.go`: Per-type validation with clear errors
+  - `writer.go`: Month-sharded JSON writer
+  - `reader.go`: Batch reader with validation
+  - `iterator.go`: Chronological iterator with IterateAfter, IterateBefore (git time-cut for X6), IterateBeforeTime, push/pull interfaces, context cancellation
+  - `migrate.go`: v1 events → archive helper
+  - `ops_test.go`: 10 test suites, comprehensive coverage
+- Build ✅, tests ✅, vet ✅
+- Worker also produced `docs/addendum-a-provenance-and-hardening.md` and minor SPEC edits
+- Committed at `e9ce662`, pushed.
+- WO2 (dossier-schema-renderer) spawned immediately after, `pro` model for `architect` complexity.

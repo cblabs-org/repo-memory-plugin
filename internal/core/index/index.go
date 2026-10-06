@@ -2,17 +2,14 @@ package index
 
 import (
 	"context"
-
 	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims"
 	_ "modernc.org/sqlite"
-
 )
 
-// Index provides SQLite FTS indexing over episodes.
+// Index provides SQLite FTS indexing over episodes and v2 entries.
 type Index struct {
 	db *sql.DB
 }
@@ -66,48 +63,78 @@ func (idx *Index) initSchema() error {
 		name TEXT
 	);
 	
-	CREATE TABLE IF NOT EXISTS claims (
-		id TEXT PRIMARY KEY,
-		type TEXT,
-		title TEXT,
-		status TEXT,
-		relevant_when TEXT,
-		apply TEXT,
-		verified_at TEXT,
-		body TEXT
-	);
-	
-	CREATE TABLE IF NOT EXISTS anchors (
-		claim_id TEXT,
-		kind TEXT,
-		ref TEXT,
-		fp TEXT,
-		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
-	);
-	
-	CREATE TABLE IF NOT EXISTS relations (
-		source_id TEXT,
-		relation_type TEXT,
-		target_id TEXT,
-		FOREIGN KEY(source_id) REFERENCES claims(id) ON DELETE CASCADE
-	);
-	
-	CREATE TABLE IF NOT EXISTS conditions (
-		claim_id TEXT,
-		context TEXT,
-		key TEXT,
-		ref TEXT,
-		state TEXT,
-		target TEXT,
-		result TEXT,
-		FOREIGN KEY(claim_id) REFERENCES claims(id) ON DELETE CASCADE
-	);
-	
 	CREATE TABLE IF NOT EXISTS entity_relations (
 		source_id TEXT,
 		target_id TEXT,
 		kind TEXT,
 		PRIMARY KEY(source_id, target_id, kind)
+	);
+
+	CREATE TABLE IF NOT EXISTS entries (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		text TEXT NOT NULL,
+		source TEXT,
+		verified TEXT,
+		closes_when TEXT,
+		created_at TEXT,
+		updated_at TEXT
+	);
+
+	CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+		id,
+		dossier_scope,
+		text,
+		content=entries,
+		content_rowid=rowid
+	);
+
+	CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
+		INSERT INTO entries_fts(rowid, id, dossier_scope, text) VALUES (new.rowid, new.id, new.dossier_scope, new.text);
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
+		INSERT INTO entries_fts(entries_fts, rowid, id, dossier_scope, text) VALUES('delete', old.rowid, old.id, old.dossier_scope, old.text);
+	END;
+
+	CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+		INSERT INTO entries_fts(entries_fts, rowid, id, dossier_scope, text) VALUES('delete', old.rowid, old.id, old.dossier_scope, old.text);
+		INSERT INTO entries_fts(rowid, id, dossier_scope, text) VALUES (new.rowid, new.id, new.dossier_scope, new.text);
+	END;
+
+	CREATE TABLE IF NOT EXISTS entry_anchors (
+		entry_id TEXT NOT NULL,
+		anchor TEXT NOT NULL,
+		kind TEXT,
+		fingerprint TEXT,
+		FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_entry_anchors_anchor ON entry_anchors(anchor);
+
+	CREATE TABLE IF NOT EXISTS error_patterns (
+		entry_id TEXT NOT NULL,
+		command_prefix TEXT,
+		pattern TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		FOREIGN KEY(entry_id) REFERENCES entries(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS aliases (
+		old_scope TEXT NOT NULL,
+		new_scope TEXT NOT NULL,
+		created_at TEXT
+	);
+
+	CREATE TABLE IF NOT EXISTS entry_history (
+		id TEXT NOT NULL,
+		entry_id TEXT NOT NULL,
+		type TEXT NOT NULL,
+		dossier_scope TEXT NOT NULL,
+		text TEXT,
+		reason TEXT,
+		superseded_by TEXT,
+		retired_at TEXT
 	);
 	`
 	_, err := idx.db.Exec(query)
@@ -175,68 +202,4 @@ func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]Epis
 		results = append(results, r)
 	}
 	return results, rows.Err()
-}
-
-// InsertClaim inserts or updates a claim and its related tables in the index.
-func (idx *Index) IndexClaim(ctx context.Context, claim *claims.Claim) error {
-	tx, err := idx.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	query := `INSERT OR REPLACE INTO claims (id, type, title, status, relevant_when, apply, verified_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err = tx.ExecContext(ctx, query, claim.ID, claim.Type, claim.Title, claim.Status, claim.RelevantWhen, claim.Apply, claim.VerifiedAt, claim.Body)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM anchors WHERE claim_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	for _, a := range claim.Anchors {
-		_, err = tx.ExecContext(ctx, `INSERT INTO anchors (claim_id, kind, ref, fp) VALUES (?, ?, ?, ?)`, claim.ID, a.Kind, a.Ref, a.FP)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM relations WHERE source_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	if claim.Relations != nil {
-		for _, target := range claim.Relations.Supports {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "supports", target)
-		}
-		for _, target := range claim.Relations.Contradicts {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "contradicts", target)
-		}
-		for _, target := range claim.Relations.Supersedes {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "supersedes", target)
-		}
-		for _, target := range claim.Relations.Explains {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "explains", target)
-		}
-		for _, target := range claim.Relations.Refines {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "refines", target)
-		}
-		for _, target := range claim.Relations.DependsOn {
-			tx.ExecContext(ctx, `INSERT INTO relations (source_id, relation_type, target_id) VALUES (?, ?, ?)`, claim.ID, "depends_on", target)
-		}
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM conditions WHERE claim_id = ?`, claim.ID)
-	if err != nil {
-		return err
-	}
-	for k, v := range claim.Conditions {
-		_, err = tx.ExecContext(ctx, `INSERT INTO conditions (claim_id, key, result) VALUES (?, ?, ?)`, claim.ID, k, v)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
 }

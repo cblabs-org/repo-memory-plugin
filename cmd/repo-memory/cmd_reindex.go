@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/claims/store"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/entities"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/spf13/cobra"
 )
 
@@ -25,25 +25,25 @@ var reindexCmd = &cobra.Command{
 		}
 
 		cacheDir := filepath.Join(repoRoot, ".memory", ".cache")
-		
-		// Load all claims
-		claimsStore, err := store.New(filepath.Join(repoRoot, ".memory", "claims"))
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			return fmt.Errorf("creating cache dir: %w", err)
+		}
+
+		dbPath := filepath.Join(cacheDir, "index.db")
+		idx, err := index.NewIndex(dbPath)
 		if err != nil {
-			return fmt.Errorf("loading claims store: %w", err)
+			return fmt.Errorf("opening index: %w", err)
 		}
-		
-		allClaims, err := claimsStore.ListAll()
-		if err != nil {
-			return fmt.Errorf("listing claims: %w", err)
+		defer idx.Close()
+
+		opsDir := filepath.Join(repoRoot, ".memory", "ops")
+		opsReader := ops.NewReader(opsDir)
+
+		// Execute rebuild from op log
+		if err := idx.RebuildFromOpLog(ctx, opsReader); err != nil {
+			return fmt.Errorf("rebuilding index from op log: %w", err)
 		}
-		
-		var allEntities []entities.Entity
-		
-		// Execute rebuild
-		if err := index.Rebuild(ctx, cacheDir, allClaims, allEntities); err != nil {
-			return fmt.Errorf("rebuilding index: %w", err)
-		}
-		
+
 		fmt.Fprintln(cmd.OutOrStdout(), "Index rebuilt successfully in .memory/.cache/index.db")
 		return nil
 	},
