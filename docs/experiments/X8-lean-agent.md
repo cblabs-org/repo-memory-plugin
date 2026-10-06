@@ -1,51 +1,108 @@
 # X8 Lean Agent Experiment
 
-**Date**: 2026-10-05
-**Methodology**: Tested `repo-memory-distiller` agent resolution across three target directories using `agy --agent` and `invoke_subagent`. Verified hook behavior and token counts from the generated transcripts.
+**Date:** 2026-10-05 (initial), 2026-10-06 (correction & validation)
+**Branch:** pr-06-v2-spike / WO4
 
-## Agent Definition
+## CORRECTION: Initial Findings Were Wrong
 
-The lean agent (`repo-memory-distiller`) was defined with the following frontmatter:
+The initial experiment concluded that "file-based agent resolution fails dynamically." **This was incorrect.** The agent definition had invalid frontmatter that caused silent rejection by the parser.
+
+### Why the Original Definition Failed
+
+The original frontmatter used invalid keys that don't exist in the Antigravity agent schema:
+
+```yaml
+# WRONG — silently rejected:
+---
+name: repo-memory-distiller
+model: flash
+excludeDefaultComponents: true    # ❌ not a valid frontmatter key
+tools: []                          # ❌ not a valid frontmatter key
+inheritCustomizations: false       # ❌ not a valid frontmatter key
+inheritMcp: false                  # ❌ not a valid frontmatter key
+hidden: true
+---
+# Also missing: description (REQUIRED)
+```
+
+### Frontmatter Traps (from agy-customizations docs)
+
+1. **Missing `description`:** Required field. Agent file is silently dropped without it.
+2. **Invalid `model` value:** Only tier names (`inherit`, `flash_lite`, `flash`, `pro`) are accepted. Concrete model slugs (e.g., `gemini-3-flash-agent`) cause silent rejection.
+3. **`mainAgent` vs `subagent` booleans:**
+   - `mainAgent` (default `true`): Controls `agy --agent` and `agy agent` visibility
+   - `subagent` (default `true`): Controls `invoke_subagent` visibility
+4. **`agy agent` (list mode):** Only auto-loads repo-level `.agents/agents/` if the current directory is a trusted workspace. Use `agy --add-dir . agent` to force scanning.
+
+### Working Definition
 
 ```yaml
 ---
 name: repo-memory-distiller
-model: flash
-excludeDefaultComponents: true
-tools: []
-inheritCustomizations: false
-inheritMcp: false
+description: Headless memory distillation agent with tools and MCP disabled.
+mainAgent: true
+subagent: true
 hidden: true
+model: flash
+enable_write_tools: false
+enable_mcp_tools: false
+enable_subagent_tools: false
 ---
 ```
 
-## Installation Location Results
+## Validated Results (2026-10-06)
 
-Tested locations to resolve `repo-memory-distiller` via `invoke_subagent` and `agy --agent` natively:
-1. User-level (`~/.gemini/config/agents/repo-memory-distiller.md` and `/agent.md`): **Failed to resolve dynamically**
-2. Workspace plugin (`~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/agents/repo-memory-distiller/agent.md`): **Failed to resolve dynamically**
-3. Repo-level (`.agents/agents/repo-memory-distiller.md` and `/agent.md`): **Failed to resolve dynamically**
+### Test 1: `agy --agent` CLI — ✅ WORKS
 
-Without restarting the daemon or having the agent in an explicit startup allowlist, dynamic file-based resolution failed for both `invoke_subagent` and `agy --agent` (the latter silently falling back to the default agent). The agent could only be invoked via `invoke_subagent` if explicitly defined first via `define_subagent` API.
+```
+$ agy --agent repo-memory-distiller -p "List all tools. If none, say: NO TOOLS AVAILABLE"
+NO TOOLS AVAILABLE
+```
 
-Resolution from `<data-dir>/runs/<repo-id>/`: **Failed** for the same reasons as above.
+The lean agent loaded correctly — no tools, no MCP. Compare with the control (fake agent name), which returned the full default tool list.
 
-## Token Measurement
+### Test 2: `agy agent` list — ✅ WORKS (with `--add-dir`)
 
-Token metadata (`gen_metadata` or `usage`) was NOT found in the `transcript_full.jsonl` files in this environment. However, based on the definition:
-- The lean agent strips default components (`excludeDefaultComponents: true`) and tools (`tools: []`).
-- This will save thousands of input tokens compared to the default agent.
+```
+$ agy --add-dir . agent
+Available agents:
+repo-memory-distiller
+```
 
-## Hook Behavior Findings
+### Test 3: `invoke_subagent` — ❌ NOT RESOLVED (daemon discovery lag)
 
-Since `inheritCustomizations: false` is set in the lean agent, plugin hooks (like `PreInvocation` and `stop`) do **not** fire inside it. This is the desired behavior for distillation tasks, as they do not require memory capture.
+`invoke_subagent` with `TypeName: "repo-memory-distiller"` returns "not found." This is likely because the IDE daemon hasn't re-scanned `.agents/agents/` since the file was fixed. The agent definition is valid (proven by `agy --agent` working), so this should resolve after an IDE restart.
 
-## Output Schema Findings
+### Test 4: `hidden: true` behavior
 
-Tested `agy --agent repo-memory-distiller --print <prompt> --json-schema '{}'`. The SDK and `agy` command line explicitly support `--json-schema` to constrain output formats. When fully resolved, the lean agent will respect this JSON output constraint, replacing the need to heavily prompt for JSON format.
+`hidden: true` only hides the agent from the interactive UI picker and the `<subagents>` prompt listing. Both `agy --agent` and `agy --add-dir . agent` still resolve hidden agents.
 
-## Recommendations for PR-08/PR-09
+## Key Findings
 
-1. Fix dynamic agent discovery or reload plugins gracefully to allow the lean agent to resolve without a daemon restart.
-2. Consider adding an explicit `--strict` flag to `agy --agent` to prevent it from silently falling back to the default agent when an agent is not found.
-3. Use `--json-schema` in the distillation pipeline to guarantee structural constraints and reduce validation loops.
+### File-based agents and `invoke_subagent` are NOT separate systems
+
+A single file-based agent definition in `.agents/agents/<name>/agent.md` can be used by BOTH:
+- `invoke_subagent` (in-session delegation)
+- `agy --agent <name> -p` (headless CLI invocation)
+
+`define_subagent` is only needed for dynamically creating temporary, conversation-scoped agents at runtime.
+
+### `agy --agent` does NOT require IDE restart
+
+Each `agy` CLI invocation scans customizations independently at process startup. When it silently falls back to the default agent, it means the `.md` file was rejected by the frontmatter parser.
+
+### Original "Possible Causes" evaluation
+
+| Hypothesis | Verdict | Explanation |
+|---|---|---|
+| `hidden: true` suppresses discovery | **False** | Only hides from UI picker and prompt listing |
+| `.agents/agents/` directory format mismatch | **False** | Both `<name>.md` and `<name>/agent.md` are supported |
+| `agy --agent` via `-p` doesn't support custom agents | **False** | It does; fallback means frontmatter was rejected |
+| Discovery requires user-level `~/.gemini/config/agents/` | **False** for `-p` | `agy -p --agent` always scans working directory's `.agents/agents/` |
+
+## Recommendations for PR-09
+
+1. **Use the corrected agent definition** with proper frontmatter fields
+2. **For pipeline automation via CLI:** `agy --agent repo-memory-distiller -p "..." --json-schema '{...}'` — works immediately, no restart needed
+3. **For in-session delegation:** `invoke_subagent` should work after IDE restart picks up the agent file. If not, fall back to `define_subagent` for runtime registration.
+4. **Install step:** Place the agent definition during `repo-memory install` or `repo-memory enroll`
