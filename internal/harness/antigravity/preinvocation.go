@@ -49,9 +49,6 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	}
 	input.Normalize()
 
-	if input.InvocationNum > 0 {
-		return []byte("{}"), nil
-	}
 	if os.Getenv("REPO_MEMORY_DISABLED") == "1" {
 		return []byte("{}"), nil
 	}
@@ -165,10 +162,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 	
-	// Compaction Detection
+	// Compaction Detection — only re-detect if we haven't already handled this checkpoint.
 	if len(ledger.Injections) > 0 && len(steps) > 0 {
 		res := DetectCompaction(steps, ledger)
-		if res.Detected {
+		if res.Detected && res.CheckpointStepIdx > ledger.LastHandledCheckpointStep {
 			var checkpointText string
 			checkpointFound := false
 			for _, step := range steps {
@@ -186,11 +183,13 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				injectSteps = append(injectSteps, *reinjStep)
 				ledger.RearmDedup()
 			}
+			// Mark this checkpoint as handled so we don't re-inject on future turns.
+			ledger.LastHandledCheckpointStep = res.CheckpointStepIdx
 		}
 	}
 
-	// Task start moment
-	if input.InitialNumSteps <= 1 {
+	// Task start moment — only on the first invocation of a new user turn.
+	if input.InvocationNum == 0 && input.InitialNumSteps <= 1 {
 		var promptTerms []string
 		for _, term := range strings.Fields(input.UserPrompt) {
 			if len(term) >= 3 {
@@ -198,17 +197,21 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 		}
 
+		// Diff paths: git already returns repo-relative paths — keep them as-is.
+		// Guard against single-commit repos where HEAD~1 would fail.
 		var diffPaths []string
 		cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "HEAD~1")
 		cmd.Dir = workspaceRoot
 		if out, err := cmd.Output(); err == nil {
 			lines := strings.Split(string(bytes.TrimSpace(out)), "\n")
 			for _, line := range lines {
+				line = strings.TrimSpace(line)
 				if line != "" {
-					diffPaths = append(diffPaths, filepath.Join(workspaceRoot, line))
+					diffPaths = append(diffPaths, line)
 				}
 			}
 		}
+		// err is intentionally ignored — single-commit repos just get no diff paths.
 
 		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
 		if err == nil && len(entries) > 0 {
@@ -230,6 +233,8 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
+	// Mid-turn moments: first-touch and first-entry.
+	// These run on every invocation, gated by ledger dedup (HasSeenAnchor/HasSeenDossier).
 	for _, path := range touchedFiles {
 		anchor := path
 		if rel, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(rel, "..") {
@@ -293,7 +298,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	// About-to-edit moment
+	// About-to-edit moment — runs mid-turn too, with dedup via ledger.
 	if len(steps) > 0 {
 		var latestPlanner *Step
 		for i := len(steps) - 1; i >= 0; i-- {
@@ -319,7 +324,9 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 					injectSteps = append(injectSteps, InjectStep{
 						EphemeralMessage: fmt.Sprintf("[repo-memory] Check injected entries above before editing %s", filename),
 					})
+					// Record with the target file as the entry identifier for dedup
 					ledger.RecordInjection(delivery.InjectionRecord{
+						EntryID:   "about-to-edit:" + target,
 						Channel:   delivery.ChannelEphemeral,
 						Moment:    delivery.MomentAboutToEdit,
 						StepIndex: input.InitialNumSteps,
@@ -330,7 +337,9 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	SaveLedger(dataDir, repoID, ledger)
+	if err := SaveLedger(dataDir, repoID, ledger); err != nil {
+		// Log but don't fail — delivery should still work without persistence
+	}
 
 	if len(injectSteps) == 0 {
 		return []byte("{}"), nil
@@ -369,6 +378,9 @@ func matchAnchor(anchor, target, workspaceRoot string) bool {
 
 func hasEntriesInContext(ctx context.Context, idx *index.Index, ledger *delivery.Ledger, workspaceRoot, targetFile string) bool {
 	for _, inj := range ledger.Injections {
+		if inj.EntryID == "" || strings.HasPrefix(inj.EntryID, "about-to-edit:") {
+			continue
+		}
 		ent, err := idx.GetEntry(ctx, inj.EntryID)
 		if err == nil && ent != nil {
 			for _, a := range ent.Anchors {
