@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
@@ -306,3 +307,92 @@ func TestPreInvocation_AboutToEdit(t *testing.T) {
 		}
 	}
 }
+
+func TestPreInvocation_CompactionAndReinjection(t *testing.T) {
+	ctx := context.Background()
+	workspace, idxPath := setupEnrolledWorkspace(t)
+
+	// Seed index with entry
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := dossiers.Entry{
+		ID:           "reinj-1",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core",
+		Text:         "Must preserve state after compaction",
+	}
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	idx.Close()
+
+	dataDir := os.Getenv("REPO_MEMORY_DATA_DIR")
+	repoID := "test-repo"
+	convID := "conv-compaction"
+
+	// 1. Manually create a ledger with a past injection
+	ledger := delivery.NewLedger(convID)
+	ledger.RecordInjection(delivery.InjectionRecord{
+		EntryID:   "reinj-1",
+		Channel:   "systemMessage",
+		Moment:    delivery.MomentTaskStart,
+		StepIndex: 2,
+	})
+	// Simulate seen dossiers to verify dedup is cleared
+	ledger.MarkDossierSeen("core")
+	if err := SaveLedger(dataDir, repoID, ledger); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Create transcript with CHECKPOINT
+	transcriptDir := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+
+	content := `{"step_index": 0, "type": "USER_INPUT", "content": "hello"}
+{"step_index": 1, "type": "PLANNER_RESPONSE", "content": "world"}
+CHECKPOINT
+{"step_index": 4, "type": "SYSTEM", "content": "compacted history summary"}
+`
+	if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := `{
+		"conversationId": "conv-compaction",
+		"invocationNum": 0,
+		"initialNumSteps": 5,
+		"transcriptPath": "` + transcriptPath + `",
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	out, err := HandlePreInvocation(ctx, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var resp InjectStepsResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(out))
+	}
+
+	if len(resp.InjectSteps) == 0 {
+		t.Fatalf("expected inject steps, got none")
+	}
+
+	sysMsg := resp.InjectSteps[0].SystemMessage.SystemMessage
+	if !strings.Contains(sysMsg, "Must preserve state after compaction") {
+		t.Errorf("expected reinjection text in system message, got: %s", sysMsg)
+	}
+
+	// verify dedup is cleared
+	loaded, _ := LoadLedger(dataDir, repoID, convID)
+	if loaded.HasSeenDossier("core") {
+		t.Errorf("expected seen dossier to be cleared after compaction")
+	}
+}
+
