@@ -20,13 +20,15 @@ type ExposureRecord struct {
 }
 
 type Ledger struct {
-	ConversationID           string
-	Injections               []InjectionRecord
-	SeenDossiers             map[string]bool
-	SeenAnchors              map[string]bool
-	AcknowledgedGates        map[string]bool
-	ExposureList             []ExposureRecord
-	LastHandledCheckpointStep int `json:"last_handled_checkpoint_step,omitempty"`
+	ConversationID            string
+	Injections                []InjectionRecord
+	SeenDossiers              map[string]bool
+	SeenAnchors               map[string]bool
+	AcknowledgedGates         map[string]bool
+	ExposureList              []ExposureRecord
+	LastHandledCheckpointStep int                 `json:"last_handled_checkpoint_step,omitempty"`
+	PendingGates              map[string][]string `json:"pending_gates,omitempty"`
+	LastProcessedStepIndex    int                 `json:"last_processed_step_index,omitempty"`
 }
 
 func NewLedger(conversationID string) *Ledger {
@@ -38,6 +40,7 @@ func NewLedger(conversationID string) *Ledger {
 		AcknowledgedGates:         make(map[string]bool),
 		ExposureList:              make([]ExposureRecord, 0),
 		LastHandledCheckpointStep: -1,
+		PendingGates:              make(map[string][]string),
 	}
 }
 
@@ -82,6 +85,29 @@ func (l *Ledger) IsGateAcknowledged(entryID string) bool {
 
 func (l *Ledger) AcknowledgeGate(entryID string) {
 	l.AcknowledgedGates[entryID] = true
+}
+
+// SetPendingGates records that a force_ask was shown for the given file.
+// The gate is not acknowledged yet — that happens when the edit is re-issued.
+func (l *Ledger) SetPendingGates(file string, entryIDs []string) {
+	if l.PendingGates == nil {
+		l.PendingGates = make(map[string][]string)
+	}
+	l.PendingGates[file] = entryIDs
+}
+
+// HasPendingGates returns true if a force_ask was previously shown for this file.
+func (l *Ledger) HasPendingGates(file string) bool {
+	return len(l.PendingGates[file]) > 0
+}
+
+// AcknowledgePendingGates acknowledges all gates that were pending for a file
+// (i.e., the user approved the edit by re-issuing it).
+func (l *Ledger) AcknowledgePendingGates(file string) {
+	for _, id := range l.PendingGates[file] {
+		l.AcknowledgedGates[id] = true
+	}
+	delete(l.PendingGates, file)
 }
 
 func (l *Ledger) RearmDedup() {

@@ -123,7 +123,13 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		steps, _ = ParseTranscript(filepath.Dir(input.TranscriptPath))
 		if len(steps) > 0 {
 			seenPaths := make(map[string]bool)
+			// Only scan steps newer than our high-water mark to keep cost
+			// proportional to new steps in long conversations.
+			hwm := ledger.LastProcessedStepIndex
 			for _, step := range steps {
+				if step.StepIndex <= hwm && hwm > 0 {
+					continue
+				}
 				if len(step.ToolCalls) == 0 {
 					continue
 				}
@@ -158,6 +164,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 						}
 					}
 				}
+			}
+			// Update high-water mark
+			if last := steps[len(steps)-1]; last.StepIndex > hwm {
+				ledger.LastProcessedStepIndex = last.StepIndex
 			}
 		}
 	}
@@ -298,7 +308,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	// About-to-edit moment — runs mid-turn too, with dedup via ledger.
+	// About-to-edit moment — runs mid-turn too, with dedup.
 	if len(steps) > 0 {
 		var latestPlanner *Step
 		for i := len(steps) - 1; i >= 0; i-- {
@@ -319,14 +329,26 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				}
 				seenTarget[target] = true
 
+				// Dedup: skip if we already injected about-to-edit for this target.
+				dedupKey := "about-to-edit:" + target
+				alreadyInjected := false
+				for _, inj := range ledger.Injections {
+					if inj.EntryID == dedupKey {
+						alreadyInjected = true
+						break
+					}
+				}
+				if alreadyInjected {
+					continue
+				}
+
 				if hasEntriesInContext(ctx, idx, ledger, workspaceRoot, target) {
 					filename := filepath.Base(target)
 					injectSteps = append(injectSteps, InjectStep{
 						EphemeralMessage: fmt.Sprintf("[repo-memory] Check injected entries above before editing %s", filename),
 					})
-					// Record with the target file as the entry identifier for dedup
 					ledger.RecordInjection(delivery.InjectionRecord{
-						EntryID:   "about-to-edit:" + target,
+						EntryID:   dedupKey,
 						Channel:   delivery.ChannelEphemeral,
 						Moment:    delivery.MomentAboutToEdit,
 						StepIndex: input.InitialNumSteps,

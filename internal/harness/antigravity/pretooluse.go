@@ -172,18 +172,35 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		}
 	}
 
+	// If this file has pending gates from a prior force_ask, the re-issued
+	// edit means the user approved — acknowledge the gates and allow.
+	if ledger.HasPendingGates(relPath) {
+		ledger.AcknowledgePendingGates(relPath)
+		_ = SaveLedger(dataDir, repoID, ledger)
+		return allowResponse, nil
+	}
+
 	entries, err := engine.GateEntries(ctx, relPath, ledger)
 	if (err != nil || len(entries) == 0) && relPath != targetClean {
+		if ledger.HasPendingGates(targetClean) {
+			ledger.AcknowledgePendingGates(targetClean)
+			_ = SaveLedger(dataDir, repoID, ledger)
+			return allowResponse, nil
+		}
 		entries, err = engine.GateEntries(ctx, targetClean, ledger)
 	}
 	if err != nil || len(entries) == 0 {
 		return allowResponse, nil
 	}
 
-	// Acknowledge the gate for all matched entries so re-issued edits pass through.
+	// Record the gate entries as pending for this file. If the user approves
+	// and the edit is re-issued, the next call will acknowledge them.
+	// If the user rejects, the pending gates remain and will trigger force_ask again.
+	var gateIDs []string
 	for _, ent := range entries {
-		ledger.AcknowledgeGate(ent.Entry.ID)
+		gateIDs = append(gateIDs, ent.Entry.ID)
 	}
+	ledger.SetPendingGates(relPath, gateIDs)
 	_ = SaveLedger(dataDir, repoID, ledger)
 
 	reason := delivery.FormatGateDeny(entries[0].Entry)

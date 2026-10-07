@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"syscall"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 )
@@ -23,7 +24,7 @@ var (
 // Empty, path-traversal, or non-alphanumeric IDs are hashed to a safe hex string.
 func sanitizeConversationID(id string) string {
 	if id == "" {
-		return "unknown"
+		return ""
 	}
 	if safeIDPattern.MatchString(id) && len(id) <= 255 {
 		return id
@@ -38,11 +39,68 @@ func getLedgerPath(dataDir, repoID, conversationID string) string {
 	return filepath.Join(dataDir, repoID, "ledgers", safeID+".json")
 }
 
-// SaveLedger atomically persists the ledger to disk using write-to-temp + rename.
-func SaveLedger(dataDir, repoID string, ledger *delivery.Ledger) error {
+// flockPath returns the path for the cross-process lock file for this ledger.
+func flockPath(dataDir, repoID, conversationID string) string {
+	safeID := sanitizeConversationID(conversationID)
+	return filepath.Join(dataDir, repoID, "ledgers", "."+safeID+".lock")
+}
+
+// ModifyLedger atomically loads, modifies, and saves a ledger under both
+// an in-process mutex and a cross-process flock, preventing lost updates
+// when PreInvocation, PreToolUse, and PostToolUse overlap.
+func ModifyLedger(dataDir, repoID, conversationID string, fn func(l *delivery.Ledger)) error {
+	if conversationID == "" {
+		return nil // skip persistence for empty IDs
+	}
+
 	ledgerStoreMutex.Lock()
 	defer ledgerStoreMutex.Unlock()
 
+	dir := filepath.Join(dataDir, repoID, "ledgers")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating ledger directory: %w", err)
+	}
+
+	// Cross-process file lock
+	lockFile := flockPath(dataDir, repoID, conversationID)
+	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("opening lock file: %w", err)
+	}
+	defer lock.Close()
+
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("acquiring flock: %w", err)
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	// Load
+	ledger, err := loadLedgerLocked(dataDir, repoID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	// Modify
+	fn(ledger)
+
+	// Save atomically
+	return saveLedgerLocked(dataDir, repoID, ledger)
+}
+
+// SaveLedger atomically persists the ledger to disk using write-to-temp + rename.
+// For cross-process safety, prefer ModifyLedger when doing load+modify+save.
+func SaveLedger(dataDir, repoID string, ledger *delivery.Ledger) error {
+	if ledger.ConversationID == "" {
+		return nil // skip persistence for empty IDs
+	}
+
+	ledgerStoreMutex.Lock()
+	defer ledgerStoreMutex.Unlock()
+
+	return saveLedgerLocked(dataDir, repoID, ledger)
+}
+
+func saveLedgerLocked(dataDir, repoID string, ledger *delivery.Ledger) error {
 	path := getLedgerPath(dataDir, repoID, ledger.ConversationID)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -55,7 +113,6 @@ func SaveLedger(dataDir, repoID string, ledger *delivery.Ledger) error {
 	}
 
 	// Atomic write: write to a temp file in the same directory, then rename.
-	// This prevents readers from seeing a truncated file.
 	tmp, err := os.CreateTemp(dir, ".ledger-*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp file for ledger: %w", err)
@@ -81,9 +138,17 @@ func SaveLedger(dataDir, repoID string, ledger *delivery.Ledger) error {
 }
 
 func LoadLedger(dataDir, repoID, conversationID string) (*delivery.Ledger, error) {
+	if conversationID == "" {
+		return delivery.NewLedger(conversationID), nil
+	}
+
 	ledgerStoreMutex.Lock()
 	defer ledgerStoreMutex.Unlock()
 
+	return loadLedgerLocked(dataDir, repoID, conversationID)
+}
+
+func loadLedgerLocked(dataDir, repoID, conversationID string) (*delivery.Ledger, error) {
 	path := getLedgerPath(dataDir, repoID, conversationID)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -98,7 +163,7 @@ func LoadLedger(dataDir, repoID, conversationID string) (*delivery.Ledger, error
 		// Corrupted file (e.g. truncated) — start fresh rather than failing.
 		return delivery.NewLedger(conversationID), nil
 	}
-	
+
 	// Ensure maps are initialized if they were nil in json
 	if ledger.SeenDossiers == nil {
 		ledger.SeenDossiers = make(map[string]bool)
@@ -108,6 +173,9 @@ func LoadLedger(dataDir, repoID, conversationID string) (*delivery.Ledger, error
 	}
 	if ledger.AcknowledgedGates == nil {
 		ledger.AcknowledgedGates = make(map[string]bool)
+	}
+	if ledger.PendingGates == nil {
+		ledger.PendingGates = make(map[string][]string)
 	}
 
 	return &ledger, nil
