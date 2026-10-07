@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-08-v2-delivery
 > **Base branch:** `main` (after PR-07 merged at `2405db9`)
-> **Status:** 🔄 **Active** — WO1 in progress
+> **Status:** 🔄 **In Review** — All 6 WOs complete. Ready for GitHub PR.
 > **SPEC:** [SPEC.md](../../../../SPEC.md) v0.10 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 3 §8.1–8.6
 > **Plan:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) lines 233–261
 > **Human Approval:** Autonomous execution authority granted (2026-10-04, programme-level)
@@ -41,8 +41,8 @@ This is the last implementation PR before the early kill gate (PR-09 X6-lite).
 | 2 | [wo2-persistent-pushes](wo2-persistent-pushes/WORKORDER.md) | `PreInvocation` as `systemMessage`. Task start (≤500 tokens), first entry into dossier (≤150), first touch of anchor (≤150). Branch diff precomputed. | architect | ✅ Complete |
 | 3 | [wo3-ephemeral-and-errors](wo3-ephemeral-and-errors/WORKORDER.md) | About-to-edit pointer (≤50 tokens). Error matching on `PostToolUse` → `ephemeralMessage` (≤200 tokens). | standard | ✅ Complete |
 | 4 | [wo4-gates](wo4-gates/WORKORDER.md) | `PreToolUse` deny-once for `gate: edit` entries. `force_ask` for invariants. X9 contract. | standard | ✅ Complete |
-| 5 | [wo5-compaction-reinjection](wo5-compaction-reinjection/WORKORDER.md) | Detect compaction/rewind from transcript. Re-inject consolidated `systemMessage` (≤1k). Re-arm dedup. **X11 experiment.** | architect | 🔄 Active |
-| 6 | [wo6-pull-tools](wo6-pull-tools/WORKORDER.md) | MCP tools: `memory.brief`, `memory.why`, `memory.history`, `memory.search`, `memory.note`, `memory.stats`. Pulls recorded in exposure list. | standard | 🔄 Active |
+| 5 | [wo5-compaction-reinjection](wo5-compaction-reinjection/WORKORDER.md) | Detect compaction/rewind from transcript. Re-inject consolidated `systemMessage` (≤1k). Re-arm dedup. **X11 experiment.** | architect | ✅ Complete |
+| 6 | [wo6-pull-tools](wo6-pull-tools/WORKORDER.md) | MCP tools: `memory.brief`, `memory.why`, `memory.history`, `memory.search`, `memory.note`, `memory.stats`. Pulls recorded in exposure list. | standard | ✅ Complete |
 
 ## Exit Criteria
 
