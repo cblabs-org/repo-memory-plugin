@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
-	"syscall"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 )
@@ -45,8 +44,29 @@ func flockPath(dataDir, repoID, conversationID string) string {
 	return filepath.Join(dataDir, repoID, "ledgers", "."+safeID+".lock")
 }
 
+// acquireLock opens a lock file and acquires an exclusive cross-process lock.
+// Returns the lock file (caller must close it after releasing) and any error.
+func acquireLock(dataDir, repoID, conversationID string) (*os.File, error) {
+	dir := filepath.Join(dataDir, repoID, "ledgers")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("creating ledger directory: %w", err)
+	}
+
+	lockFile := flockPath(dataDir, repoID, conversationID)
+	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("opening lock file: %w", err)
+	}
+
+	if err := fileLock(f); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("acquiring lock: %w", err)
+	}
+	return f, nil
+}
+
 // ModifyLedger atomically loads, modifies, and saves a ledger under both
-// an in-process mutex and a cross-process flock, preventing lost updates
+// an in-process mutex and a cross-process file lock, preventing lost updates
 // when PreInvocation, PreToolUse, and PostToolUse overlap.
 func ModifyLedger(dataDir, repoID, conversationID string, fn func(l *delivery.Ledger)) error {
 	if conversationID == "" {
@@ -56,23 +76,14 @@ func ModifyLedger(dataDir, repoID, conversationID string, fn func(l *delivery.Le
 	ledgerStoreMutex.Lock()
 	defer ledgerStoreMutex.Unlock()
 
-	dir := filepath.Join(dataDir, repoID, "ledgers")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating ledger directory: %w", err)
-	}
-
-	// Cross-process file lock
-	lockFile := flockPath(dataDir, repoID, conversationID)
-	lock, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0644)
+	lock, err := acquireLock(dataDir, repoID, conversationID)
 	if err != nil {
-		return fmt.Errorf("opening lock file: %w", err)
+		return err
 	}
-	defer lock.Close()
-
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("acquiring flock: %w", err)
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer func() {
+		fileUnlock(lock)
+		lock.Close()
+	}()
 
 	// Load
 	ledger, err := loadLedgerLocked(dataDir, repoID, conversationID)

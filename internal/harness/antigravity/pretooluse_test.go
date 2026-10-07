@@ -215,7 +215,7 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 		t.Errorf("expected gate text in reason, got %q", resp.Reason)
 	}
 
-	// 2. Test write_to_file with same conversationID — gate should now be acknowledged.
+	// 2. Re-issued edit with same conversationID — gate is pending, still force_ask.
 	payloadWrite := `{
 		"conversationId": "conv-test-gate",
 		"toolName": "write_to_file",
@@ -236,11 +236,42 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outWrite))
 	}
 
-	if respWrite.Decision != "allow" {
-		t.Errorf("expected decision 'allow' for re-issued edit (gate acknowledged), got %q", respWrite.Decision)
+	if respWrite.Decision != "force_ask" {
+		t.Errorf("expected decision 'force_ask' for re-issued edit (pending, not yet approved), got %q", respWrite.Decision)
 	}
 
-	// 3. Test with a different conversationID — gate should trigger again.
+	// 3. Simulate PostToolUse with successful edit — acknowledges pending gates.
+	postPayload := `{
+		"conversationId": "conv-test-gate",
+		"toolName": "write_to_file",
+		"toolCall": {
+			"name": "write_to_file",
+			"args": {"TargetFile": "critical_config.go"}
+		},
+		"toolResult": {"status": "success", "output": ""},
+		"workspacePaths": ["` + workspace + `"]
+	}`
+	_, err = HandlePostToolUse(ctx, []byte(postPayload))
+	if err != nil {
+		t.Fatalf("unexpected error from PostToolUse: %v", err)
+	}
+
+	// 4. Now PreToolUse should allow — gates are acknowledged.
+	outAfter, err := HandlePreToolUse(ctx, []byte(payloadWrite))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var respAfter PreToolUseResponse
+	if err := json.Unmarshal(outAfter, &respAfter); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outAfter))
+	}
+
+	if respAfter.Decision != "allow" {
+		t.Errorf("expected decision 'allow' after PostToolUse approval, got %q", respAfter.Decision)
+	}
+
+	// 5. Different conversationID — gate should trigger again.
 	payloadNew := `{
 		"conversationId": "conv-test-gate-2",
 		"toolName": "write_to_file",
