@@ -154,7 +154,7 @@ The cost is that asynchronous LLM results arrive at tick granularity: up to abou
 | Capture a finished session | `Stop`: write a spool entry and copy the transcript (fires for top-level and subagent sessions; E8) | Sweep catches sessions with no `Stop` (crash, kill, sessions from before install); promotes idle sessions to processing |
 | Process episodes (stages 1–6) | none | Jobs advanced each tick within budget |
 | System map | Loaded by the `AGENTS.md`/`CLAUDE.md` include | Regenerated when claims change |
-| Task brief | Always-on map include; on-demand refresh via pull tool `memory.brief`. `PreInvocation` (`invocationNum == 0`) provides a ≤ 200-token pointer/summary nudge (E1). If lexical linking fails, spool a brief request. | Next tick runs it as a housekeeping run; the next `PreInvocation` delivers it. The agent can also call `memory.brief` synchronously. |
+| Task brief | Always-on map include; on-demand refresh via pull tool `memory_brief`. `PreInvocation` (`invocationNum == 0`) provides a ≤ 200-token pointer/summary nudge (E1). If lexical linking fails, spool a brief request. | Next tick runs it as a housekeeping run; the next `PreInvocation` delivers it. The agent can also call `memory_brief` synchronously. |
 | Touch, error delivery | `PreInvocation` inline | none |
 | Risky action | `PreToolUse` gate modes; `PreInvocation` injection (§7.5) | none |
 | Déjà-vu tier 1 (lexical) | `PreToolUse` on the concrete call; `PreInvocation` on the latest reasoning | none |
@@ -277,7 +277,7 @@ The fixed overhead matters most for the small, interactive calls, not for extrac
 | **Entity extractor** | Builds the code skeleton (subsystems, files, symbols, config keys, topics, tools, error strings). No LLM. | Tick, when HEAD or configuration changes |
 | **Pipeline stages 1–6** | Turn events into claims and views (§6) | Tick |
 | **Re-check scheduler** | Queues claims for re-verification when their dependencies change (§8) | Tick, from spooled `PostToolUse` events and its own hash checks |
-| **Pull tools** | `memory.ask`, `memory.why`, `memory.history`, `memory.brief`, `memory.note`, `memory.stats`. Exposed by a stdio MCP server that reads the SQLite index; `ask` and `brief` may make one synchronous housekeeping run. | Spawned by the harness per session |
+| **Pull tools** | `memory_ask`, `memory_why`, `memory_history`, `memory_brief`, `memory_note`, `memory_stats`. Exposed by a stdio MCP server that reads the SQLite index; `ask` and `brief` may make one synchronous housekeeping run. | Spawned by the harness per session |
 | **Review surface** | Weekly review report (IDE) and the batched memory PR (git host) | Tick |
 
 Processes communicate only through files and SQLite in WAL mode. There is no socket, no long-running process and nothing detached. Everything works on macOS, Linux and Windows.
@@ -715,7 +715,7 @@ Apply the compaction rules in §5.1 and scrub secrets. Record `raw_chars` and `k
   - a dependency or config change;
   - reasoning spans above a length threshold discussing alternatives;
   - a device or soak outcome;
-  - a write to a memory artefact, or a `memory.note` call (see below).
+  - a write to a memory artefact, or a `memory_note` call (see below).
 - Skip if all hold: no failures, no commits, fewer than K steps, and no decision signals.
 
 **Memory-artefact writes.** When a working agent or the PA writes to a memory artefact, that is its own judgement, made with full context at the moment of learning, that something was worth keeping. Detecting it costs nothing, because compaction already sees every edit path. Until P4 retires hand-written PA knowledge (§13), these writes are frequent.
@@ -851,7 +851,7 @@ Auto-merged ops are still visible in the PR history, and any of them can be reve
 | Channel | Budget | Dedup |
 |---|---|---|
 | Always-on (system map) | ≤ 2k tokens | n/a |
-| Task brief | ≤ 8k tokens (pull via `memory.brief` / MAP include; ≤ 200 tokens if nudged via `ephemeralMessage`; E1) | once per session |
+| Task brief | ≤ 8k tokens (pull via `memory_brief` / MAP include; ≤ 200 tokens if nudged via `ephemeralMessage`; E1) | once per session |
 | File-touch injection | ≤ 600 tokens per event | per claim per session |
 | Error injection | ≤ 600 tokens per event | per signature per session |
 | Risky-action injection | ≤ 800 tokens per event | per claim per session |
@@ -879,21 +879,21 @@ Before injecting, the hook checks that each claim's anchored files still exist. 
 3. The hook links the task to entities using the local index:
    - lexical match on entity names, paths, symbols and error strings;
    - plus files already open or mentioned;
-   - if lexical matching yields nothing, the hook injects a concise pointer (≤ 200 tokens via `ephemeralMessage`) to the relevant claim indexes (§5.5). Because `ephemeralMessage` context drops after one turn (E1), full task briefs are delivered via `memory.brief` pull or MAP views rather than massive ephemeral payloads.
+   - if lexical matching yields nothing, the hook injects a concise pointer (≤ 200 tokens via `ephemeralMessage`) to the relevant claim indexes (§5.5). Because `ephemeralMessage` context drops after one turn (E1), full task briefs are delivered via `memory_brief` pull or MAP views rather than massive ephemeral payloads.
 4. When generated, the **task brief** prioritizes:
    1. invariants of the involved subsystems;
    2. open issues and in-flight work;
    3. ruled-out approaches;
    4. relevant procedures;
    5. decisions.
-5. The agent can call `memory.brief(task)` later to refresh it when the task direction changes.
+5. The agent can call `memory_brief(task)` later to refresh it when the task direction changes.
 
 ### 7.3 File touch
 
 When the agent reads or edits a file whose entities (file, symbols, subsystem) have pushable claims not yet delivered this session, inject:
 
 - `invariant`, `ruled-out`, `fact` and `open-issue` claims for those entities, most specific anchor first;
-- one line per claim, rendered as in §7.1 (`apply` line, ID and currency stamp). The agent can call `memory.why(<id>)` for evidence.
+- one line per claim, rendered as in §7.1 (`apply` line, ID and currency stamp). The agent can call `memory_why(<id>)` for evidence.
 
 ### 7.4 Error
 
@@ -961,12 +961,12 @@ The main defence against repeating a dead-end is not an alert at all:
 
 | Tool | Returns |
 |---|---|
-| `memory.ask(question)` | Answer synthesised from claims, with claim IDs; falls back to episode search with explicit "unverified" marking |
-| `memory.why(target)` | For a file, symbol, config key or claim ID: decisions and invariants plus evidence chain (claim → episodes → commits) |
-| `memory.history(entity)` | Chronological claim and supersession history for an entity |
-| `memory.brief(task)` | Regenerated task brief |
-| `memory.note(text)` | Lets the agent or user flag something explicitly. Recorded as an event with `provenance: agent-note` or `human`, reconciled like any other candidate. This is optional and costs the working agent a single short tool call. |
-| `memory.stats()` | Observability summary (§10.4): claim counts by type, status and subsystem; delivery and hit-rate figures for recent sessions; pipeline cost; coverage gaps |
+| `memory_ask(question)` | Answer synthesised from claims, with claim IDs; falls back to episode search with explicit "unverified" marking |
+| `memory_why(target)` | For a file, symbol, config key or claim ID: decisions and invariants plus evidence chain (claim → episodes → commits) |
+| `memory_history(entity)` | Chronological claim and supersession history for an entity |
+| `memory_brief(task)` | Regenerated task brief |
+| `memory_note(text)` | Lets the agent or user flag something explicitly. Recorded as an event with `provenance: agent-note` or `human`, reconciled like any other candidate. This is optional and costs the working agent a single short tool call. |
+| `memory_stats()` | Observability summary (§10.4): claim counts by type, status and subsystem; delivery and hit-rate figures for recent sessions; pipeline cost; coverage gaps |
 
 All six tools ship from the start. Their use is instrumented (§10.4), so trimming or merging tools later is a data-driven decision.
 
@@ -1091,7 +1091,7 @@ Recorded episodes serve as a fixed benchmark for the **delivery policy** (trigge
 | ID | Benchmark |
 |---|---|
 | B1 | **pr-225 facts benchmark.** Build the claim store from events up to commit `69d9c813`. Give a fresh agent pr-225's original request plus memory delivery, and have it produce the equivalent of "Framework Facts Workers Need". Compare against the PA's hand-written section for correctness, completeness, tokens and tool calls. Baseline: the same task with today's PA memory. |
-| B2 | **Question bank.** ≥ 50 questions drawn from session logs and ADRs ("what's been ruled out for…", "why is X…", "what does error Y mean…"), answered with `memory.ask` vs. baseline. |
+| B2 | **Question bank.** ≥ 50 questions drawn from session logs and ADRs ("what's been ruled out for…", "why is X…", "what does error Y mean…"), answered with `memory_ask` vs. baseline. |
 | B3 | **Task replays.** 3–5 historical tasks re-run from their starting commits in worktrees (no hardware-in-the-loop), with and without memory. Measure turns, tokens and repeats of known dead-ends. |
 | B4 | **Cost.** Sidecar tokens (by stage, model tier and token type) vs. PA memory work for a comparable period. The PA side is broken down by activity: boot reads (frontier, input); session-log distillation (frontier, output); worker completion reports (worker model, output); "Framework Facts" sections (frontier, output); index graduation (frontier, output); Chief Architect programme logs (frontier, output). Priced per tier, not just summed. |
 | B5 | **Extraction precision.** A labelled sample of ≥ 20 episodes (OTA and BLE history). A human marks each extracted claim as correct / wrong / not durable, and lists durable knowledge the extractor missed. Reports precision and recall per claim type. |
@@ -1109,7 +1109,7 @@ Recorded episodes serve as a fixed benchmark for the **delivery policy** (trigge
 
 ### 10.4 Observability
 
-Everything the plugin does is instrumented from day one. Metrics are private (`<data-dir>/<repo-id>/metrics/*.jsonl`), aggregated by `repo-memory report` and `memory.stats`.
+Everything the plugin does is instrumented from day one. Metrics are private (`<data-dir>/<repo-id>/metrics/*.jsonl`), aggregated by `repo-memory report` and `memory_stats`.
 
 | Signal | Source |
 |---|---|
@@ -1187,7 +1187,7 @@ The tick follows the bug-fixer tick pattern: deterministic checks every run, LLM
 
 | Need | Mechanism | Notes |
 |---|---|---|
-| Pull tools | Stateless stdio MCP server in plugin `mcp_config.json`, reading the SQLite index | Tools are listed in the system prompt of every session; schema tokens are measured (§10.4). `memory.ask` and `memory.brief` may make one synchronous housekeeping run (~13 s). |
+| Pull tools | Stateless stdio MCP server in plugin `mcp_config.json`, reading the SQLite index | Tools are listed in the system prompt of every session; schema tokens are measured (§10.4). `memory_ask` and `memory_brief` may make one synchronous housekeeping run (~13 s). |
 | Always-on map | `@[…](.memory/views/MAP.md)` include in the repo's root `AGENTS.md` | Fallback: `PreInvocation` at `invocationNum == 0`. |
 | Native alternative | `model_decision` rules (description-led, loaded on demand) | Requires frontmatter `trigger: model_decision` (`activation:` is silently ignored; E4). Mechanism is pull: description is exposed in system prompt; model calls `view_file` on match. |
 
@@ -1349,7 +1349,7 @@ There is no separate migration path. Existing artefacts are ingested as `import`
 | Phase | Scope | Exit criteria |
 |---|---|---|
 | **P0 Capture** (urgent) | **Go skeleton (§18):** the `hook`, `tick` and `install` subcommands; the harness interface with the Antigravity adapter and the `fake` test adapter; the package-boundary check. **Capture:** `Stop` hooks (spool and copy); tick sidecar with the job table (spool ingestion; sweep of the app and CLI stores; idle promotion; compaction with author classification and exposure markers); scrubber; private episode store; metrics skeleton (§10.4); experiments E1–E10. **Recommended:** a sweep-only copy of Claude Code transcripts into `raw/claude-code/` (copied, not parsed), so the 30-day retention doesn't erase history before Release 2 (§18.6, rule 11). No LLM stages yet; E10 uses a few measured test runs. | Every new Antigravity session produces an episode within minutes of going idle; sessions captured before their transcripts disappear; the share caught only by the sweep measured; compaction ratio ≥ 4× measured; zero secrets in a scan of 50 episodes; experiments answered; core tests pass on the `fake` adapter; `internal/core` imports no concrete adapter. |
-| **P0.5 Episode search** | `repo-memory search` CLI and a `memory.ask` fallback over episodes (SQLite FTS). Import of PA files as searchable episodes (no extraction yet). | You can find what was tried, and when, across all captured history. This also shows whether episodes contain what extraction will need. |
+| **P0.5 Episode search** | `repo-memory search` CLI and a `memory_ask` fallback over episodes (SQLite FTS). Import of PA files as searchable episodes (no extraction yet). | You can find what was tried, and when, across all captured history. This also shows whether episodes contain what extraction will need. |
 | **P1 Knowledge** | Entity extractor with extractor rules; subsystem bootstrap; stages 2–6 including salience windows and the evidence-independence rules; claim schema; lint gate; two-lane publish, memory PR and weekly review report with reply parsing (§9.2.1); views (map, subsystems, claim index, signatures, decisions); import of OTA and BLE history; E11. | **Gate:** B5 precision ≥ 0.8 for pushable claims **and** B1 at parity with the PA's hand-written facts section. B2 shows improvement over baseline. Pipeline cost per episode and per stage measured (§4.4.1). |
 | **P2 Delivery** | Normalised hook-event model and capability-based delivery policy (§18.3), with the Antigravity codec as the first implementation: fast path, map include, task brief, touch, error, risky action, déjà-vu tier 1. Delivery ledger; all six pull tools, instrumented; generated path-scoped rules (native floor, after E4). The adapter contract suite (§18.6) is written against Antigravity fixtures. | B3 run; per-session push within budget; hook latency within §7.8 on macOS and Windows; degraded modes (§7.9) tested; adapter contract suite green. |
 | **P3 Learning loop** | Déjà-vu tier 2 (tick housekeeping run); coverage and elicitation; per-session metrics (§10.1); offline replay tuning (§10.2); `repo-memory report`. | Rediscovery and repeated dead-end rates reported weekly; first policy update accepted by replay. |
@@ -1671,7 +1671,7 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
 - **spec-critical-evaluation.md (2026-09-30):** these points were adopted:
   - the P1 exit gate on B1;
   - episode search as P0.5;
-  - an instrumented observability layer and `memory.stats`, with all tools shipped;
+  - an instrumented observability layer and `memory_stats`, with all tools shipped;
   - a cost breakdown by PA activity tier (B4);
   - explicit entity-extraction exactness;
   - `ephemeralMessage` handled as an experiment;
@@ -1688,7 +1688,7 @@ Sources: the built-in `agy-customizations` docs and the public docs pages, check
 | Version | Date | Changes |
 |---|---|---|
 | 0.1 | 2026-09-29 | Initial specification. |
-| 0.2 | 2026-09-30 | Following `spec-critical-evaluation.md` and a re-check of the Antigravity built-in docs:<br>• Pipeline runs as Antigravity scheduled sidecars (periodic ticks); no daemon or socket.<br>• Capture moved to a transcript sweep, with `Stop` as a nudge and no `PostToolUse` capture hook.<br>• Recursion guard for pipeline-created conversations.<br>• Pluggable LLM backends (`api` / `agentapi`).<br>• Two-lane publish and review profiles.<br>• Delivery hook latency budget and compiled-hook option; degraded modes.<br>• Two-tier déjà-vu detection (immediate lexical match in the hook, semantic check on a 1-minute tick).<br>• Map loaded via an `AGENTS.md`/`CLAUDE.md` include.<br>• `memory.stats` and an observability layer.<br>• Entity-extraction exactness and subsystem bootstrap; month-sharded claims and scale estimate.<br>• B5 extraction-precision benchmark and P1 gates with a fallback; P0 experiments E1–E6; P0.5 episode search.<br>• Transcript location and format resolved (Q4). |
+| 0.2 | 2026-09-30 | Following `spec-critical-evaluation.md` and a re-check of the Antigravity built-in docs:<br>• Pipeline runs as Antigravity scheduled sidecars (periodic ticks); no daemon or socket.<br>• Capture moved to a transcript sweep, with `Stop` as a nudge and no `PostToolUse` capture hook.<br>• Recursion guard for pipeline-created conversations.<br>• Pluggable LLM backends (`api` / `agentapi`).<br>• Two-lane publish and review profiles.<br>• Delivery hook latency budget and compiled-hook option; degraded modes.<br>• Two-tier déjà-vu detection (immediate lexical match in the hook, semantic check on a 1-minute tick).<br>• Map loaded via an `AGENTS.md`/`CLAUDE.md` include.<br>• `memory_stats` and an observability layer.<br>• Entity-extraction exactness and subsystem bootstrap; month-sharded claims and scale estimate.<br>• B5 extraction-precision benchmark and P1 gates with a fallback; P0 experiments E1–E6; P0.5 episode search.<br>• Transcript location and format resolved (Q4). |
 | 0.3 | 2026-09-30 | Execution model settled with the user:<br>• Two invocation paths with strictly separate jobs: hooks read, inject and spool; the scheduled tick does all asynchronous work. Harness-level, not OS-level; no detached processes.<br>• Durable job table advanced across ticks, with leases, idempotency keys, budgets and a circuit breaker.<br>• One-minute tick; the watcher sidecar folded into it.<br>• All LLM work runs on the user's Antigravity quota: housekeeping via headless `agy -p` (measured at ~17k tokens of fixed overhead and ~13 s per call, so items are batched per call); no API key.<br>• Session visibility policy: repo work and reports in the IDE; housekeeping headless.<br>• Weekly review report as an IDE conversation carrying gap questions, pending claims and proposed work; human replies captured as evidence.<br>• LLM stages defined as pure functions.<br>• `PreToolUse` gate-once delivery for risky actions and déjà-vu.<br>• Capture sweep extended to the Antigravity CLI store.<br>• Publishing through a dedicated git worktree.<br>• Experiments revised (E7 isolation, E10 overhead, E11 quota). |
 | 0.4 | 2026-09-30 | Claude Code support and external review:<br>• P13 evidence independence with per-step exposure markers and author classification; independence rules in extraction and reconcile.<br>• Report-reply mechanism (§9.2.1).<br>• §4.4.1 cost model from measured Antigravity transcript sizes; salience windows and packing; the fixed overhead identified as dominating small interactive calls.<br>• Déjà-vu reframed as tier 0 (proactive) / tier 1 (lexical safety net, generated match blocks) / tier 2 (late correction; seconds on Claude Code via `asyncRewake`).<br>• §12.2 rewritten from verified Claude Code docs: hook mapping, `claude -p --safe-mode` executor, Desktop scheduled task reports, async-hook tick triggers, transcript parser policy, auto-memory coexistence, experiments C1–C7.<br>• Native-floor degraded mode.<br>• §17 implementation decisions (D1 open, recommendation: one compiled binary; D2 and D3 decided).<br>• P0 extended to both harnesses; P2 builds a normalised event model, Antigravity first. |
 | 0.5 | 2026-09-30 | Harness-neutral techniques from a review of Claude Code auto memory (Claude-specific notes in `docs/claude_architecture.md` §4.7):<br>• Claims gain `relevant_when` (for selection) and `apply` (for action) lines; pushes render `apply`.<br>• Claim index view per subsystem, so agents can walk MAP → index → claim with plain reads; used as the fallback when task linking fails and in degraded modes.<br>• Every pushed claim carries a currency stamp; the hook checks that anchored files exist.<br>• `open-issue` claims carry `closes_when` conditions evaluated by the tick; new `resolved` status; unknown closure means pull-only.<br>• Writes to memory artefacts (PA files, harness-native stores) and approval signals are triage keep rules; written text kept as `note` steps, leads rather than evidence.<br>• Over-budget views are re-synthesised rather than truncated.<br>• Extraction reports referenced `gaps`, which feed coverage. |
