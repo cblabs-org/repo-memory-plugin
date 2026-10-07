@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/cblabs-org/repo-memory-plugin/internal/mcpserver"
 )
 
-func TestMCPProtocol(t *testing.T) {
-	// Build a sequence of JSON-RPC requests separated by newlines.
+func TestServeMCP(t *testing.T) {
+	// Build a sequence of JSON-RPC requests.
 	var input bytes.Buffer
 
 	// 1. initialize
@@ -19,7 +22,7 @@ func TestMCPProtocol(t *testing.T) {
 		"params":  map[string]any{"protocolVersion": "2024-11-05"},
 	})
 
-	// 2. notification (no id) — should be silently dropped
+	// 2. notification (no id) — should be silently dropped, no response
 	writeJSON(&input, map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "notifications/initialized",
@@ -39,7 +42,7 @@ func TestMCPProtocol(t *testing.T) {
 		"method":  "tools/list",
 	})
 
-	// 5. tools/call with nil index (unenrolled) — should return isError
+	// 5. tools/call on unenrolled server — should return isError result
 	writeJSON(&input, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      4,
@@ -47,7 +50,7 @@ func TestMCPProtocol(t *testing.T) {
 		"params":  map[string]any{"name": "memory_brief", "arguments": map[string]any{"scope": "test"}},
 	})
 
-	// 6. unknown method
+	// 6. unknown method — should return JSON-RPC error
 	writeJSON(&input, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      5,
@@ -56,109 +59,83 @@ func TestMCPProtocol(t *testing.T) {
 
 	var output bytes.Buffer
 
-	// Run the command directly via RunE to avoid root command dispatch.
-	cmd := *mcpCmd // copy so we don't mutate the global
-	cmd.SetIn(&input)
-	cmd.SetOut(&output)
-	cmd.SetErr(&bytes.Buffer{})
-
-	// Set up a temp workspace dir to avoid "could not determine repo ID" error.
-	// We use a non-git dir so the server creates a nil-index server.
-	tmpDir := t.TempDir()
-	t.Setenv("REPO_MEMORY_DATA_DIR", tmpDir)
-
-	// RunE will exit with an error when stdin is exhausted — that's expected
-	// if it can't determine the repoID. For protocol testing, we directly
-	// test the MCP stdio loop with a nil-index server.
-	// Instead, test the protocol-level code directly.
-	t.Run("protocol_framing", func(t *testing.T) {
-		testMCPProtocolFraming(t, &input, &output)
-	})
-}
-
-func testMCPProtocolFraming(t *testing.T, input *bytes.Buffer, output *bytes.Buffer) {
-	t.Helper()
-
-	// We can't easily call RunE without a git repo, so test the protocol
-	// by creating a nil-index server and running the MCP loop directly.
-	// This tests: initializeResult, toolsListResult, mcpToolResult, mcpToolError,
-	// writeResult, writeError, and the ping/notification handling.
-
-	// Test initializeResult
-	result := initializeResult([]byte(`{"protocolVersion":"2024-11-05"}`))
-	if result["protocolVersion"] != "2024-11-05" {
-		t.Errorf("initializeResult: expected protocolVersion 2024-11-05, got %v", result["protocolVersion"])
+	// Use a nil-index server (unenrolled repo).
+	srv := mcpserver.NewServer(nil)
+	err := serveMCP(context.Background(), &input, &output, srv)
+	if err != nil {
+		t.Fatalf("serveMCP returned error: %v", err)
 	}
-	serverInfo, ok := result["serverInfo"].(map[string]any)
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+
+	// Expect 5 responses (notification produces none).
+	if len(lines) != 5 {
+		t.Fatalf("expected 5 response lines, got %d:\n%s", len(lines), output.String())
+	}
+
+	// 1. initialize
+	resp1 := parseResponse(t, lines[0])
+	result1 := assertResult(t, resp1, "initialize")
+	if result1["protocolVersion"] != "2024-11-05" {
+		t.Errorf("initialize: expected protocolVersion 2024-11-05, got %v", result1["protocolVersion"])
+	}
+	serverInfo, ok := result1["serverInfo"].(map[string]any)
 	if !ok || serverInfo["name"] != "repo-memory" {
-		t.Errorf("initializeResult: expected serverInfo.name=repo-memory, got %v", result["serverInfo"])
+		t.Errorf("initialize: expected serverInfo.name=repo-memory, got %v", result1["serverInfo"])
 	}
 
-	// Test toolsListResult
-	tlr := toolsListResult()
-	tools, ok := tlr["tools"].([]map[string]any)
-	if !ok || len(tools) == 0 {
-		t.Fatalf("toolsListResult: expected non-empty tools array, got %v", tlr)
+	// 2. ping
+	resp2 := parseResponse(t, lines[1])
+	result2 := assertResult(t, resp2, "ping")
+	if len(result2) != 0 {
+		t.Errorf("ping: expected empty object {}, got %v", result2)
 	}
-	for _, tool := range tools {
-		name, ok := tool["name"].(string)
+
+	// 3. tools/list
+	resp3 := parseResponse(t, lines[2])
+	result3 := assertResult(t, resp3, "tools/list")
+	toolsRaw, ok := result3["tools"].([]any)
+	if !ok || len(toolsRaw) == 0 {
+		t.Fatalf("tools/list: expected non-empty tools array, got %v", result3)
+	}
+	for _, tr := range toolsRaw {
+		tool, ok := tr.(map[string]any)
 		if !ok {
 			continue
 		}
+		name, _ := tool["name"].(string)
 		if strings.Contains(name, ".") {
-			t.Errorf("toolsListResult: tool name %q contains dot, expected underscores", name)
+			t.Errorf("tools/list: tool name %q contains dot, expected underscores", name)
 		}
 		if _, hasSchema := tool["inputSchema"]; !hasSchema {
-			t.Errorf("toolsListResult: tool %q missing inputSchema", name)
+			t.Errorf("tools/list: tool %q missing inputSchema", name)
 		}
 	}
 
-	// Test mcpToolResult
-	mtr := mcpToolResult("hello world")
-	content, ok := mtr["content"].([]map[string]any)
+	// 4. tools/call (unenrolled) — isError result, not JSON-RPC error
+	resp4 := parseResponse(t, lines[3])
+	result4 := assertResult(t, resp4, "tools/call")
+	if result4["isError"] != true {
+		t.Errorf("tools/call: expected isError=true for unenrolled repo, got %v", result4)
+	}
+	content, ok := result4["content"].([]any)
 	if !ok || len(content) == 0 {
-		t.Fatalf("mcpToolResult: expected content array, got %v", mtr)
+		t.Fatalf("tools/call: expected content array, got %v", result4)
 	}
-	if content[0]["type"] != "text" {
-		t.Errorf("mcpToolResult: expected type=text, got %v", content[0]["type"])
-	}
-
-	// Test mcpToolError
-	mte := mcpToolError("something went wrong")
-	if mte["isError"] != true {
-		t.Errorf("mcpToolError: expected isError=true, got %v", mte)
+	firstContent, _ := content[0].(map[string]any)
+	text, _ := firstContent["text"].(string)
+	if !strings.Contains(text, "not enrolled") {
+		t.Errorf("tools/call: expected 'not enrolled' in error text, got %q", text)
 	}
 
-	// Test writeResult + writeError framing
-	var buf bytes.Buffer
-	testCmd := *mcpCmd
-	testCmd.SetOut(&buf)
-
-	writeResult(&testCmd, json.RawMessage(`1`), map[string]any{"ok": true})
-	var resp1 map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &resp1); err != nil {
-		t.Fatalf("writeResult: failed to parse: %v", err)
-	}
-	if resp1["jsonrpc"] != "2.0" {
-		t.Errorf("writeResult: expected jsonrpc=2.0, got %v", resp1["jsonrpc"])
-	}
-	r1, ok := resp1["result"].(map[string]any)
-	if !ok || r1["ok"] != true {
-		t.Errorf("writeResult: expected result.ok=true, got %v", resp1["result"])
-	}
-
-	buf.Reset()
-	writeError(&testCmd, json.RawMessage(`2`), -32601, "Method not found")
-	var resp2 map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &resp2); err != nil {
-		t.Fatalf("writeError: failed to parse: %v", err)
-	}
-	errObj, ok := resp2["error"].(map[string]any)
+	// 5. unknown method — JSON-RPC error
+	resp5 := parseResponse(t, lines[4])
+	errObj, ok := resp5["error"].(map[string]any)
 	if !ok {
-		t.Fatalf("writeError: expected error object, got %v", resp2)
+		t.Fatalf("unknown method: expected JSON-RPC error object, got %v", resp5)
 	}
-	if errObj["code"].(float64) != -32601 {
-		t.Errorf("writeError: expected code=-32601, got %v", errObj["code"])
+	if code, _ := errObj["code"].(float64); code != -32601 {
+		t.Errorf("unknown method: expected code -32601, got %v", errObj["code"])
 	}
 }
 
@@ -166,4 +143,22 @@ func writeJSON(buf *bytes.Buffer, v any) {
 	b, _ := json.Marshal(v)
 	buf.Write(b)
 	buf.WriteByte('\n')
+}
+
+func parseResponse(t *testing.T, line string) map[string]any {
+	t.Helper()
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(line), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v\nline: %s", err, line)
+	}
+	return resp
+}
+
+func assertResult(t *testing.T, resp map[string]any, label string) map[string]any {
+	t.Helper()
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s: expected result object, got %v", label, resp)
+	}
+	return result
 }
