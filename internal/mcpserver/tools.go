@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -291,34 +290,17 @@ func (s *Server) collectRetiredForScope(ctx context.Context, scope string) ([]do
 		}
 	}
 
-	// Use a plain read query — no write transaction needed for a SELECT.
-	rows, err := s.idx.QueryHistoryByScope(ctx, scope)
+	// Use a plain read query — no write transaction needed.
+	histEntries, err := s.idx.QueryHistoryByScope(ctx, scope)
 	if err != nil {
-		return result, fmt.Errorf("querying entry_history for scope %s: %w", scope, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var eID, typeStr, dScope, text, reason, supersededBy, retiredAt sql.NullString
-		if err := rows.Scan(&eID, &typeStr, &dScope, &text, &reason, &supersededBy, &retiredAt); err != nil {
-			return result, fmt.Errorf("scanning entry_history row: %w", err)
-		}
-		key := eID.String + ":" + reason.String + ":" + supersededBy.String
-		if !seen[key] && !seen[eID.String] {
-			seen[key] = true
-			result = append(result, dossiers.Entry{
-				ID:            eID.String,
-				Type:          dossiers.EntryType(typeStr.String),
-				DossierScope:  dScope.String,
-				Text:          text.String,
-				Retired:       true,
-				RetiredReason: reason.String,
-				SupersededBy:  supersededBy.String,
-			})
-		}
-	}
-	if err := rows.Err(); err != nil {
 		return result, err
+	}
+	for _, h := range histEntries {
+		key := h.ID + ":" + h.RetiredReason + ":" + h.SupersededBy
+		if !seen[key] && !seen[h.ID] {
+			seen[key] = true
+			result = append(result, h)
+		}
 	}
 
 	return result, nil
