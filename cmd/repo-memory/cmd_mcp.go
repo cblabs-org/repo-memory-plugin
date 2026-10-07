@@ -20,10 +20,10 @@ var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Stdio MCP server for memory pull tools",
 	Long: `Runs an MCP stdio server exposing the v2 pull tools:
-  memory.brief, memory.why, memory.history, memory.search, memory.note
+  memory_brief, memory_why, memory_history, memory_search, memory_note
 
 The server speaks the Model Context Protocol (JSON-RPC 2.0 over stdio),
-handling initialize, notifications/initialized, tools/list, and tools/call.`,
+handling initialize, ping, notifications/initialized, tools/list, and tools/call.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dataDir := config.DataDir()
@@ -45,7 +45,13 @@ handling initialize, notifications/initialized, tools/list, and tools/call.`,
 			return fmt.Errorf("could not determine repo ID; run from a git repository or enrol first")
 		}
 
-		idxPath := filepath.Join(dataDir, repoID, "index.db")
+		// Ensure the index directory exists so NewIndex can create the DB.
+		idxDir := filepath.Join(dataDir, repoID)
+		if err := os.MkdirAll(idxDir, 0755); err != nil {
+			return fmt.Errorf("creating index directory: %w", err)
+		}
+
+		idxPath := filepath.Join(idxDir, "index.db")
 		idx, err := index.NewIndex(idxPath)
 		if err != nil {
 			return fmt.Errorf("opening index: %w", err)
@@ -62,7 +68,8 @@ handling initialize, notifications/initialized, tools/list, and tools/call.`,
 		// pull exposures are not persisted until the harness passes one.
 		// TODO: Accept conversation ID from client metadata in initialize.
 
-		scanner := bufio.NewScanner(os.Stdin)
+		in := cmd.InOrStdin()
+		scanner := bufio.NewScanner(in)
 		scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
 		for scanner.Scan() {
@@ -84,7 +91,10 @@ handling initialize, notifications/initialized, tools/list, and tools/call.`,
 
 			switch req.Method {
 			case "initialize":
-				writeResult(cmd, req.ID, initializeResult())
+				writeResult(cmd, req.ID, initializeResult(req.Params))
+
+			case "ping":
+				writeResult(cmd, req.ID, map[string]any{})
 
 			case "tools/list":
 				writeResult(cmd, req.ID, toolsListResult())
@@ -97,10 +107,11 @@ handling initialize, notifications/initialized, tools/list, and tools/call.`,
 				}
 				result, err := srv.DispatchTool(cmd.Context(), call.Name, call.Arguments)
 				if err != nil {
-					writeError(cmd, req.ID, -32603, err.Error())
+					// MCP: tool execution errors are normal results with isError: true,
+					// not JSON-RPC errors (which are for protocol problems).
+					writeResult(cmd, req.ID, mcpToolError(err.Error()))
 					continue
 				}
-				// MCP tools/call responses must be {content: [{type: "text", text: ...}]}
 				writeResult(cmd, req.ID, mcpToolResult(result))
 
 			default:
@@ -128,9 +139,24 @@ type toolsCallParams struct {
 
 // --- MCP protocol responses ---
 
-func initializeResult() map[string]any {
+// supportedProtocolVersion is the MCP protocol version we implement.
+const supportedProtocolVersion = "2024-11-05"
+
+func initializeResult(params json.RawMessage) map[string]any {
+	// Echo the client's requested protocol version if we support it.
+	version := supportedProtocolVersion
+	if len(params) > 0 {
+		var initParams struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(params, &initParams) == nil && initParams.ProtocolVersion != "" {
+			if initParams.ProtocolVersion == supportedProtocolVersion {
+				version = initParams.ProtocolVersion
+			}
+		}
+	}
 	return map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": version,
 		"serverInfo": map[string]any{
 			"name":    "repo-memory",
 			"version": "0.1.0",
@@ -142,8 +168,9 @@ func initializeResult() map[string]any {
 }
 
 func toolsListResult() map[string]any {
-	tools := make([]map[string]any, 0, len(mcpserver.SupportedTools))
-	for _, schema := range mcpserver.ToolSchemas() {
+	schemas := mcpserver.ToolSchemas()
+	tools := make([]map[string]any, 0, len(schemas))
+	for _, schema := range schemas {
 		tool := map[string]any{
 			"name":        schema.Name,
 			"description": schema.Description,
@@ -155,26 +182,33 @@ func toolsListResult() map[string]any {
 }
 
 func mcpToolResult(result any) map[string]any {
-	// Extract the text from the handler result (all handlers return {Result: string}).
-	text := ""
-	if m, ok := result.(interface{ GetResult() string }); ok {
-		text = m.GetResult()
-	} else {
-		// Fallback: marshal and extract "result" field.
-		b, _ := json.Marshal(result)
-		var generic map[string]string
-		if json.Unmarshal(b, &generic) == nil {
-			text = generic["result"]
-		}
-		if text == "" {
-			text = string(b)
-		}
-	}
+	text := extractResultText(result)
 	return map[string]any{
 		"content": []map[string]any{
 			{"type": "text", "text": text},
 		},
 	}
+}
+
+func mcpToolError(message string) map[string]any {
+	return map[string]any{
+		"content": []map[string]any{
+			{"type": "text", "text": message},
+		},
+		"isError": true,
+	}
+}
+
+func extractResultText(result any) string {
+	// All handlers return structs with a Result field.
+	b, _ := json.Marshal(result)
+	var generic map[string]string
+	if json.Unmarshal(b, &generic) == nil {
+		if text := generic["result"]; text != "" {
+			return text
+		}
+	}
+	return string(b)
 }
 
 // --- JSON-RPC helpers ---

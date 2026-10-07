@@ -60,13 +60,13 @@ func (s *Server) SetOpsWriter(w *ops.Writer) {
 	s.opsWriter = w
 }
 
-// SupportedTools lists the names of MCP pull tools supported by this server.
+// SupportedTools lists the canonical tool names (underscore format for portability).
 var SupportedTools = []string{
-	"memory.brief",
-	"memory.why",
-	"memory.history",
-	"memory.search",
-	"memory.note",
+	"memory_brief",
+	"memory_why",
+	"memory_history",
+	"memory_search",
+	"memory_note",
 }
 
 // MemoryAskRequest represents the input to the legacy memory.ask tool.
@@ -117,10 +117,11 @@ type ToolSchema struct {
 }
 
 // ToolSchemas returns the schema descriptions for all supported MCP pull tools.
+// Tool names use underscores for portability across all model APIs.
 func ToolSchemas() []ToolSchema {
 	return []ToolSchema{
 		{
-			Name:        "memory.brief",
+			Name:        "memory_brief",
 			Description: "Get a brief summary of active entries for a dossier scope",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -131,7 +132,7 @@ func ToolSchemas() []ToolSchema {
 			},
 		},
 		{
-			Name:        "memory.why",
+			Name:        "memory_why",
 			Description: "Get full details and provenance for a specific entry",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -142,7 +143,7 @@ func ToolSchemas() []ToolSchema {
 			},
 		},
 		{
-			Name:        "memory.history",
+			Name:        "memory_history",
 			Description: "Get retired and superseded entries for a scope",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -153,7 +154,7 @@ func ToolSchemas() []ToolSchema {
 			},
 		},
 		{
-			Name:        "memory.search",
+			Name:        "memory_search",
 			Description: "Search entries by keyword (FTS5)",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -164,7 +165,7 @@ func ToolSchemas() []ToolSchema {
 			},
 		},
 		{
-			Name:        "memory.note",
+			Name:        "memory_note",
 			Description: "Record a new knowledge entry from the agent",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -180,42 +181,43 @@ func ToolSchemas() []ToolSchema {
 }
 
 // DispatchTool routes a tool call by name to the appropriate handler.
+// Accepts both underscore names (canonical) and dotted names (legacy aliases).
 func (s *Server) DispatchTool(ctx context.Context, name string, params json.RawMessage) (any, error) {
 	switch name {
-	case "memory.brief":
+	case "memory_brief", "memory.brief":
 		var req MemoryBriefRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.brief params: %w", err)
+			return nil, fmt.Errorf("parsing memory_brief params: %w", err)
 		}
 		return s.HandleMemoryBrief(ctx, req)
-	case "memory.why":
+	case "memory_why", "memory.why":
 		var req MemoryWhyRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.why params: %w", err)
+			return nil, fmt.Errorf("parsing memory_why params: %w", err)
 		}
 		return s.HandleMemoryWhy(ctx, req)
-	case "memory.history":
+	case "memory_history", "memory.history":
 		var req MemoryHistoryRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.history params: %w", err)
+			return nil, fmt.Errorf("parsing memory_history params: %w", err)
 		}
 		return s.HandleMemoryHistory(ctx, req)
-	case "memory.search":
+	case "memory_search", "memory.search":
 		var req MemorySearchRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.search params: %w", err)
+			return nil, fmt.Errorf("parsing memory_search params: %w", err)
 		}
 		return s.HandleMemorySearch(ctx, req)
-	case "memory.note":
+	case "memory_note", "memory.note":
 		var req MemoryNoteRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.note params: %w", err)
+			return nil, fmt.Errorf("parsing memory_note params: %w", err)
 		}
 		return s.HandleMemoryNote(ctx, req)
-	case "memory.ask":
+	case "memory_ask", "memory.ask":
 		var req MemoryAskRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("parsing memory.ask params: %w", err)
+			return nil, fmt.Errorf("parsing memory_ask params: %w", err)
 		}
 		return s.HandleMemoryAsk(ctx, req)
 	default:
