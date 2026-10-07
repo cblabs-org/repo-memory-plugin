@@ -448,3 +448,36 @@ func (idx *Index) GetHistory(ctx context.Context, entryID string) ([]dossiers.En
 	}
 	return results, rows.Err()
 }
+
+// QueryHistoryByScope returns retired/superseded entries from entry_history
+// for the given scope. This uses a plain read — no write transaction.
+func (idx *Index) QueryHistoryByScope(ctx context.Context, scope string) ([]dossiers.Entry, error) {
+	rows, err := idx.db.QueryContext(ctx,
+		`SELECT entry_id, type, dossier_scope, text, reason, superseded_by, retired_at
+		 FROM entry_history
+		 WHERE dossier_scope = ?
+		 ORDER BY retired_at DESC`, scope)
+	if err != nil {
+		return nil, fmt.Errorf("querying entry_history for scope %s: %w", scope, err)
+	}
+	defer rows.Close()
+
+	var results []dossiers.Entry
+	for rows.Next() {
+		var eID, typeStr, dScope, text, reason, supersededBy, retiredAt sql.NullString
+		if err := rows.Scan(&eID, &typeStr, &dScope, &text, &reason, &supersededBy, &retiredAt); err != nil {
+			return nil, fmt.Errorf("scanning entry_history row: %w", err)
+		}
+		results = append(results, dossiers.Entry{
+			ID:            eID.String,
+			Type:          dossiers.EntryType(typeStr.String),
+			DossierScope:  dScope.String,
+			Text:          text.String,
+			Retired:       true,
+			RetiredReason: reason.String,
+			SupersededBy:  supersededBy.String,
+			UpdatedAt:     parseTime(retiredAt.String),
+		})
+	}
+	return results, rows.Err()
+}
