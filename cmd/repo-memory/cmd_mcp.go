@@ -45,24 +45,31 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 			return fmt.Errorf("could not determine repo ID; run from a git repository or enrol first")
 		}
 
-		// Ensure the index directory exists so NewIndex can create the DB.
-		idxDir := filepath.Join(dataDir, repoID)
-		if err := os.MkdirAll(idxDir, 0755); err != nil {
-			return fmt.Errorf("creating index directory: %w", err)
+		enrolled := config.IsEnrolledFast(workspaceRoot)
+
+		var srv *mcpserver.Server
+		if enrolled {
+			// Only create the index directory and DB for enrolled repos.
+			idxDir := filepath.Join(dataDir, repoID)
+			if err := os.MkdirAll(idxDir, 0755); err != nil {
+				return fmt.Errorf("creating index directory: %w", err)
+			}
+
+			idxPath := filepath.Join(idxDir, "index.db")
+			idx, err := index.NewIndex(idxPath)
+			if err != nil {
+				return fmt.Errorf("opening index: %w", err)
+			}
+			defer idx.Close()
+
+			opsDir := filepath.Join(dataDir, repoID, "ops")
+			srv = mcpserver.NewServer(idx,
+				mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
+			)
+		} else {
+			// Unenrolled: serve the tools but each returns "repo not enrolled".
+			srv = mcpserver.NewServer(nil)
 		}
-
-		idxPath := filepath.Join(idxDir, "index.db")
-		idx, err := index.NewIndex(idxPath)
-		if err != nil {
-			return fmt.Errorf("opening index: %w", err)
-		}
-		defer idx.Close()
-
-		opsDir := filepath.Join(dataDir, repoID, "ops")
-
-		srv := mcpserver.NewServer(idx,
-			mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
-		)
 		// Note: pull exposure tracking requires a per-conversation ledger.
 		// The MCP server does not have a conversation ID at startup, so
 		// pull exposures are not persisted until the harness passes one.

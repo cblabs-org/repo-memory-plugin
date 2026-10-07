@@ -5,8 +5,11 @@ package antigravity
 import "os"
 
 // fileLock is a no-op on Windows. Cross-process ledger safety relies on
-// the in-process mutex and atomic writes. A proper implementation using
-// windows.LockFileEx can be added as a follow-up if needed.
+// the in-process mutex and atomic writes.
+// TODO: Implement using windows.LockFileEx from golang.org/x/sys/windows
+// for true cross-process safety. ModifyLedger's doc comment promises
+// protection across processes, but on Windows that currently only covers
+// goroutines within one process.
 func fileLock(f *os.File) error {
 	return nil
 }

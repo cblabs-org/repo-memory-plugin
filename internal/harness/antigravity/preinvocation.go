@@ -113,6 +113,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	if err != nil || ledger == nil {
 		ledger = delivery.NewLedger(input.ConversationID)
 	}
+	// Snapshot the injection count at load time. Only records added *after*
+	// this point belong to this invocation and must be replayed under the lock.
+	injectionBase := len(ledger.Injections)
+	rearmed := false // set to true if compaction triggers RearmDedup
 
 	var injectSteps []InjectStep
 
@@ -192,6 +196,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			if err == nil && reinjStep != nil {
 				injectSteps = append(injectSteps, *reinjStep)
 				ledger.RearmDedup()
+				rearmed = true
 			}
 			// Mark this checkpoint as handled so we don't re-inject on future turns.
 			ledger.LastHandledCheckpointStep = res.CheckpointStepIdx
@@ -360,14 +365,18 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	}
 
 	// Persist ledger changes under the cross-process lock.
-	// We replay the accumulated mutations into a freshly loaded ledger
-	// so concurrent writes from PreToolUse/PostToolUse are not lost.
+	// We replay only this invocation's new records (from injectionBase onwards)
+	// into a freshly loaded ledger so concurrent writes are not lost.
 	_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
-		// Replay injection records
-		for _, inj := range ledger.Injections[len(l.Injections):] {
+		// If compaction cleared the seen markers, rearm before applying new ones.
+		if rearmed {
+			l.RearmDedup()
+		}
+		// Replay only this invocation's new injection records.
+		for _, inj := range ledger.Injections[injectionBase:] {
 			l.RecordInjection(inj)
 		}
-		// Copy seen markers
+		// Copy seen markers added by this invocation.
 		for k, v := range ledger.SeenDossiers {
 			if v {
 				l.SeenDossiers[k] = true
@@ -378,16 +387,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				l.SeenAnchors[k] = true
 			}
 		}
-		// Copy checkpoint and high-water marks
+		// Copy checkpoint and high-water marks.
 		if ledger.LastHandledCheckpointStep > l.LastHandledCheckpointStep {
 			l.LastHandledCheckpointStep = ledger.LastHandledCheckpointStep
 		}
 		if ledger.LastProcessedStepIndex > l.LastProcessedStepIndex {
 			l.LastProcessedStepIndex = ledger.LastProcessedStepIndex
-		}
-		// RearmDedup if compaction cleared them
-		if len(ledger.SeenDossiers) == 0 && len(l.SeenDossiers) > 0 {
-			l.RearmDedup()
 		}
 	})
 
