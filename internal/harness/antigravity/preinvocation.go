@@ -359,9 +359,37 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	if err := SaveLedger(dataDir, repoID, ledger); err != nil {
-		// Log but don't fail — delivery should still work without persistence
-	}
+	// Persist ledger changes under the cross-process lock.
+	// We replay the accumulated mutations into a freshly loaded ledger
+	// so concurrent writes from PreToolUse/PostToolUse are not lost.
+	_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
+		// Replay injection records
+		for _, inj := range ledger.Injections[len(l.Injections):] {
+			l.RecordInjection(inj)
+		}
+		// Copy seen markers
+		for k, v := range ledger.SeenDossiers {
+			if v {
+				l.SeenDossiers[k] = true
+			}
+		}
+		for k, v := range ledger.SeenAnchors {
+			if v {
+				l.SeenAnchors[k] = true
+			}
+		}
+		// Copy checkpoint and high-water marks
+		if ledger.LastHandledCheckpointStep > l.LastHandledCheckpointStep {
+			l.LastHandledCheckpointStep = ledger.LastHandledCheckpointStep
+		}
+		if ledger.LastProcessedStepIndex > l.LastProcessedStepIndex {
+			l.LastProcessedStepIndex = ledger.LastProcessedStepIndex
+		}
+		// RearmDedup if compaction cleared them
+		if len(ledger.SeenDossiers) == 0 && len(l.SeenDossiers) > 0 {
+			l.RearmDedup()
+		}
+	})
 
 	if len(injectSteps) == 0 {
 		return []byte("{}"), nil

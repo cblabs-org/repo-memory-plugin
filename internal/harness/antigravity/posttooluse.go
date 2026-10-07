@@ -62,10 +62,6 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	if !strings.EqualFold(input.ToolResult.Status, "error") {
-		return []byte("{}"), nil
-	}
-
 	var hookOpts HookOptions
 	for _, opt := range opts {
 		if opt != nil {
@@ -107,6 +103,35 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		}
 	}
 	if repoID == "" {
+		return []byte("{}"), nil
+	}
+
+	// On successful edit tool completion, acknowledge any pending gates.
+	isSuccess := strings.EqualFold(input.ToolResult.Status, "success") || input.ToolResult.Status == ""
+	if isSuccess && isEditTool(input.ToolName) {
+		targetFile := extractTargetFile(input.ToolCall.Args)
+		if targetFile != "" {
+			targetClean := filepath.Clean(targetFile)
+			relPath := targetClean
+			if filepath.IsAbs(targetClean) {
+				if rel, err := filepath.Rel(workspaceRoot, targetClean); err == nil && !strings.HasPrefix(rel, "..") {
+					relPath = rel
+				}
+			}
+			_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
+				if l.HasPendingGates(relPath) {
+					l.AcknowledgePendingGates(relPath)
+				}
+				if relPath != targetClean && l.HasPendingGates(targetClean) {
+					l.AcknowledgePendingGates(targetClean)
+				}
+			})
+		}
+		return []byte("{}"), nil
+	}
+
+	// Error injection path — only runs when the tool result is an error.
+	if !strings.EqualFold(input.ToolResult.Status, "error") {
 		return []byte("{}"), nil
 	}
 
@@ -184,16 +209,17 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	// Record these injections for future dedup.
-	for _, ent := range fresh {
-		ledger.RecordInjection(delivery.InjectionRecord{
-			EntryID:   ent.Entry.ID,
-			Channel:   delivery.ChannelEphemeral,
-			Moment:    delivery.MomentError,
-			StepIndex: input.StepIdx,
-		})
-	}
-	_ = SaveLedger(dataDir, repoID, ledger)
+	// Record these injections for future dedup under the cross-process lock.
+	_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
+		for _, ent := range fresh {
+			l.RecordInjection(delivery.InjectionRecord{
+				EntryID:   ent.Entry.ID,
+				Channel:   delivery.ChannelEphemeral,
+				Moment:    delivery.MomentError,
+				StepIndex: input.StepIdx,
+			})
+		}
+	})
 
 	resp := InjectStepsResponse{
 		InjectSteps: []InjectStep{
