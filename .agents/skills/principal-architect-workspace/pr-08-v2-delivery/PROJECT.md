@@ -37,8 +37,8 @@ This is the last implementation PR before the early kill gate (PR-09 X6-lite).
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | [wo1-ledger-engine](wo1-ledger-engine/WORKORDER.md) | Ledger (entry IDs, channel, step, content hash, tags), ranking engine (anchor match → relevance → verified → evidence), budget enforcement, exposure list | architect | 🔄 Active |
-| 2 | wo2-persistent-pushes | `PreInvocation` as `systemMessage`. Task start (≤500 tokens), first entry into dossier (≤150), first touch of anchor (≤150). Branch diff precomputed. | architect | ☐ Planned |
+| 1 | [wo1-ledger-engine](wo1-ledger-engine/WORKORDER.md) | Ledger (entry IDs, channel, step, content hash, tags), ranking engine (anchor match → relevance → verified → evidence), budget enforcement, exposure list | architect | ✅ Complete |
+| 2 | [wo2-persistent-pushes](wo2-persistent-pushes/WORKORDER.md) | `PreInvocation` as `systemMessage`. Task start (≤500 tokens), first entry into dossier (≤150), first touch of anchor (≤150). Branch diff precomputed. | architect | 🔄 Active |
 | 3 | wo3-ephemeral-and-errors | About-to-edit pointer (≤50 tokens). Error matching on `PostToolUse` → `ephemeralMessage` (≤200 tokens). | standard | ☐ Planned |
 | 4 | wo4-gates | `PreToolUse` deny-once for `gate: edit` entries. `force_ask` for invariants. X9 contract. | standard | ☐ Planned |
 | 5 | wo5-compaction-reinjection | Detect compaction/rewind from transcript. Re-inject consolidated `systemMessage` (≤1k). Re-arm dedup. **X11 experiment.** | architect | ☐ Planned |
@@ -82,3 +82,16 @@ This is the last implementation PR before the early kill gate (PR-09 X6-lite).
 - Codebase surveyed: delivery integrates into existing hook handlers (`hooks.go`, `v2_spike_channels.go`), reads from ops/dossiers/index/scopes, extends MCP server.
 - Key contracts confirmed from X5/X9/X11 spike findings: nested `systemMessage` objects, fail-closed `PreToolUse`, CHECKPOINT-based compaction detection.
 - WO1 (ledger-engine) spawned as first worker.
+
+### 2026-10-07 — WO1 complete (ledger-engine)
+- Worker delivered `internal/core/delivery/` (769 lines across 8 files):
+  - `types.go`: Channel (system/ephemeral/deny), Moment (6 types), DefaultBudgets
+  - `ledger.go`: InjectionRecord, ExposureRecord, Ledger with dedup (seen dossiers/anchors), gate acknowledgement, RearmDedup for compaction
+  - `anchor.go`: File/symbol anchor verification via `os.Stat`
+  - `ranker.go`: Composite scoring (anchor match +1000/500/100, type priority, verified +200, evidence capped +50), SelectWithinBudget
+  - `formatter.go`: `[repo-memory <id>]` tag format, entry/entries/gate formatters, SHA-256 content hash
+  - `engine.go`: 5 query methods (TaskStartEntries, DossierEntries, AnchorEntries, ErrorEntries, GateEntries) with retirement filter, anchor verification, budget enforcement
+- Harness-agnostic: no imports from `internal/harness/`
+- Build ✅, tests ✅ (5/5), vet ✅
+- Committed at `7bff5a4`, pushed.
+- WO2 (persistent-pushes) spawned next, `pro` model for `architect` complexity.
