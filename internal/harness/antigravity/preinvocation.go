@@ -111,57 +111,20 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	defer idx.Close()
 
 	engine := delivery.NewEngine(idx, workspaceRoot)
-	ledger := delivery.NewLedger(input.ConversationID)
+	
+	ledger, err := LoadLedger(dataDir, repoID, input.ConversationID)
+	if err != nil || ledger == nil {
+		ledger = delivery.NewLedger(input.ConversationID)
+	}
 
 	var injectSteps []InjectStep
-
-	// Task start moment
-	if input.InitialNumSteps <= 1 {
-		var promptTerms []string
-		for _, term := range strings.Fields(input.UserPrompt) {
-			if len(term) >= 3 {
-				promptTerms = append(promptTerms, term)
-			}
-		}
-
-		var diffPaths []string
-		cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "HEAD~1")
-		cmd.Dir = workspaceRoot
-		if out, err := cmd.Output(); err == nil {
-			lines := strings.Split(string(bytes.TrimSpace(out)), "\n")
-			for _, line := range lines {
-				if line != "" {
-					diffPaths = append(diffPaths, filepath.Join(workspaceRoot, line))
-				}
-			}
-		}
-
-		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
-		if err == nil && len(entries) > 0 {
-			formatted := delivery.FormatEntries(entries)
-			injectSteps = append(injectSteps, InjectStep{
-				SystemMessage: &SystemMessageEntry{
-					SystemMessage: formatted,
-					Metadata:      map[string]string{"moment": "task-start"},
-				},
-			})
-			for _, ent := range entries {
-				ledger.RecordInjection(delivery.InjectionRecord{
-					EntryID: ent.Entry.ID,
-					Channel: "systemMessage",
-					Moment:  delivery.MomentTaskStart,
-				})
-			}
-		}
-	}
 
 	// First-entry and first-touch moments
 	var touchedFiles []string
 	var steps []Step
 	if input.TranscriptPath != "" {
-		var err error
-		steps, err = ParseTranscript(filepath.Dir(input.TranscriptPath))
-		if err == nil {
+		steps, _ = ParseTranscript(filepath.Dir(input.TranscriptPath))
+		if len(steps) > 0 {
 			seenPaths := make(map[string]bool)
 			for _, step := range steps {
 				if len(step.ToolCalls) == 0 {
@@ -201,6 +164,71 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 		}
 	}
+	
+	// Compaction Detection
+	if len(ledger.Injections) > 0 && len(steps) > 0 {
+		res := DetectCompaction(steps, ledger)
+		if res.Detected {
+			var checkpointText string
+			checkpointFound := false
+			for _, step := range steps {
+				if step.IsCheckpoint {
+					checkpointFound = true
+				} else if checkpointFound {
+					if step.Type == "PLANNER_RESPONSE" || strings.Contains(step.Content, "[repo-memory") {
+						checkpointText += step.Content
+					}
+				}
+			}
+			
+			reinjStep, err := BuildReinjection(ctx, idx, res.LostInjections, checkpointText, 1000)
+			if err == nil && reinjStep != nil {
+				injectSteps = append(injectSteps, *reinjStep)
+				ledger.RearmDedup()
+			}
+		}
+	}
+
+	// Task start moment
+	if input.InitialNumSteps <= 1 {
+		var promptTerms []string
+		for _, term := range strings.Fields(input.UserPrompt) {
+			if len(term) >= 3 {
+				promptTerms = append(promptTerms, term)
+			}
+		}
+
+		var diffPaths []string
+		cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "HEAD~1")
+		cmd.Dir = workspaceRoot
+		if out, err := cmd.Output(); err == nil {
+			lines := strings.Split(string(bytes.TrimSpace(out)), "\n")
+			for _, line := range lines {
+				if line != "" {
+					diffPaths = append(diffPaths, filepath.Join(workspaceRoot, line))
+				}
+			}
+		}
+
+		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
+		if err == nil && len(entries) > 0 {
+			formatted := delivery.FormatEntries(entries)
+			injectSteps = append(injectSteps, InjectStep{
+				SystemMessage: &SystemMessageEntry{
+					SystemMessage: formatted,
+					Metadata:      map[string]string{"moment": "task-start"},
+				},
+			})
+			for _, ent := range entries {
+				ledger.RecordInjection(delivery.InjectionRecord{
+					EntryID:   ent.Entry.ID,
+					Channel:   "systemMessage",
+					Moment:    delivery.MomentTaskStart,
+					StepIndex: input.InitialNumSteps,
+				})
+			}
+		}
+	}
 
 	for _, path := range touchedFiles {
 		anchor := path
@@ -224,9 +252,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				})
 				for _, ent := range entries {
 					ledger.RecordInjection(delivery.InjectionRecord{
-						EntryID: ent.Entry.ID,
-						Channel: "systemMessage",
-						Moment:  delivery.MomentFirstTouch,
+						EntryID:   ent.Entry.ID,
+						Channel:   "systemMessage",
+						Moment:    delivery.MomentFirstTouch,
+						StepIndex: input.InitialNumSteps,
 					})
 				}
 			}
@@ -252,9 +281,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 					})
 					for _, ent := range entries {
 						ledger.RecordInjection(delivery.InjectionRecord{
-							EntryID: ent.Entry.ID,
-							Channel: "systemMessage",
-							Moment:  delivery.MomentFirstEntry,
+							EntryID:   ent.Entry.ID,
+							Channel:   "systemMessage",
+							Moment:    delivery.MomentFirstEntry,
+							StepIndex: input.InitialNumSteps,
 						})
 					}
 				}
@@ -290,14 +320,17 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 						EphemeralMessage: fmt.Sprintf("[repo-memory] Check injected entries above before editing %s", filename),
 					})
 					ledger.RecordInjection(delivery.InjectionRecord{
-						Channel: delivery.ChannelEphemeral,
-						Moment:  delivery.MomentAboutToEdit,
+						Channel:   delivery.ChannelEphemeral,
+						Moment:    delivery.MomentAboutToEdit,
+						StepIndex: input.InitialNumSteps,
 					})
 					break
 				}
 			}
 		}
 	}
+
+	SaveLedger(dataDir, repoID, ledger)
 
 	if len(injectSteps) == 0 {
 		return []byte("{}"), nil

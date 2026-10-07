@@ -152,19 +152,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Completed and verified.
 
 ### Changes Made
-- (pending)
+- Created `internal/harness/antigravity/ledger_store.go` for thread-safe session ledger persistence.
+- Created `internal/harness/antigravity/compaction.go` containing `DetectCompaction`, `DetectRewind`, and `BuildReinjection`.
+- Updated `internal/harness/antigravity/preinvocation.go` to inject step indices during records, load/save ledgers, and rebuild compacted history into a single consolidated step.
+- Added comprehensive unit and integration tests across `compaction_test.go`, `ledger_store_test.go`, and `preinvocation_test.go`.
 
 ### Decisions Made
-- (pending)
+- Used the exported `delivery.RankEntries` and `delivery.SelectWithinBudget` directly instead of a non-existent method on `delivery.Engine` for ranking entries.
+- Ignored GAP steps (StepIndex 0) when calculating next valid step index after a checkpoint during compaction detection to avoid mistakenly purging active injections.
 
 ### Dead Ends & Warnings
-- (pending)
+- Parsing of Checkpoints and Gap Steps via `transcript.go` caused index offsetting. Gap steps have StepIndex `0`, so they must be explicitly excluded from step index threshold calculations.
 
 ### Out-of-Scope Findings
-- (pending)
+- A pre-existing flaky test `TestSessionAttributor_Integration` was found in `attribution_test.go`. It has been left untouched since it is outside the WO boundary box.
 
 ### Blockers
-- (pending)
+- None.
