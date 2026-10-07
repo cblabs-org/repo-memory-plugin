@@ -2,7 +2,7 @@
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
 > **Specification:** [SPEC.md](../../../SPEC.md) v0.10 + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3
-> **Status:** Executing — v2 pivot at PR-05. **10/19 complete** (PR-01 through PR-06). X-gate **PASSED** (2026-10-06). PR-07-v2-storage next.
+> **Status:** Executing — v2 pivot at PR-05. **11/19 complete** (PR-01 through PR-07). X-gate **PASSED** (2026-10-06). PR-07 merged (2026-10-06). PR-08-v2-delivery next.
 > **Base branch:** `main`
 > **Revision:** v2.1 (2026-10-04). Supersedes the v1 plan for PRs 05a onward. v2.1 applies the plan review (session 15).
 
@@ -88,7 +88,7 @@ Read side first: the early kill gate (X6-lite) tests whether delivered dossiers 
 | 9 | `pr-05-v2-foundation` | Close PR-05b onto `main`; fix capture→episode, re-enable hooks safely, cost telemetry, artifact capture, probe-log cleanup, non-enrolled fast path | ☐ Planned | `main` + PR-05b branch |
 | 10 | `pr-06-v2-spike` | Prototype-validate platform mechanics: X1, X3, X5, X8, X9 (prototype on a spike branch, not merged) | ✅ **Complete** (PR #6, merged) | PR-05-v2-foundation |
 | 10b | `pr-06b-v2-plugin-split` | Daemon + workspace bundle architecture | ✅ **Complete** (PR #5, merged) | PR-06-v2-spike |
-| 11 | `pr-07-v2-storage` | Op log, dossiers, atlas, scopes, index migration, v1 removal, dossier seeding (PA reports + time-cut lean-agent pass) | ☐ Planned | PR-06-v2-spike (X-gate) |
+| 11 | `pr-07-v2-storage` | Op log, dossiers, atlas, scopes, index migration, v1 removal, dossier seeding (PA reports + time-cut lean-agent pass) | ✅ **Complete** (PR #9, merged) | PR-06-v2-spike (X-gate) |
 | 12 | `pr-08-v2-delivery` | Channels, moments, injection ledger, compaction re-injection, pull tools, latency budgets | ☐ Planned | PR-07-v2-storage |
 | 13 | `pr-09-v2-x6-lite` | **Early kill gate:** pre-registered B1 replay with time-cut seeded dossiers | ☐ Planned | PR-08-v2-delivery |
 | 14 | `pr-10-v2-distillation` | Turn notes, marks, exposure lists, subagent registry, preparation layer, fallback; X2 on real work orders | ☐ Planned | PR-09-v2-x6-lite (gate) |
@@ -185,3 +185,18 @@ The v2 plan was reviewed before kick-off against the code, git topology, the liv
 - **v1 events store** retired explicitly in favour of `.memory/ops/` (PD26).
 - **Pruning observed:** brain folders 709 → 509 and conversation DBs 703 → 508 overnight; oldest transcript 31 Aug → 15 Sep (~500 kept, ~19 days). PD17 (esp32 capture-only enrolment, X6 snapshot) awaits the user.
 
+### 2026-10-06 — PR-07-v2-storage complete (sessions 16–17)
+
+**Summary:** The v2 storage layer is fully built. 6 WOs delivered 8,425 lines of new code across `ops/`, `dossiers/`, `config/scopes.go`, `index/` (v2 tables), `seed/`, and the `seed` CLI subcommand. Removed ~3,943 lines of v1 pipeline stages, claims, events, and views.
+
+**Cross-PR decisions:**
+- Content-addressed seeding IDs (`seed-<hash>`) enable idempotent re-seeding — important for PR-09 X6-lite where time-cut dossiers are rebuilt per work order.
+- Time-cut is built into both the op iterator (`IterateBefore`) and the dossier projector (`ProjectBefore`), ready for PR-09's `--before <commit>` protocol.
+- The exposure list slot is reserved in the ledger (PR-08 wo1) from the start, so the echo filter (PR-11) has data from day one.
+
+**Architecture evolution:**
+- The codebase has shifted from a v1 four-stage pipeline to a v2 event-sourced model. The op log is the single source of truth. Dossiers are rendered views, not stored state.
+- The index is now a projection: rebuilt from the op log in a single transaction, not incrementally updated by pipeline stages.
+- Scope resolution is a three-source combiner (config, file-anchor derivation, alias tracking), not a static mapping.
+
+**Unresolved items escalated from PA:** CI checks had a macOS test failure on the merged PR #9 (pre-existing `TestFastPath_NonEnrolledLatency` doubled output buffer issue — documented in bridge prompt). Not caused by PR-07 changes.
