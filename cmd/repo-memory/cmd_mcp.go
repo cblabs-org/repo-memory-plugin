@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,15 +43,14 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 				repoID = filepath.Base(strings.TrimSpace(string(out)))
 			}
 		}
-		if repoID == "" {
-			return fmt.Errorf("could not determine repo ID; run from a git repository or enrol first")
-		}
-
-		enrolled := config.IsEnrolledFast(workspaceRoot)
 
 		var srv *mcpserver.Server
-		if enrolled {
-			// Only create the index directory and DB for enrolled repos.
+		if repoID == "" || !config.IsEnrolledFast(workspaceRoot) {
+			// Non-git workspace or unenrolled repo: serve tools but each
+			// returns "repo not enrolled", without creating any files.
+			srv = mcpserver.NewServer(nil)
+		} else {
+			// Enrolled repo: create index and serve normally.
 			idxDir := filepath.Join(dataDir, repoID)
 			if err := os.MkdirAll(idxDir, 0755); err != nil {
 				return fmt.Errorf("creating index directory: %w", err)
@@ -66,68 +67,70 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 			srv = mcpserver.NewServer(idx,
 				mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
 			)
-		} else {
-			// Unenrolled: serve the tools but each returns "repo not enrolled".
-			srv = mcpserver.NewServer(nil)
 		}
 		// Note: pull exposure tracking requires a per-conversation ledger.
 		// The MCP server does not have a conversation ID at startup, so
 		// pull exposures are not persisted until the harness passes one.
 		// TODO: Accept conversation ID from client metadata in initialize.
 
-		in := cmd.InOrStdin()
-		scanner := bufio.NewScanner(in)
-		scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+		return serveMCP(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), srv)
+	},
+}
 
-		for scanner.Scan() {
-			line := scanner.Bytes()
-			if len(line) == 0 {
-				continue
-			}
+// serveMCP runs the MCP stdio loop, reading JSON-RPC requests from in and
+// writing responses to out. Extracted from RunE for testability.
+func serveMCP(ctx context.Context, in io.Reader, out io.Writer, srv *mcpserver.Server) error {
+	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
-			var req jsonRPCRequest
-			if err := json.Unmarshal(line, &req); err != nil {
-				writeError(cmd, nil, -32700, "Parse error")
-				continue
-			}
-
-			// Notifications have no id — do not respond (JSON-RPC 2.0 §4.1).
-			if req.ID == nil {
-				continue
-			}
-
-			switch req.Method {
-			case "initialize":
-				writeResult(cmd, req.ID, initializeResult(req.Params))
-
-			case "ping":
-				writeResult(cmd, req.ID, map[string]any{})
-
-			case "tools/list":
-				writeResult(cmd, req.ID, toolsListResult())
-
-			case "tools/call":
-				var call toolsCallParams
-				if err := json.Unmarshal(req.Params, &call); err != nil {
-					writeError(cmd, req.ID, -32602, "Invalid params: "+err.Error())
-					continue
-				}
-				result, err := srv.DispatchTool(cmd.Context(), call.Name, call.Arguments)
-				if err != nil {
-					// MCP: tool execution errors are normal results with isError: true,
-					// not JSON-RPC errors (which are for protocol problems).
-					writeResult(cmd, req.ID, mcpToolError(err.Error()))
-					continue
-				}
-				writeResult(cmd, req.ID, mcpToolResult(result))
-
-			default:
-				writeError(cmd, req.ID, -32601, "Method not found: "+req.Method)
-			}
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
 		}
 
-		return scanner.Err()
-	},
+		var req jsonRPCRequest
+		if err := json.Unmarshal(line, &req); err != nil {
+			writeJSONRPC(out, nil, -32700, "Parse error", nil)
+			continue
+		}
+
+		// Notifications have no id — do not respond (JSON-RPC 2.0 §4.1).
+		if req.ID == nil {
+			continue
+		}
+
+		switch req.Method {
+		case "initialize":
+			writeResult2(out, req.ID, initializeResult(req.Params))
+
+		case "ping":
+			writeResult2(out, req.ID, map[string]any{})
+
+		case "tools/list":
+			writeResult2(out, req.ID, toolsListResult())
+
+		case "tools/call":
+			var call toolsCallParams
+			if err := json.Unmarshal(req.Params, &call); err != nil {
+				writeJSONRPC(out, req.ID, -32602, "Invalid params: "+err.Error(), nil)
+				continue
+			}
+			result, err := srv.DispatchTool(ctx, call.Name, call.Arguments)
+			if err != nil {
+				// MCP: tool execution errors are normal results with isError: true,
+				// not JSON-RPC errors (which are for protocol problems).
+				writeResult2(out, req.ID, mcpToolError(err.Error()))
+				continue
+			}
+			writeResult2(out, req.ID, mcpToolResult(result))
+
+		default:
+			writeJSONRPC(out, req.ID, -32601, "Method not found: "+req.Method, nil)
+		}
+	}
+
+	return scanner.Err()
 }
 
 // --- JSON-RPC types ---
@@ -207,7 +210,6 @@ func mcpToolError(message string) map[string]any {
 }
 
 func extractResultText(result any) string {
-	// All handlers return structs with a Result field.
 	b, _ := json.Marshal(result)
 	var generic map[string]string
 	if json.Unmarshal(b, &generic) == nil {
@@ -220,17 +222,19 @@ func extractResultText(result any) string {
 
 // --- JSON-RPC helpers ---
 
-func writeResult(cmd *cobra.Command, id json.RawMessage, result any) {
+// writeResult2 writes a JSON-RPC success response to a writer.
+func writeResult2(out io.Writer, id json.RawMessage, result any) {
 	resp := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
 		"result":  result,
 	}
-	out, _ := json.Marshal(resp)
-	fmt.Fprintln(cmd.OutOrStdout(), string(out))
+	b, _ := json.Marshal(resp)
+	fmt.Fprintln(out, string(b))
 }
 
-func writeError(cmd *cobra.Command, id json.RawMessage, code int, message string) {
+// writeJSONRPC writes a JSON-RPC error response to a writer.
+func writeJSONRPC(out io.Writer, id json.RawMessage, code int, message string, _ any) {
 	resp := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      json.RawMessage(id),
@@ -239,6 +243,18 @@ func writeError(cmd *cobra.Command, id json.RawMessage, code int, message string
 			"message": message,
 		},
 	}
-	out, _ := json.Marshal(resp)
-	fmt.Fprintln(cmd.OutOrStdout(), string(out))
+	b, _ := json.Marshal(resp)
+	fmt.Fprintln(out, string(b))
+}
+
+// writeResult writes a JSON-RPC success response to a cobra command's stdout.
+// Kept for backward compatibility with existing callers.
+func writeResult(cmd *cobra.Command, id json.RawMessage, result any) {
+	writeResult2(cmd.OutOrStdout(), id, result)
+}
+
+// writeError writes a JSON-RPC error response to a cobra command's stdout.
+// Kept for backward compatibility with existing callers.
+func writeError(cmd *cobra.Command, id json.RawMessage, code int, message string) {
+	writeJSONRPC(cmd.OutOrStdout(), id, code, message, nil)
 }
