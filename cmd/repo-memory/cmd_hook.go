@@ -85,6 +85,7 @@ var hookCmd = &cobra.Command{
 			if !config.IsEnrolledFast(targetDir) {
 				if isPreToolUse {
 					fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow"}`)
+					return nil
 				} else if !strings.EqualFold(eventName, "PreInvocation") {
 					fmt.Fprintln(cmd.OutOrStdout(), `{}`)
 					return nil
@@ -183,6 +184,21 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 		out, err := antigravity.HandlePostToolUse(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
 		if err != nil {
 			fmt.Fprintln(cmd.OutOrStdout(), "{}")
+			return nil
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
+	if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && (strings.EqualFold(eventName, "PreToolUse") || isPreToolUse) {
+		payload := preReadPayload
+		if len(payload) == 0 {
+			payload, _ = io.ReadAll(cmd.InOrStdin())
+		}
+		out, err := antigravity.HandlePreToolUse(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
+		if err != nil {
+			// FAIL-OPEN: error → allow
+			fmt.Fprintln(cmd.OutOrStdout(), `{"decision":"allow","reason":"fail-open: error"}`)
 			return nil
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), string(out))

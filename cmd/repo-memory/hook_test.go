@@ -248,3 +248,35 @@ func TestHookCmd_PostToolUse(t *testing.T) {
 		t.Errorf("expected {}, got %q", stdout.String())
 	}
 }
+
+func TestHookCmd_PreToolUse(t *testing.T) {
+	origWorkspace := hookWorkspaceFlag
+	defer func() { hookWorkspaceFlag = origWorkspace }()
+	hookWorkspaceFlag = ""
+
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	repoDir := t.TempDir()
+	_ = config.CreateEnrolledMarker(repoDir)
+
+	// Default allow
+	payload := `{"conversationId":"conv-cli-pretool","toolName":"view_file","workspacePaths":["` + repoDir + `"]}`
+
+	var stdin bytes.Buffer
+	var stdout bytes.Buffer
+	stdin.WriteString(payload)
+
+	hookCmd.SetIn(&stdin)
+	hookCmd.SetOut(&stdout)
+
+	err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreToolUse"})
+	if err != nil {
+		t.Fatalf("hookCmd.RunE failed: %v", err)
+	}
+
+	if strings.TrimSpace(stdout.String()) != `{"decision":"allow"}` {
+		t.Errorf("expected %q, got %q", `{"decision":"allow"}`, stdout.String())
+	}
+}
+
