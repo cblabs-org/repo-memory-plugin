@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
+
+var editIntentPattern = regexp.MustCompile(`(?i)\b(?:edit|modify|change|update|write\s+to|replace)\s+(?:the\s+file\s+|file\s+)?[` + "`" + `"'` + `]?([a-zA-Z0-9_\-./\\]+)`)
 
 type PreInvocationPayload struct {
 	ConversationID      string   `json:"conversationId"`
@@ -55,11 +59,20 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		return []byte("{}"), nil
 	}
 
-	workspaceRoot := ""
-	if len(input.WorkspacePaths) > 0 {
-		workspaceRoot = input.WorkspacePaths[0]
-	} else {
-		workspaceRoot, _ = os.Getwd()
+	var hookOpts HookOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&hookOpts)
+		}
+	}
+
+	workspaceRoot := hookOpts.WorkspaceOverride
+	if workspaceRoot == "" {
+		if len(input.WorkspacePaths) > 0 {
+			workspaceRoot = input.WorkspacePaths[0]
+		} else {
+			workspaceRoot, _ = os.Getwd()
+		}
 	}
 	if workspaceRoot == "" {
 		return []byte("{}"), nil
@@ -69,8 +82,13 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		return []byte("{}"), nil
 	}
 
+	dataDir := hookOpts.DataDir
+	if dataDir == "" {
+		dataDir = config.DataDir()
+	}
+
 	repoID := ""
-	if entry, found, _ := config.FindRegistryEntry(config.DataDir(), workspaceRoot); found && entry != nil {
+	if entry, found, _ := config.FindRegistryEntry(dataDir, workspaceRoot); found && entry != nil {
 		repoID = entry.RepoID
 	}
 	if repoID == "" {
@@ -85,7 +103,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		return []byte("{}"), nil
 	}
 
-	idxPath := filepath.Join(config.DataDir(), repoID, "index.db")
+	idxPath := filepath.Join(dataDir, repoID, "index.db")
 	idx, err := index.NewIndex(idxPath)
 	if err != nil {
 		return []byte("{}"), nil
@@ -139,8 +157,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 	// First-entry and first-touch moments
 	var touchedFiles []string
+	var steps []Step
 	if input.TranscriptPath != "" {
-		steps, err := ParseTranscript(filepath.Dir(input.TranscriptPath))
+		var err error
+		steps, err = ParseTranscript(filepath.Dir(input.TranscriptPath))
 		if err == nil {
 			seenPaths := make(map[string]bool)
 			for _, step := range steps {
@@ -183,15 +203,23 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	}
 
 	for _, path := range touchedFiles {
+		anchor := path
+		if rel, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(rel, "..") {
+			anchor = rel
+		}
+
 		// Unique anchor
-		if !ledger.HasSeenAnchor(path) {
-			entries, err := engine.AnchorEntries(ctx, path)
+		if !ledger.HasSeenAnchor(anchor) && !ledger.HasSeenAnchor(path) {
+			entries, err := engine.AnchorEntries(ctx, anchor)
+			if (err != nil || len(entries) == 0) && anchor != path {
+				entries, err = engine.AnchorEntries(ctx, path)
+			}
 			if err == nil && len(entries) > 0 {
 				formatted := delivery.FormatEntries(entries)
 				injectSteps = append(injectSteps, InjectStep{
 					SystemMessage: &SystemMessageEntry{
 						SystemMessage: formatted,
-						Metadata:      map[string]string{"moment": "first-touch", "anchor": path},
+						Metadata:      map[string]string{"moment": "first-touch", "anchor": anchor},
 					},
 				})
 				for _, ent := range entries {
@@ -202,6 +230,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 					})
 				}
 			}
+			ledger.MarkAnchorSeen(anchor)
 			ledger.MarkAnchorSeen(path)
 		}
 	}
@@ -234,6 +263,42 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
+	// About-to-edit moment
+	if len(steps) > 0 {
+		var latestPlanner *Step
+		for i := len(steps) - 1; i >= 0; i-- {
+			if strings.EqualFold(steps[i].Type, "PLANNER_RESPONSE") {
+				latestPlanner = &steps[i]
+				break
+			}
+		}
+
+		if latestPlanner != nil {
+			text := latestPlanner.Thinking + "\n" + latestPlanner.Content
+			matches := editIntentPattern.FindAllStringSubmatch(text, -1)
+			seenTarget := make(map[string]bool)
+			for _, m := range matches {
+				target := strings.Trim(m[1], "`'\" \t\r\n.,;:()")
+				if target == "" || seenTarget[target] {
+					continue
+				}
+				seenTarget[target] = true
+
+				if hasEntriesInContext(ctx, idx, ledger, workspaceRoot, target) {
+					filename := filepath.Base(target)
+					injectSteps = append(injectSteps, InjectStep{
+						EphemeralMessage: fmt.Sprintf("[repo-memory] Check injected entries above before editing %s", filename),
+					})
+					ledger.RecordInjection(delivery.InjectionRecord{
+						Channel: delivery.ChannelEphemeral,
+						Moment:  delivery.MomentAboutToEdit,
+					})
+					break
+				}
+			}
+		}
+	}
+
 	if len(injectSteps) == 0 {
 		return []byte("{}"), nil
 	}
@@ -246,4 +311,49 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		return []byte("{}"), nil
 	}
 	return out, nil
+}
+
+func matchAnchor(anchor, target, workspaceRoot string) bool {
+	cleanA := filepath.Clean(anchor)
+	cleanT := filepath.Clean(target)
+	if cleanA == cleanT {
+		return true
+	}
+	if filepath.Join(workspaceRoot, cleanA) == filepath.Join(workspaceRoot, cleanT) {
+		return true
+	}
+	if strings.HasSuffix(cleanA, "/"+cleanT) || strings.HasSuffix(cleanT, "/"+cleanA) {
+		return true
+	}
+	if !strings.Contains(cleanT, string(filepath.Separator)) && filepath.Base(cleanA) == cleanT {
+		return true
+	}
+	if !strings.Contains(cleanA, string(filepath.Separator)) && filepath.Base(cleanT) == cleanA {
+		return true
+	}
+	return false
+}
+
+func hasEntriesInContext(ctx context.Context, idx *index.Index, ledger *delivery.Ledger, workspaceRoot, targetFile string) bool {
+	for _, inj := range ledger.Injections {
+		ent, err := idx.GetEntry(ctx, inj.EntryID)
+		if err == nil && ent != nil {
+			for _, a := range ent.Anchors {
+				if matchAnchor(a, targetFile, workspaceRoot) {
+					return true
+				}
+			}
+		}
+	}
+
+	for seenAnchor := range ledger.SeenAnchors {
+		if matchAnchor(seenAnchor, targetFile, workspaceRoot) {
+			ids, err := idx.LookupByAnchor(ctx, seenAnchor)
+			if err == nil && len(ids) > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }

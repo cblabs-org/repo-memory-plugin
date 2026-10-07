@@ -174,6 +174,21 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 		return nil
 	}
 
+	if (strings.EqualFold(harnessName, "antigravity") || harnessName == "") && strings.EqualFold(eventName, "PostToolUse") {
+		// Read payload if not already read
+		payload := preReadPayload
+		if len(payload) == 0 {
+			payload, _ = io.ReadAll(cmd.InOrStdin())
+		}
+		out, err := antigravity.HandlePostToolUse(cmd.Context(), payload, antigravity.WithWorkspace(hookWorkspaceFlag))
+		if err != nil {
+			fmt.Fprintln(cmd.OutOrStdout(), "{}")
+			return nil
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		return nil
+	}
+
 	valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
 	if err != nil || !valid {
 		// Sub-5ms fast-path: immediately return harness no-op output
