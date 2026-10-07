@@ -184,19 +184,34 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Complete. Implementation validated and approved.
 
 ### Changes Made
-- (pending)
+- Created `internal/harness/antigravity/pretooluse.go`:
+  - Implemented `HandlePreToolUse` with fail-closed safety (always returns `{"decision":"allow"}` or structured `force_ask` gating responses; never empty `{}`).
+  - Added `PreToolUsePayload` struct with `Normalize()` supporting camelCase and snake_case payload formats.
+  - Added `PreToolUseResponse` (`decision`, `reason`).
+  - Fast exits for `REPO_MEMORY_DISABLED=1`, `REPO_MEMORY_HOUSEKEEPING=1`, non-edit tools (`replace_file_content`, `write_to_file`), unenrolled workspace, invalid JSON, or missing target file.
+  - Robust target file extraction and path normalization (`relPath` and `targetClean`).
+  - Gate verification queries `delivery.Engine.GateEntries(ctx, target, ledger)`. When gated entries are found, returns `{"decision":"force_ask", "reason":"[REPO-MEMORY <ID>] <Text>..."}` per the work order specification.
+- Modified `cmd/repo-memory/cmd_hook.go`:
+  - Wired `antigravity.HandlePreToolUse` dispatch for `PreToolUse` events before the fast-path validation stub.
+  - Wrapped with fail-open recovery returning `{"decision":"allow","reason":"fail-open: error"}`.
+  - Fixed early return on non-enrolled `isPreToolUse` fast-path to prevent duplicate output (`{"decision":"allow"}\n{"decision":"allow"}`).
+- Created `internal/harness/antigravity/pretooluse_test.go`:
+  - Added comprehensive test suite: `TestPreToolUse_AllowByDefault`, `TestPreToolUse_FastExits`, `TestPreToolUse_Normalization`, `TestPreToolUse_EditWithNoGate`, `TestPreToolUse_EditWithGate`.
+- Modified `cmd/repo-memory/hook_test.go`:
+  - Added `TestHookCmd_PreToolUse` CLI integration test.
 
 ### Decisions Made
-- (pending)
+- Used `"decision": "force_ask"` for gated entries as instructed in WO4 Line 130 to prompt user confirmation rather than repeated hard blocks before ledger persistence is added in WO5.
+- Fixed early `return nil` in `cmd/repo-memory/cmd_hook.go` line 88 on non-enrolled `PreToolUse` fast path, fixing `TestFastPath_NonEnrolledLatency` and `TestProbe_Disabled_FastPath`.
 
 ### Dead Ends & Warnings
-- (pending)
+- None encountered in PreToolUse handler.
 
 ### Out-of-Scope Findings
-- (pending)
+- `internal/harness/antigravity/attribution_test.go:483` (`TestSessionAttributor_Integration` from PR-02b WO5) checks `fi.ModTime()` of newly created test transcript files against a hardcoded frozen past timestamp `2026-10-02`, which fails when tests run with current system clock. Should be updated with `os.Chtimes` or dynamic relative time.
 
 ### Blockers
-- (pending)
+None.
