@@ -3,6 +3,7 @@ package antigravity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,5 +176,133 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	// Check tag
 	if !strings.Contains(sysMsg, "[repo-memory test-1]") {
 		t.Errorf("systemMessage missing tag, got: %s", sysMsg)
+	}
+}
+
+func TestPreInvocation_AboutToEdit(t *testing.T) {
+	ctx := context.Background()
+	workspace, idxPath := setupEnrolledWorkspace(t)
+
+	// Create real file in workspace
+	filePath := filepath.Join(workspace, "file.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed index with entry anchored to file.go
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := dossiers.Entry{
+		ID:           "edit-entry-1",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core",
+		Text:         "Must preserve file.go invariants",
+		Anchors:      []string{"file.go"},
+	}
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.UpsertEntryAnchors(ctx, entry.ID, entry.Anchors); err != nil {
+		t.Fatal(err)
+	}
+	idx.Close()
+
+	// Create transcript with prior tool touch and latest thinking mentioning "edit file.go"
+	transcriptDir := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+
+	step0 := map[string]any{"step_index": 0, "type": "USER_INPUT", "content": "Please inspect file.go"}
+	step1 := map[string]any{
+		"step_index": 1,
+		"type":       "PLANNER_RESPONSE",
+		"tool_calls": []map[string]any{
+			{
+				"function": map[string]any{
+					"name":      "view_file",
+					"arguments": fmt.Sprintf(`{"AbsolutePath": %q}`, filePath),
+				},
+			},
+		},
+	}
+	step2 := map[string]any{"step_index": 2, "type": "TOOL_RESPONSE", "content": "package main"}
+	step3 := map[string]any{
+		"step_index": 3,
+		"type":       "PLANNER_RESPONSE",
+		"thinking":   "Now I will edit file.go to implement changes.",
+		"content":    "Starting edit.",
+	}
+
+	b0, _ := json.Marshal(step0)
+	b1, _ := json.Marshal(step1)
+	b2, _ := json.Marshal(step2)
+	b3, _ := json.Marshal(step3)
+
+	content := strings.Join([]string{string(b0), string(b1), string(b2), string(b3)}, "\n") + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := `{
+		"conversationId": "conv-about-to-edit",
+		"invocationNum": 0,
+		"initialNumSteps": 4,
+		"transcriptPath": "` + transcriptPath + `",
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	out, err := HandlePreInvocation(ctx, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var resp InjectStepsResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(out))
+	}
+
+	var ephemeralMsg string
+	var hasSystemMsg bool
+	for _, step := range resp.InjectSteps {
+		if step.EphemeralMessage != "" {
+			ephemeralMsg = step.EphemeralMessage
+		}
+		if step.SystemMessage != nil {
+			hasSystemMsg = true
+		}
+	}
+
+	if !hasSystemMsg {
+		t.Errorf("expected first-touch systemMessage to be present")
+	}
+
+	wantEphemeral := "[repo-memory] Check injected entries above before editing file.go"
+	if ephemeralMsg != wantEphemeral {
+		t.Errorf("got ephemeralMessage %q, want %q", ephemeralMsg, wantEphemeral)
+	}
+
+	// Negative case: thinking mentions a file with no entries in context
+	linesNoEntries := []string{
+		`{"step_index": 0, "type": "PLANNER_RESPONSE", "thinking": "Now I will edit other.go to implement changes.", "content": "Starting edit."}`,
+	}
+	if err := os.WriteFile(transcriptPath, []byte(strings.Join(linesNoEntries, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	outNoEntries, err := HandlePreInvocation(ctx, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var respNoEntries InjectStepsResponse
+	_ = json.Unmarshal(outNoEntries, &respNoEntries)
+	for _, step := range respNoEntries.InjectSteps {
+		if step.EphemeralMessage != "" {
+			t.Errorf("expected no ephemeralMessage for unseeded file, got %q", step.EphemeralMessage)
+		}
 	}
 }
