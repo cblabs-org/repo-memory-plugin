@@ -38,8 +38,8 @@ This is the last implementation PR before the early kill gate (PR-09 X6-lite).
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
 | 1 | [wo1-ledger-engine](wo1-ledger-engine/WORKORDER.md) | Ledger (entry IDs, channel, step, content hash, tags), ranking engine (anchor match → relevance → verified → evidence), budget enforcement, exposure list | architect | ✅ Complete |
-| 2 | [wo2-persistent-pushes](wo2-persistent-pushes/WORKORDER.md) | `PreInvocation` as `systemMessage`. Task start (≤500 tokens), first entry into dossier (≤150), first touch of anchor (≤150). Branch diff precomputed. | architect | 🔄 Active |
-| 3 | wo3-ephemeral-and-errors | About-to-edit pointer (≤50 tokens). Error matching on `PostToolUse` → `ephemeralMessage` (≤200 tokens). | standard | ☐ Planned |
+| 2 | [wo2-persistent-pushes](wo2-persistent-pushes/WORKORDER.md) | `PreInvocation` as `systemMessage`. Task start (≤500 tokens), first entry into dossier (≤150), first touch of anchor (≤150). Branch diff precomputed. | architect | ✅ Complete |
+| 3 | [wo3-ephemeral-and-errors](wo3-ephemeral-and-errors/WORKORDER.md) | About-to-edit pointer (≤50 tokens). Error matching on `PostToolUse` → `ephemeralMessage` (≤200 tokens). | standard | 🔄 Active |
 | 4 | wo4-gates | `PreToolUse` deny-once for `gate: edit` entries. `force_ask` for invariants. X9 contract. | standard | ☐ Planned |
 | 5 | wo5-compaction-reinjection | Detect compaction/rewind from transcript. Re-inject consolidated `systemMessage` (≤1k). Re-arm dedup. **X11 experiment.** | architect | ☐ Planned |
 | 6 | wo6-pull-tools | MCP tools: `memory.brief`, `memory.why`, `memory.history`, `memory.search`, `memory.note`, `memory.stats`. Pulls recorded in exposure list. | standard | ☐ Planned |
