@@ -342,7 +342,7 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 	hookWorkspaceFlag = repoDir
 	var out bytes.Buffer
 	hookCmd.SetOut(&out)
-	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"}); err != nil {
+	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PostInvocation"}); err != nil {
 		t.Fatalf("hookCmd failed: %v", err)
 	}
 	if strings.TrimSpace(out.String()) != "{}" {
@@ -356,17 +356,17 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 
 	// Now enrolled and enabled: hook should pass fast-path and proceed to stub
 	out.Reset()
-	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"}); err != nil {
+	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PostInvocation"}); err != nil {
 		t.Fatalf("hookCmd failed: %v", err)
 	}
-	if strings.TrimSpace(out.String()) == "{}" || !strings.Contains(out.String(), "PreInvocation") {
+	if strings.TrimSpace(out.String()) == "{}" || !strings.Contains(out.String(), "PostInvocation") {
 		t.Errorf("expected hook to proceed to stub when enrolled, got %q", out.String())
 	}
 
 	// 3. REPO_MEMORY_DISABLED=1: hook must return {}
 	t.Setenv("REPO_MEMORY_DISABLED", "1")
 	out.Reset()
-	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"}); err != nil {
+	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PostInvocation"}); err != nil {
 		t.Fatalf("hookCmd failed: %v", err)
 	}
 	if strings.TrimSpace(out.String()) != "{}" {
@@ -379,7 +379,7 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"}); err != nil {
+	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PostInvocation"}); err != nil {
 		t.Fatalf("hookCmd failed: %v", err)
 	}
 	if strings.TrimSpace(out.String()) != "{}" {
@@ -392,7 +392,7 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PreInvocation"}); err != nil {
+	if err := hookCmd.RunE(hookCmd, []string{"antigravity", "PostInvocation"}); err != nil {
 		t.Fatalf("hookCmd failed: %v", err)
 	}
 	if strings.TrimSpace(out.String()) != "{}" {
