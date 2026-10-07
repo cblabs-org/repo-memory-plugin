@@ -199,3 +199,29 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ### Blockers
 - (pending)
+
+### Status
+Complete
+
+### Changes Made
+- Created `internal/harness/antigravity/preinvocation.go` with `HandlePreInvocation` and parsing of `PreInvocationPayload`
+- Implemented payload normalization for `conversation_id`, `transcript_path`, `workspace_paths`
+- Handled task start moment (pulling `git diff` and search index based on prompt terms)
+- Handled first-touch file and scope moments by reading transcript steps and checking `ToolCalls`
+- Modified `cmd/repo-memory/cmd_hook.go` to invoke `HandlePreInvocation`
+- Gutted `V2SpikePreInvocation` in `v2_spike_channels.go` leaving type definitions
+- Created tests covering fast exits, payload normalization, and task start in `preinvocation_test.go`
+- Fixed `cmd/repo-memory/enrolment_test.go` to test `PostInvocation` instead of `PreInvocation` as the new behavior handles the fast path without stubbing.
+
+### Decisions Made
+- Extracted unique touched workspace paths by unmarshaling `step.ToolCalls` and filtering paths inside the workspace.
+- Used `config.DeriveModuleScopes` to determine scopes of touched files.
+
+### Dead Ends & Warnings
+- N/A
+
+### Out-of-Scope Findings
+- Tests `TestFastPath_NonEnrolledLatency`, `TestProbe_Disabled_FastPath`, and `TestSessionAttributor_Integration` fail out-of-the-box (pre-existing issue where PreToolUse fastpath outputs multiple lines). Surfaced for the Principal Architect.
+
+### Blockers
+- None
