@@ -131,19 +131,28 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ## Completion Report (written by the worker at task completion)
 
 ### Status
-(pending)
+Complete. All 5 MCP server tools (`memory.brief`, `memory.why`, `memory.history`, `memory.search`, `memory.note`) implemented, integrated with ledger pull tracking, and verified with 88.5% statement test coverage.
 
 ### Changes Made
-- (pending)
+- `internal/mcpserver/server.go`: Added `ledger *delivery.Ledger` and `opsWriter *ops.Writer` fields to `Server`, configured functional options (`WithLedger`, `WithOpsWriter`, `WithOpsDir`) and setters (`SetLedger`, `SetOpsWriter`), defined `SupportedTools`, and marked `HandleMemoryAsk` as deprecated.
+- `internal/mcpserver/tools.go`: Implemented typed request/response structs and handlers:
+  - `HandleMemoryBrief`: Active entry listing by scope, alias resolution via `idx.ResolveAlias`, 200-rune truncation, and ledger exposure tracking.
+  - `HandleMemoryWhy`: Complete entry details including type, scope, text, anchors, evidence/source, verification status, timestamps, and history records; records pull to ledger.
+  - `HandleMemoryHistory`: Fetches retired/superseded entries across `entries` and `entry_history` with alias resolution; formats type, text, retired reason, and superseded-by; records pulls to ledger.
+  - `HandleMemorySearch`: FTS5 BM25 search via `idx.SearchEntries`, caps results to top 10, formats ranked list with 100-char snippet, and records pulls to ledger.
+  - `HandleMemoryNote`: Validates required fields and `dossiers.EntryType` (defaults to "decision"), constructs `ops.OpAdd` with `source: "agent"`, writes batch to ops log via `ops.Writer`, and updates the in-memory index for immediate availability.
+- `internal/mcpserver/tools_test.go`: Added test suite covering all 5 tools, alias resolution, text truncation, ledger pull exposure recording, server options/setters, and error validation edge cases.
 
 ### Decisions Made
-- (pending)
+- In `HandleMemoryHistory`, combined queries from `ListEntriesByScope` (for entries marked retired/superseded), `GetHistory` for each entry ID, and direct query of `entry_history` via `WriteTx` with deduplication to ensure retired entries are reliably discovered regardless of whether the index was populated via ops replay or direct insertion.
+- In `HandleMemoryWhy`, supported both `entry.Evidence` slice and `entry.Source` fallback to guarantee evidence provenance is printed.
+- In `HandleMemoryNote`, wrote the op batch to disk via `ops.Writer` and additionally upserted the entry into `idx` (when present) so subsequent queries in the same process can immediately access newly captured notes.
 
 ### Dead Ends & Warnings
-- (pending)
+- SQLite `entries` table schema does not store a `retired` column (retired entries reside in `entry_history`). Therefore, in `HandleMemoryBrief`, entries retrieved from `ListEntriesByScope` are cross-checked against `GetHistory(ctx, e.ID)` to ensure retired entries are filtered out.
 
 ### Out-of-Scope Findings
-- (pending)
+- `internal/harness/antigravity/attribution_test.go` (`TestSessionAttributor_Integration`) failed due to an idle time assumption (`expected c1 to be idle (modified 1h ago)`). This is an existing timing test failure outside the `internal/mcpserver` boundary box.
 
 ### Blockers
-- (pending)
+None.
