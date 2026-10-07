@@ -62,6 +62,15 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
+	// Fast exit: only edit tools (gate ack) and error results need post-processing.
+	// Everything else (view_file, grep_search, list_dir, etc.) returns immediately
+	// to avoid paying the repo lookup + enrollment check cost on every tool call.
+	isError := strings.EqualFold(input.ToolResult.Status, "error")
+	isEdit := isEditTool(input.ToolName)
+	if !isError && !isEdit {
+		return []byte("{}"), nil
+	}
+
 	var hookOpts HookOptions
 	for _, opt := range opts {
 		if opt != nil {
@@ -107,8 +116,8 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 	}
 
 	// On successful edit tool completion, acknowledge any pending gates.
-	isSuccess := strings.EqualFold(input.ToolResult.Status, "success") || input.ToolResult.Status == ""
-	if isSuccess && isEditTool(input.ToolName) {
+	// Require explicit "success" status — empty/cancelled/rejected should not approve.
+	if strings.EqualFold(input.ToolResult.Status, "success") && isEdit {
 		targetFile := extractTargetFile(input.ToolCall.Args)
 		if targetFile != "" {
 			targetClean := filepath.Clean(targetFile)
@@ -131,7 +140,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 	}
 
 	// Error injection path — only runs when the tool result is an error.
-	if !strings.EqualFold(input.ToolResult.Status, "error") {
+	if !isError {
 		return []byte("{}"), nil
 	}
 
