@@ -63,30 +63,52 @@ func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
 	return valid
 }
 
+// stopWords contains common English words that match nearly everything in FTS5.
+var stopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "but": true,
+	"not": true, "you": true, "all": true, "can": true, "her": true,
+	"was": true, "one": true, "our": true, "out": true, "has": true,
+	"his": true, "how": true, "its": true, "may": true, "new": true,
+	"now": true, "old": true, "see": true, "way": true, "who": true,
+	"did": true, "get": true, "let": true, "say": true, "she": true,
+	"too": true, "use": true, "fix": true, "any": true, "had": true,
+	"that": true, "this": true, "with": true, "have": true, "from": true,
+	"they": true, "been": true, "will": true, "what": true, "when": true,
+	"your": true, "each": true, "make": true, "like": true, "just": true,
+	"into": true, "them": true, "than": true, "then": true, "some": true,
+	"also": true, "made": true, "after": true, "should": true, "would": true,
+	"could": true, "about": true, "which": true, "their": true, "there": true,
+}
+
 // sanitizeFTSQuery converts raw prompt terms into a safe FTS5 query.
-// Each term is stripped of non-alphanumeric characters, quoted, and joined with OR.
+// Terms are split on non-word characters (so "auth.go" → "auth", "go"),
+// stop words are filtered, and remaining terms are quoted and joined with OR.
 func sanitizeFTSQuery(terms []string) string {
+	seen := make(map[string]bool)
 	var clean []string
 	for _, term := range terms {
-		// Strip non-word characters
-		stripped := strings.Map(func(r rune) rune {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
-				return r
+		// Split each term on non-word characters to handle "auth.go", "it's", etc.
+		parts := strings.FieldsFunc(term, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+		})
+		for _, part := range parts {
+			lower := strings.ToLower(part)
+			if len(lower) < 3 || stopWords[lower] || seen[lower] {
+				continue
 			}
-			return -1
-		}, term)
-		if len(stripped) < 3 {
-			continue
+			seen[lower] = true
+			escaped := strings.ReplaceAll(part, `"`, `""`)
+			clean = append(clean, `"`+escaped+`"`)
 		}
-		// Double any embedded quotes and wrap in quotes for FTS5
-		escaped := strings.ReplaceAll(stripped, `"`, `""`)
-		clean = append(clean, `"`+escaped+`"`)
 	}
 	if len(clean) == 0 {
 		return ""
 	}
 	return strings.Join(clean, " OR ")
 }
+
+// maxFTSResults caps FTS search results to preserve bm25 ranking relevance.
+const maxFTSResults = 20
 
 func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, diffPaths []string) ([]RankedEntry, error) {
 	entryMap := make(map[string]dossiers.Entry)
@@ -97,6 +119,10 @@ func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, dif
 		if query != "" {
 			results, err := e.index.SearchEntries(ctx, query)
 			if err == nil {
+				// Cap to top N by bm25 to keep only the most relevant.
+				if len(results) > maxFTSResults {
+					results = results[:maxFTSResults]
+				}
 				for _, ent := range results {
 					entryMap[ent.ID] = ent
 				}
@@ -209,10 +235,12 @@ func (e *Engine) ErrorEntries(ctx context.Context, commandPrefix string, output 
 	return SelectWithinBudget(ranked, e.budgets[MomentError]), nil
 }
 
+// gatePattern is compiled once at package level for efficiency.
+var gatePattern = regexp.MustCompile(`(?i)\bgate:\s*edit\b`)
+
 // isGateEntry detects whether an entry is marked as a gate.
 // Uses case-insensitive matching for the structured "gate:" tag.
 func isGateEntry(ent *dossiers.Entry) bool {
-	gatePattern := regexp.MustCompile(`(?i)\bgate:\s*edit\b`)
 	return gatePattern.MatchString(ent.Text) ||
 		gatePattern.MatchString(ent.ClosesWhen) ||
 		gatePattern.MatchString(ent.Verified)
@@ -224,11 +252,13 @@ func (e *Engine) GateEntries(ctx context.Context, targetFile string, ledger *Led
 	if err != nil {
 		return nil, err
 	}
-	// Fall back to prefix match if exact yields nothing
+	// Fall back to symbol-style anchors (e.g. "file.go:FuncName") only.
+	// LookupByAnchor uses LIKE 'target:%', so "file.go:" matches
+	// "file.go:FuncName" but not "file.go.orig".
 	if len(ids) == 0 {
-		ids, err = e.index.LookupByAnchor(ctx, targetFile)
-		if err != nil {
-			return nil, err
+		symbolIDs, err := e.index.LookupByAnchor(ctx, targetFile+":")
+		if err == nil {
+			ids = symbolIDs
 		}
 	}
 	

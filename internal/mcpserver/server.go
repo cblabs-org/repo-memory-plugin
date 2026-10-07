@@ -109,20 +109,73 @@ func (s *Server) HandleMemoryAsk(ctx context.Context, req MemoryAskRequest) (Mem
 	return MemoryAskResponse{Result: output}, nil
 }
 
-// ToolSchema describes an MCP tool's name and description for registration.
+// ToolSchema describes an MCP tool's name, description, and input schema for registration.
 type ToolSchema struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
 }
 
 // ToolSchemas returns the schema descriptions for all supported MCP pull tools.
 func ToolSchemas() []ToolSchema {
 	return []ToolSchema{
-		{Name: "memory.brief", Description: "Get a brief summary of active entries for a dossier scope"},
-		{Name: "memory.why", Description: "Get full details and provenance for a specific entry"},
-		{Name: "memory.history", Description: "Get retired and superseded entries for a scope"},
-		{Name: "memory.search", Description: "Search entries by keyword (FTS5)"},
-		{Name: "memory.note", Description: "Record a new knowledge entry from the agent"},
+		{
+			Name:        "memory.brief",
+			Description: "Get a brief summary of active entries for a dossier scope",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"scope": map[string]any{"type": "string", "description": "The dossier scope to summarise"},
+				},
+				"required": []string{"scope"},
+			},
+		},
+		{
+			Name:        "memory.why",
+			Description: "Get full details and provenance for a specific entry",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"entryId": map[string]any{"type": "string", "description": "The entry ID to look up"},
+				},
+				"required": []string{"entryId"},
+			},
+		},
+		{
+			Name:        "memory.history",
+			Description: "Get retired and superseded entries for a scope",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"scope": map[string]any{"type": "string", "description": "The dossier scope to query history for"},
+				},
+				"required": []string{"scope"},
+			},
+		},
+		{
+			Name:        "memory.search",
+			Description: "Search entries by keyword (FTS5)",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "Search query string"},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "memory.note",
+			Description: "Record a new knowledge entry from the agent",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"scope": map[string]any{"type": "string", "description": "The dossier scope for the note"},
+					"text":  map[string]any{"type": "string", "description": "The note text to record"},
+					"type":  map[string]any{"type": "string", "description": "Entry type (decision, invariant, gotcha, etc.)"},
+				},
+				"required": []string{"scope", "text"},
+			},
+		},
 	}
 }
 
