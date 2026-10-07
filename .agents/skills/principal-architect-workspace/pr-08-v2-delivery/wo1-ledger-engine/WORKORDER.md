@@ -251,19 +251,27 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 <!-- Template — append this section when done -->
 
 ### Status
-(pending)
+Complete
 
 ### Changes Made
-- (pending)
+- Created `internal/core/delivery/doc.go` with package documentation.
+- Created `internal/core/delivery/types.go` defining `Channel`, `Moment` enums, and `DefaultBudgets()`.
+- Created `internal/core/delivery/ledger.go` implementing `InjectionRecord`, `ExposureRecord`, and `Ledger` logic for duplicate detection across interactions.
+- Created `internal/core/delivery/anchor.go` with `VerifyAnchor` to confirm file/symbol existence in the workspace.
+- Created `internal/core/delivery/ranker.go` applying the priority ranking matrix specified in §8.3 and budget truncation logic.
+- Created `internal/core/delivery/formatter.go` for prompt injection text formatting and hashing.
+- Created `internal/core/delivery/engine.go` tying components together to query `Index`, verify anchors, rank results, and limit within moment budgets.
+- Created `internal/core/delivery/delivery_test.go` with full test coverage for all implementations.
 
 ### Decisions Made
-- (pending)
+- Handled diff path directory-vs-exact matching heuristically via path containment checks.
+- Addressed unacknowledged `gate: edit` lookups by adding `ledger *Ledger` explicitly as a parameter to `GateEntries()`.
 
 ### Dead Ends & Warnings
-- (pending)
+- None
 
 ### Out-of-Scope Findings
-- (pending)
+- `typeOrder` in the `dossiers/projector.go` is unexported, so it had to be re-declared in the `ranker.go` file.
 
 ### Blockers
-- (pending)
+- None
