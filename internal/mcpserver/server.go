@@ -184,7 +184,7 @@ func ToolSchemas() []ToolSchema {
 // Accepts both underscore names (canonical) and dotted names (legacy aliases).
 func (s *Server) DispatchTool(ctx context.Context, name string, params json.RawMessage) (any, error) {
 	if s.idx == nil {
-		return nil, fmt.Errorf("repo not enrolled: run 'repo-memory enrol' first")
+		return nil, fmt.Errorf("repo not enrolled: run 'repo-memory enroll' first")
 	}
 	switch name {
 	case "memory_brief", "memory.brief":
