@@ -157,7 +157,12 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 	defer idx.Close()
 
 	engine := delivery.NewEngine(idx, workspaceRoot)
-	ledger := delivery.NewLedger(input.ConversationID)
+
+	// Load the persisted ledger so gate acknowledgments survive across hook invocations.
+	ledger, err := LoadLedger(dataDir, repoID, input.ConversationID)
+	if err != nil || ledger == nil {
+		ledger = delivery.NewLedger(input.ConversationID)
+	}
 
 	targetClean := filepath.Clean(targetFile)
 	relPath := targetClean
@@ -174,6 +179,12 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 	if err != nil || len(entries) == 0 {
 		return allowResponse, nil
 	}
+
+	// Acknowledge the gate for all matched entries so re-issued edits pass through.
+	for _, ent := range entries {
+		ledger.AcknowledgeGate(ent.Entry.ID)
+	}
+	_ = SaveLedger(dataDir, repoID, ledger)
 
 	reason := delivery.FormatGateDeny(entries[0].Entry)
 	resp := PreToolUseResponse{

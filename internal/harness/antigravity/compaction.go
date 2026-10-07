@@ -32,6 +32,7 @@ func DetectCompaction(steps []Step, ledger *delivery.Ledger) CompactionResult {
 	}
 
 	result.Detected = true
+	result.CheckpointStepIdx = steps[checkpointIdx].StepIndex
 
 	var nextStepIdx = 999999999
 	for i := checkpointIdx + 1; i < len(steps); i++ {

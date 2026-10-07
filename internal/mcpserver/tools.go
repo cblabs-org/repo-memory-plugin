@@ -288,50 +288,38 @@ func (s *Server) collectRetiredForScope(ctx context.Context, scope string) ([]do
 					result = append(result, e)
 				}
 			}
-			hists, err := s.idx.GetHistory(ctx, e.ID)
-			if err == nil {
-				for _, h := range hists {
-					key := h.ID + ":" + h.RetiredReason + ":" + h.SupersededBy
-					if !seen[key] && !seen[h.ID] {
-						seen[key] = true
-						result = append(result, h)
-					}
-				}
-			}
 		}
 	}
 
-	_ = s.idx.WriteTx(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx,
-			`SELECT entry_id, type, dossier_scope, text, reason, superseded_by, retired_at
-			 FROM entry_history
-			 WHERE dossier_scope = ?
-			 ORDER BY retired_at DESC`, scope)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
+	// Use a plain read query — no write transaction needed for a SELECT.
+	rows, err := s.idx.QueryHistoryByScope(ctx, scope)
+	if err != nil {
+		return result, fmt.Errorf("querying entry_history for scope %s: %w", scope, err)
+	}
+	defer rows.Close()
 
-		for rows.Next() {
-			var eID, typeStr, dScope, text, reason, supersededBy, retiredAt sql.NullString
-			if err := rows.Scan(&eID, &typeStr, &dScope, &text, &reason, &supersededBy, &retiredAt); err == nil {
-				key := eID.String + ":" + reason.String + ":" + supersededBy.String
-				if !seen[key] && !seen[eID.String] {
-					seen[key] = true
-					result = append(result, dossiers.Entry{
-						ID:            eID.String,
-						Type:          dossiers.EntryType(typeStr.String),
-						DossierScope:  dScope.String,
-						Text:          text.String,
-						Retired:       true,
-						RetiredReason: reason.String,
-						SupersededBy:  supersededBy.String,
-					})
-				}
-			}
+	for rows.Next() {
+		var eID, typeStr, dScope, text, reason, supersededBy, retiredAt sql.NullString
+		if err := rows.Scan(&eID, &typeStr, &dScope, &text, &reason, &supersededBy, &retiredAt); err != nil {
+			return result, fmt.Errorf("scanning entry_history row: %w", err)
 		}
-		return rows.Err()
-	})
+		key := eID.String + ":" + reason.String + ":" + supersededBy.String
+		if !seen[key] && !seen[eID.String] {
+			seen[key] = true
+			result = append(result, dossiers.Entry{
+				ID:            eID.String,
+				Type:          dossiers.EntryType(typeStr.String),
+				DossierScope:  dScope.String,
+				Text:          text.String,
+				Retired:       true,
+				RetiredReason: reason.String,
+				SupersededBy:  supersededBy.String,
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return result, err
+	}
 
 	return result, nil
 }

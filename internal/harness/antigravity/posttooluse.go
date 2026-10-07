@@ -154,10 +154,46 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	formatted := delivery.FormatEntries(entries)
+	// Load the persisted ledger for dedup: don't re-inject the same error entries.
+	ledger, loadErr := LoadLedger(dataDir, repoID, input.ConversationID)
+	if loadErr != nil || ledger == nil {
+		ledger = delivery.NewLedger(input.ConversationID)
+	}
+
+	// Filter out entries already injected in this conversation.
+	var fresh []delivery.RankedEntry
+	for _, ent := range entries {
+		alreadyInjected := false
+		for _, inj := range ledger.Injections {
+			if inj.EntryID == ent.Entry.ID && inj.Moment == delivery.MomentError {
+				alreadyInjected = true
+				break
+			}
+		}
+		if !alreadyInjected {
+			fresh = append(fresh, ent)
+		}
+	}
+
+	if len(fresh) == 0 {
+		return []byte("{}"), nil
+	}
+
+	formatted := delivery.FormatEntries(fresh)
 	if formatted == "" {
 		return []byte("{}"), nil
 	}
+
+	// Record these injections for future dedup.
+	for _, ent := range fresh {
+		ledger.RecordInjection(delivery.InjectionRecord{
+			EntryID:   ent.Entry.ID,
+			Channel:   delivery.ChannelEphemeral,
+			Moment:    delivery.MomentError,
+			StepIndex: input.StepIdx,
+		})
+	}
+	_ = SaveLedger(dataDir, repoID, ledger)
 
 	resp := InjectStepsResponse{
 		InjectSteps: []InjectStep{

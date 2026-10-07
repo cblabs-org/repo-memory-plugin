@@ -20,22 +20,24 @@ type ExposureRecord struct {
 }
 
 type Ledger struct {
-	ConversationID   string
-	Injections       []InjectionRecord
-	SeenDossiers     map[string]bool
-	SeenAnchors      map[string]bool
-	AcknowledgedGates map[string]bool
-	ExposureList     []ExposureRecord
+	ConversationID           string
+	Injections               []InjectionRecord
+	SeenDossiers             map[string]bool
+	SeenAnchors              map[string]bool
+	AcknowledgedGates        map[string]bool
+	ExposureList             []ExposureRecord
+	LastHandledCheckpointStep int `json:"last_handled_checkpoint_step,omitempty"`
 }
 
 func NewLedger(conversationID string) *Ledger {
 	return &Ledger{
-		ConversationID:   conversationID,
-		Injections:       make([]InjectionRecord, 0),
-		SeenDossiers:     make(map[string]bool),
-		SeenAnchors:      make(map[string]bool),
-		AcknowledgedGates: make(map[string]bool),
-		ExposureList:     make([]ExposureRecord, 0),
+		ConversationID:            conversationID,
+		Injections:                make([]InjectionRecord, 0),
+		SeenDossiers:              make(map[string]bool),
+		SeenAnchors:               make(map[string]bool),
+		AcknowledgedGates:         make(map[string]bool),
+		ExposureList:              make([]ExposureRecord, 0),
+		LastHandledCheckpointStep: -1,
 	}
 }
 
