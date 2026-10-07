@@ -215,7 +215,7 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 		t.Errorf("expected gate text in reason, got %q", resp.Reason)
 	}
 
-	// 2. Test write_to_file with relative TargetFile path
+	// 2. Test write_to_file with same conversationID — gate should now be acknowledged.
 	payloadWrite := `{
 		"conversationId": "conv-test-gate",
 		"toolName": "write_to_file",
@@ -236,10 +236,35 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outWrite))
 	}
 
-	if respWrite.Decision != "force_ask" {
-		t.Errorf("expected decision 'force_ask' for write_to_file, got %q", respWrite.Decision)
+	if respWrite.Decision != "allow" {
+		t.Errorf("expected decision 'allow' for re-issued edit (gate acknowledged), got %q", respWrite.Decision)
 	}
-	if !strings.Contains(respWrite.Reason, "[REPO-MEMORY gate-crit-01]") {
-		t.Errorf("expected '[REPO-MEMORY gate-crit-01]' in reason, got %q", respWrite.Reason)
+
+	// 3. Test with a different conversationID — gate should trigger again.
+	payloadNew := `{
+		"conversationId": "conv-test-gate-2",
+		"toolName": "write_to_file",
+		"toolCall": {
+			"name": "write_to_file",
+			"args": {"TargetFile": "critical_config.go"}
+		},
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	outNew, err := HandlePreToolUse(ctx, []byte(payloadNew))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var respNew PreToolUseResponse
+	if err := json.Unmarshal(outNew, &respNew); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outNew))
+	}
+
+	if respNew.Decision != "force_ask" {
+		t.Errorf("expected decision 'force_ask' for new conversation, got %q", respNew.Decision)
+	}
+	if !strings.Contains(respNew.Reason, "[REPO-MEMORY gate-crit-01]") {
+		t.Errorf("expected '[REPO-MEMORY gate-crit-01]' in reason, got %q", respNew.Reason)
 	}
 }

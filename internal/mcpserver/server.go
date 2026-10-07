@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
@@ -106,4 +107,65 @@ func (s *Server) HandleMemoryAsk(ctx context.Context, req MemoryAskRequest) (Mem
 	}
 
 	return MemoryAskResponse{Result: output}, nil
+}
+
+// ToolSchema describes an MCP tool's name and description for registration.
+type ToolSchema struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ToolSchemas returns the schema descriptions for all supported MCP pull tools.
+func ToolSchemas() []ToolSchema {
+	return []ToolSchema{
+		{Name: "memory.brief", Description: "Get a brief summary of active entries for a dossier scope"},
+		{Name: "memory.why", Description: "Get full details and provenance for a specific entry"},
+		{Name: "memory.history", Description: "Get retired and superseded entries for a scope"},
+		{Name: "memory.search", Description: "Search entries by keyword (FTS5)"},
+		{Name: "memory.note", Description: "Record a new knowledge entry from the agent"},
+	}
+}
+
+// DispatchTool routes a tool call by name to the appropriate handler.
+func (s *Server) DispatchTool(ctx context.Context, name string, params json.RawMessage) (any, error) {
+	switch name {
+	case "memory.brief":
+		var req MemoryBriefRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.brief params: %w", err)
+		}
+		return s.HandleMemoryBrief(ctx, req)
+	case "memory.why":
+		var req MemoryWhyRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.why params: %w", err)
+		}
+		return s.HandleMemoryWhy(ctx, req)
+	case "memory.history":
+		var req MemoryHistoryRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.history params: %w", err)
+		}
+		return s.HandleMemoryHistory(ctx, req)
+	case "memory.search":
+		var req MemorySearchRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.search params: %w", err)
+		}
+		return s.HandleMemorySearch(ctx, req)
+	case "memory.note":
+		var req MemoryNoteRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.note params: %w", err)
+		}
+		return s.HandleMemoryNote(ctx, req)
+	case "memory.ask":
+		var req MemoryAskRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("parsing memory.ask params: %w", err)
+		}
+		return s.HandleMemoryAsk(ctx, req)
+	default:
+		return nil, fmt.Errorf("unknown tool: %s", name)
+	}
 }

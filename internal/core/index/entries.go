@@ -448,3 +448,13 @@ func (idx *Index) GetHistory(ctx context.Context, entryID string) ([]dossiers.En
 	}
 	return results, rows.Err()
 }
+
+// QueryHistoryByScope returns a rows cursor over entry_history filtered by scope.
+// Callers must Close the returned rows. This uses a plain read — no write transaction.
+func (idx *Index) QueryHistoryByScope(ctx context.Context, scope string) (*sql.Rows, error) {
+	return idx.db.QueryContext(ctx,
+		`SELECT entry_id, type, dossier_scope, text, reason, superseded_by, retired_at
+		 FROM entry_history
+		 WHERE dossier_scope = ?
+		 ORDER BY retired_at DESC`, scope)
+}
