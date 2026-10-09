@@ -50,7 +50,7 @@ The protocol is written down and approved by the user before any run.
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | `wo1-protocol` | Write the pre-registered protocol: work-order selection with reasons, time cuts, conditions, seeds, primary and secondary metrics, threshold, and quota budget and schedule. The user approves it before any run. | interactive | ☐ Planned |
+| 1 | `wo1-protocol` | Write the pre-registered protocol: work-order selection with reasons, time cuts, conditions, seeds, primary and secondary metrics, threshold, and quota budget and schedule. The user approves it before any run. | interactive | ✅ Complete |
 | 2 | `wo2-dossier-build` | For each selected work order, build time-cut dossiers with `--before <parent commit>`, and time-cut PA documents. The user reviews the dossiers for leakage and accuracy. | standard | ☐ Planned |
 | 3 | `wo3-replay-harness` | A harness that checks out the parent commit, runs a worker on the work order's text under each condition, and collects test results, steps and tokens. Reuse the PR-03 eval harness. | standard | ☐ Planned |
 | 4 | `wo4-runs` | Execute the runs to the schedule and budget. | interactive | ☐ Planned |
@@ -76,4 +76,9 @@ The protocol is written down and approved by the user before any run.
 
 ## Session Log
 
-*(empty, ready for use)*
+### 2026-10-07 — Initialization & WO1 Handoff
+- Programme housekeeping: marked PR-08 complete, updated MEMORY.md and PROGRAM.md.
+- Created branch `pr-09-v2-x6-lite/wo1-protocol` based on `main`.
+### 2026-10-09 — WO1 Complete & Starting WO2/WO3
+- WO1 `wo1-protocol` completed interactively. Protocol approved by user, selecting 8 WOs, setting threshold to condition (c) strictly beating condition (a).
+- Preparing to branch and spawn WO2 `wo2-dossier-build` and WO3 `wo3-replay-harness` in parallel, after copying candidates to the evidence store.
