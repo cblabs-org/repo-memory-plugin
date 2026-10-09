@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-9ba8da0d",
+      "dossier_scope": "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin",
+      "timestamp": "2026-10-05T17:59:33+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "cmd/repo-memory/cmd_enroll_test.go",
+          ".agents/plugins.json",
+          ".agents/.gitignore",
+          ".agents/plugins.json",
+          "repo-memory/",
+          "repo-memory.bak-YYYYMMDD",
+          ".agents/.gitignore",
+          "plugins.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/",
+          "plugin.json",
+          "config.json",
+          "sidecars/tick/sidecar.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/",
+          "plugin.json",
+          "hooks.json",
+          "mcp_config.json",
+          ".agents/plugins.json",
+          "plugins.json",
+          ".agents/.gitignore",
+          "repo-memory.bak-20261005"
+        ],
+        "entry_type": "decision",
+        "text": "Maintained a temporary directory placeholder at `~/.gemini/config/plugins/repo-memory` for the active session: Antigravity's in-memory hook runner keeps the initial plugin path loaded in memory and sets `cmd.Dir` to it when executing hooks. Keeping this path available until IDE restart prevents `chdir: no such file or directory` errors during active session tool runs."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-2d9c650e",
+      "dossier_scope": "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin",
+      "timestamp": "2026-10-05T17:59:33+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "cmd/repo-memory/cmd_enroll_test.go",
+          ".agents/plugins.json",
+          ".agents/.gitignore",
+          ".agents/plugins.json",
+          "repo-memory/",
+          "repo-memory.bak-YYYYMMDD",
+          ".agents/.gitignore",
+          "plugins.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/",
+          "plugin.json",
+          "config.json",
+          "sidecars/tick/sidecar.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/",
+          "plugin.json",
+          "hooks.json",
+          "mcp_config.json",
+          ".agents/plugins.json",
+          "plugins.json",
+          ".agents/.gitignore",
+          "repo-memory.bak-20261005"
+        ],
+        "entry_type": "ruled-out",
+        "text": "**Antigravity In-Memory Plugin Path Caching**: When Antigravity starts, it caches global plugin root directories in memory. Any hook runner invocation sets the working directory to that cached path. Renaming the legacy directory live caused all subsequent tool executions to fail with `chdir ...: no such file or directory`. Future migration tools should copy or maintain a compatibility symlink/shim until the IDE process restarts."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-059e4c29",
+      "dossier_scope": "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin",
+      "timestamp": "2026-10-05T17:59:33+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "cmd/repo-memory/cmd_enroll_test.go",
+          ".agents/plugins.json",
+          ".agents/.gitignore",
+          ".agents/plugins.json",
+          "repo-memory/",
+          "repo-memory.bak-YYYYMMDD",
+          ".agents/.gitignore",
+          "plugins.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/",
+          "plugin.json",
+          "config.json",
+          "sidecars/tick/sidecar.json",
+          "~/.gemini/config/plugins/repo-memory-daemon/workspace-plugin/repo-memory/",
+          "plugin.json",
+          "hooks.json",
+          "mcp_config.json",
+          ".agents/plugins.json",
+          "plugins.json",
+          ".agents/.gitignore",
+          "repo-memory.bak-20261005"
+        ],
+        "entry_type": "open-issue",
+        "text": "`internal/harness/antigravity/attribution_test.go`: `TestSessionAttributor_Integration` failed due to a hardcoded test clock timestamp (`2026-10-02`) being older than the system clock date (`2026-10-05`). New temp files written to disk during test execution have a ModTime newer than the artificial test `now`, causing the negative duration to fail `\u003c 15 * time.Minute`. Because this is pre-existing code outside WO4's strict boundary box, it was documented rather than modified."
+      }
+    }
+  ],
+  "created_at": "2026-10-05T16:59:33Z",
+  "batch_id": "01M46G38881JWR3RV2V6539CM3"
+}

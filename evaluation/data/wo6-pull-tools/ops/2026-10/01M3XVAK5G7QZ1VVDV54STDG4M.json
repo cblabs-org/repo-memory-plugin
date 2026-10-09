@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-54e8e651",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-02T09:22:38+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/eval/dataset.go",
+          "internal/eval/store.go",
+          "internal/eval/runner.go",
+          "cmd/repo-memory/cmd_eval.go",
+          "cmd/repo-memory/main.go",
+          "internal/eval/eval_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used JSONL for result storage because it easily supports appending individual runs and meshes well with `encoding/json`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-8f2ba13e",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-02T09:22:38+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/eval/dataset.go",
+          "internal/eval/store.go",
+          "internal/eval/runner.go",
+          "cmd/repo-memory/cmd_eval.go",
+          "cmd/repo-memory/main.go",
+          "internal/eval/eval_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used `-f` to `git add` the CLI command `cmd/repo-memory/cmd_eval.go` because `.gitignore` globally ignores anything matching `repo-memory` unless specified otherwise."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-6f48704f",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-02T09:22:38+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/eval/dataset.go",
+          "internal/eval/store.go",
+          "internal/eval/runner.go",
+          "cmd/repo-memory/cmd_eval.go",
+          "cmd/repo-memory/main.go",
+          "internal/eval/eval_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When adding packages to index and runner, `index.EpisodeIndex` was incorrect; the correct type was `index.Index` and `InsertEpisode`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c868830a",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-02T09:22:38+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/eval/dataset.go",
+          "internal/eval/store.go",
+          "internal/eval/runner.go",
+          "cmd/repo-memory/cmd_eval.go",
+          "cmd/repo-memory/main.go",
+          "internal/eval/eval_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "`git add` behavior: `.gitignore` has an entry for `repo-memory` which causes git to ignore the `cmd/repo-memory` directory entirely. Use `git add -f` to stage files inside this directory."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-bceb01f9",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-02T09:22:38+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/eval/dataset.go",
+          "internal/eval/store.go",
+          "internal/eval/runner.go",
+          "cmd/repo-memory/cmd_eval.go",
+          "cmd/repo-memory/main.go",
+          "internal/eval/eval_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "(none)"
+      }
+    }
+  ],
+  "created_at": "2026-10-02T08:22:38Z",
+  "batch_id": "01M3XVAK5G7QZ1VVDV54STDG4M"
+}

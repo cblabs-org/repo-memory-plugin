@@ -35,3 +35,12 @@ We are executing PR-09-v2-x6-lite. The X6-lite protocol has been approved. The 8
 ### Dead Ends & Warnings
 - [List any issues encountered]
 ```
+
+## Completion Report: WO2 Dossier Build
+
+### Decisions Made
+- Snapshotting method: Manually created `.memory/evidence/x6-lite-protocol.md` from WO1's completion report text since the document didn't explicitly exist as a separate file. Then snapshotted all candidate WO PA documents into `.memory/evidence/pa-workspace/` to protect them from Antigravity pruning.
+- Storage layout for time-cut data: For each of the 8 WOs, extracted their exact `chore(PA)` parent commit. Executed `repo-memory seed --before <commit>` into `evaluation/data/<wo-name>/ops/`. Captured `PROJECT.md` and `MEMORY.md` (via git show at the parent commit) into `evaluation/data/<wo-name>/pa_docs/`. Then rendered the time-cut dossiers into `evaluation/data/<wo-name>/dossiers/` and `evaluation/data/<wo-name>/ATLAS.md` using the core dossiers Projector/Writer. 
+
+### Dead Ends & Warnings
+- None encountered. Parent commit detection worked successfully and all operations were seeded without issue.
