@@ -52,7 +52,7 @@ The protocol is written down and approved by the user before any run.
 |---|---|---|---|---|
 | 1 | `wo1-protocol` | Write the pre-registered protocol: work-order selection with reasons, time cuts, conditions, seeds, primary and secondary metrics, threshold, and quota budget and schedule. The user approves it before any run. | interactive | ✅ Complete |
 | 2 | `wo2-dossier-build` | For each selected work order, build time-cut dossiers with `--before <parent commit>`, and time-cut PA documents. The user reviews the dossiers for leakage and accuracy. | standard | ☐ Planned |
-| 3 | `wo3-replay-harness` | A harness that checks out the parent commit, runs a worker on the work order's text under each condition, and collects test results, steps and tokens. Reuse the PR-03 eval harness. | standard | ☐ Planned |
+| 3 | `wo3-replay-harness` | A harness that checks out the parent commit, runs a worker on the work order's text under each condition, and collects test results, steps and tokens. Reuse the PR-03 eval harness. | standard | ✅ Complete |
 | 4 | `wo4-runs` | Execute the runs to the schedule and budget. | interactive | ☐ Planned |
 | 5 | `wo5-report-decision` | Report the results against the pre-registered threshold. Recommend continue, redirect (for example, delivery-only with PA-sourced dossiers) or stop. The user decides. | standard | ☐ Planned |
 
