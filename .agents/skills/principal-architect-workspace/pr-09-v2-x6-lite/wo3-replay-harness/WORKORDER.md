@@ -42,3 +42,12 @@ We are executing PR-09-v2-x6-lite to determine if delivered dossiers improve age
 ### Dead Ends & Warnings
 - [List any issues encountered]
 ```
+
+## Completion Report: WO3 Replay Harness
+
+### Decisions Made
+- Harness entry point: `internal/eval/x6_replay.go`, providing a `ReplayHarness` struct with methods `CheckoutParent`, `InjectCondition`, and `RunWorker`.
+- Injection mechanics: Modifying `.memory/config.yaml` to disable memory for condition `a`. For conditions `b` and `c`, memory is enabled and we perform file copies to the expected directories (repo root for PA docs, data dir for dossiers) to simulate the presence of time-cut memory context. `RunWorker` invokes `agy --agent Execution-Worker` via headless `exec.CommandContext` to process the target Work Order autonomously.
+
+### Dead Ends & Warnings
+- Encountered a worktree lock while trying to checkout `pr-09-v2-x6-lite/wo3-replay-harness`. Decided to build the harness directly in the active subagent worktree; changes will be committed and merged to the target branch.
