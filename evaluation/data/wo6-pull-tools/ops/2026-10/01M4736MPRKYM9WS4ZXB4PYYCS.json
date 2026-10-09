@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-ca0efc16",
+      "dossier_scope": "packaging/antigravity/agents",
+      "timestamp": "2026-10-05T23:33:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "decision",
+        "text": "Documented that dynamic file-based resolution fails without daemon restart or correct allowlisting."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-620d211e",
+      "dossier_scope": "packaging/antigravity/agents",
+      "timestamp": "2026-10-05T23:33:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "ruled-out",
+        "text": "`agy --agent` silently falls back to the default agent when an agent is not found, which complicated testing."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-1a1220d1",
+      "dossier_scope": "packaging/antigravity/agents",
+      "timestamp": "2026-10-05T23:33:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "ruled-out",
+        "text": "`invoke_subagent` cannot invoke dynamically created agent files without a daemon restart."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-8da94911",
+      "dossier_scope": "packaging/antigravity/agents",
+      "timestamp": "2026-10-05T23:33:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "open-issue",
+        "text": "`gen_metadata` and `usage` metrics were not visible in the local transcript logs."
+      }
+    }
+  ],
+  "created_at": "2026-10-05T22:33:27Z",
+  "batch_id": "01M4736MPRKYM9WS4ZXB4PYYCS"
+}

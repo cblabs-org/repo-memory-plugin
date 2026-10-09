@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-1c9bd732",
+      "dossier_scope": "pr-08-v2-delivery",
+      "timestamp": "2026-10-07T07:46:40+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "(pending)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-0d801ff6",
+      "dossier_scope": "pr-08-v2-delivery",
+      "timestamp": "2026-10-07T07:46:40+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "ruled-out",
+        "text": "(pending)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-beb557f3",
+      "dossier_scope": "pr-08-v2-delivery",
+      "timestamp": "2026-10-07T07:46:40+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "open-issue",
+        "text": "(pending)"
+      }
+    }
+  ],
+  "created_at": "2026-10-07T06:46:40Z",
+  "batch_id": "01M4AHTF405G27DRE64ZF0X8F9"
+}

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-815aa635",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-07T08:25:46+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "compaction_test.go",
+          "ledger_store_test.go",
+          "preinvocation_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used the exported `delivery.RankEntries` and `delivery.SelectWithinBudget` directly instead of a non-existent method on `delivery.Engine` for ranking entries."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-505cbd33",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-07T08:25:46+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "compaction_test.go",
+          "ledger_store_test.go",
+          "preinvocation_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Ignored GAP steps (StepIndex 0) when calculating next valid step index after a checkpoint during compaction detection to avoid mistakenly purging active injections."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-30763995",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-07T08:25:46+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "compaction_test.go",
+          "ledger_store_test.go",
+          "preinvocation_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Parsing of Checkpoints and Gap Steps via `transcript.go` caused index offsetting. Gap steps have StepIndex `0`, so they must be explicitly excluded from step index threshold calculations."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-3d68e661",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-07T08:25:46+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "compaction_test.go",
+          "ledger_store_test.go",
+          "preinvocation_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "A pre-existing flaky test `TestSessionAttributor_Integration` was found in `attribution_test.go`. It has been left untouched since it is outside the WO boundary box."
+      }
+    }
+  ],
+  "created_at": "2026-10-07T07:25:46Z",
+  "batch_id": "01M4AM224GQVDGH4T6SKMKA4DT"
+}
