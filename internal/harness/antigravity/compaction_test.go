@@ -95,8 +95,8 @@ func TestBuildReinjection(t *testing.T) {
 	if step == nil {
 		t.Fatalf("Expected step, got nil")
 	}
-	if !strings.Contains(step.SystemMessage.SystemMessage, "Some test data") {
-		t.Errorf("Expected test data in message, got %s", step.SystemMessage.SystemMessage)
+	if !strings.Contains(step.EphemeralMessage, "Some test data") {
+		t.Errorf("Expected test data in message, got %s", step.EphemeralMessage)
 	}
 
 	// tag survived
