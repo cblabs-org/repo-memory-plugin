@@ -142,18 +142,25 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 					continue
 				}
 				for _, call := range calls {
-					fn, ok := call["function"].(map[string]any)
-					if !ok {
-						continue
-					}
-					argsStr, ok := fn["arguments"].(string)
-					if !ok || argsStr == "" {
-						continue
-					}
+					// Extract args from tool call — support both formats.
 					var args map[string]any
-					if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+
+					// Format 1 (Antigravity native): {"name": "...", "args": {...}}
+					if argsObj, ok := call["args"].(map[string]any); ok {
+						args = argsObj
+					}
+					// Format 2 (OpenAI): {"function": {"name": "...", "arguments": "{...}"}}
+					if args == nil {
+						if fn, ok := call["function"].(map[string]any); ok {
+							if argsStr, ok := fn["arguments"].(string); ok && argsStr != "" {
+								json.Unmarshal([]byte(argsStr), &args)
+							}
+						}
+					}
+					if args == nil {
 						continue
 					}
+
 					for _, v := range args {
 						str, ok := v.(string)
 						if !ok {
