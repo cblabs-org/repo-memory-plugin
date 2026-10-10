@@ -232,15 +232,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		if err == nil && len(entries) > 0 {
 			formatted := delivery.FormatEntries(entries)
 			injectSteps = append(injectSteps, InjectStep{
-				SystemMessage: &SystemMessageEntry{
-					SystemMessage: formatted,
-					Metadata:      map[string]string{"moment": "task-start"},
-				},
+				EphemeralMessage: formatted,
 			})
 			for _, ent := range entries {
 				ledger.RecordInjection(delivery.InjectionRecord{
 					EntryID:   ent.Entry.ID,
-					Channel:   "systemMessage",
+					Channel:   delivery.ChannelEphemeral,
 					Moment:    delivery.MomentTaskStart,
 					StepIndex: input.InitialNumSteps,
 				})
@@ -265,15 +262,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			if err == nil && len(entries) > 0 {
 				formatted := delivery.FormatEntries(entries)
 				injectSteps = append(injectSteps, InjectStep{
-					SystemMessage: &SystemMessageEntry{
-						SystemMessage: formatted,
-						Metadata:      map[string]string{"moment": "first-touch", "anchor": anchor},
-					},
+					EphemeralMessage: formatted,
 				})
 				for _, ent := range entries {
 					ledger.RecordInjection(delivery.InjectionRecord{
 						EntryID:   ent.Entry.ID,
-						Channel:   "systemMessage",
+						Channel:   delivery.ChannelEphemeral,
 						Moment:    delivery.MomentFirstTouch,
 						StepIndex: input.InitialNumSteps,
 					})
@@ -294,15 +288,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				if err == nil && len(entries) > 0 {
 					formatted := delivery.FormatEntries(entries)
 					injectSteps = append(injectSteps, InjectStep{
-						SystemMessage: &SystemMessageEntry{
-							SystemMessage: formatted,
-							Metadata:      map[string]string{"moment": "first-entry", "scope": scopeName},
-						},
+						EphemeralMessage: formatted,
 					})
 					for _, ent := range entries {
 						ledger.RecordInjection(delivery.InjectionRecord{
 							EntryID:   ent.Entry.ID,
-							Channel:   "systemMessage",
+							Channel:   delivery.ChannelEphemeral,
 							Moment:    delivery.MomentFirstEntry,
 							StepIndex: input.InitialNumSteps,
 						})
