@@ -123,6 +123,8 @@ cleanup() {
         mkdir -p "${RUN_ARCHIVE}"
         cp "${RUN_ROOT}"/*.json "${RUN_ARCHIVE}/" 2>/dev/null || true
         cp "${RUN_ROOT}"/*.log "${RUN_ARCHIVE}/" 2>/dev/null || true
+        cp "${RUN_ROOT}"/*.patch "${RUN_ARCHIVE}/" 2>/dev/null || true
+        cp "${RUN_ROOT}"/*.txt "${RUN_ARCHIVE}/" 2>/dev/null || true
         if [[ "${CONDITION}" == "dossiers" && -d "${RUN_DATA}" ]]; then
             cp -R "${RUN_DATA}" "${RUN_ARCHIVE}/data" 2>/dev/null || true
         fi
