@@ -1,0 +1,4 @@
+ internal/core/index/index.go      |  77 ++++-
+ internal/core/index/index_test.go | 599 ++++++++++++++++++++++++++++++++++++++
+ internal/core/index/rebuild.go    | 110 +++++++
+ 3 files changed, 785 insertions(+), 1 deletion(-)

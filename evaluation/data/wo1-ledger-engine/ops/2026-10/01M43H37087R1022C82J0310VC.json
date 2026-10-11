@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-e061d96d",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-04T14:19:17+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/evidence/artifacts.go",
+          ".system_generated/",
+          "internal/core/evidence/artifacts_test.go",
+          ".system_generated",
+          "internal/harness/antigravity/hooks.go",
+          "payload.ArtifactDirectoryPath",
+          "internal/harness/antigravity/hooks_test.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep_test.go",
+          "cmd/repo-memory/cmd_snapshot.go",
+          "cmd/repo-memory/cmd_snapshot_test.go",
+          "cmd/repo-memory/main.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used atomic temp-file write and rename in `CopyArtifacts` to avoid partial reads or corrupt writes."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-f61bac8b",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-04T14:19:17+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/evidence/artifacts.go",
+          ".system_generated/",
+          "internal/core/evidence/artifacts_test.go",
+          ".system_generated",
+          "internal/harness/antigravity/hooks.go",
+          "payload.ArtifactDirectoryPath",
+          "internal/harness/antigravity/hooks_test.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep_test.go",
+          "cmd/repo-memory/cmd_snapshot.go",
+          "cmd/repo-memory/cmd_snapshot_test.go",
+          "cmd/repo-memory/main.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `snapshot` command, `resolveBrainDir` accepts both conversation IDs and direct directory paths (extracting the basename as conversation ID), making local testing and explicit path inputs seamless."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-a3027bbf",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-04T14:19:17+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/evidence/artifacts.go",
+          ".system_generated/",
+          "internal/core/evidence/artifacts_test.go",
+          ".system_generated",
+          "internal/harness/antigravity/hooks.go",
+          "payload.ArtifactDirectoryPath",
+          "internal/harness/antigravity/hooks_test.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep_test.go",
+          "cmd/repo-memory/cmd_snapshot.go",
+          "cmd/repo-memory/cmd_snapshot_test.go",
+          "cmd/repo-memory/main.go"
+        ],
+        "entry_type": "decision",
+        "text": "Handled both camelCase (`artifactDirectoryPath`) and snake_case (`artifact_directory_path`) in `StopPayload.Normalize()`."
+      }
+    }
+  ],
+  "created_at": "2026-10-04T13:19:17Z",
+  "batch_id": "01M43H37087R1022C82J0310VC"
+}

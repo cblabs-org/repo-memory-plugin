@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-e96d91d7",
+      "dossier_scope": "core/pipeline/extract",
+      "timestamp": "2026-10-02T12:12:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/extract/packer.go",
+          "internal/core/pipeline/extract/extractor.go",
+          "internal/core/pipeline/extract/extractor_test.go",
+          "prompts/extract/prompt.md"
+        ],
+        "entry_type": "decision",
+        "text": "Used heuristic token counting (`bytes / 4`) as standard across the project."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-7fa7cddc",
+      "dossier_scope": "core/pipeline/extract",
+      "timestamp": "2026-10-02T12:12:27+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/extract/packer.go",
+          "internal/core/pipeline/extract/extractor.go",
+          "internal/core/pipeline/extract/extractor_test.go",
+          "prompts/extract/prompt.md"
+        ],
+        "entry_type": "decision",
+        "text": "P13 checks were hardened directly into `extractor.go` rather than purely relying on the LLM, rejecting any cited evidence that isn't `tool_outcome` or `human`."
+      }
+    }
+  ],
+  "created_at": "2026-10-02T11:12:27Z",
+  "batch_id": "01M3Y51HBR4J3A9ADT8DB2X7RQ"
+}

@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-a3984f4d",
+      "dossier_scope": "core/pipeline/triage",
+      "timestamp": "2026-10-02T10:12:25+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/triage/rules.go",
+          "internal/core/pipeline/triage/windows.go",
+          "internal/core/pipeline/triage/synopsis.go",
+          "internal/core/pipeline/triage/triage.go",
+          "internal/core/pipeline/triage/rules_test.go",
+          "internal/core/pipeline/triage/windows_test.go",
+          "internal/core/pipeline/triage/synopsis_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Allowed `skip` to only evaluate if `keep` is false in rule engine, so keep takes precedence and we don't accidentally skip-all on an already kept episode."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-53056064",
+      "dossier_scope": "core/pipeline/triage",
+      "timestamp": "2026-10-02T10:12:25+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/triage/rules.go",
+          "internal/core/pipeline/triage/windows.go",
+          "internal/core/pipeline/triage/synopsis.go",
+          "internal/core/pipeline/triage/triage.go",
+          "internal/core/pipeline/triage/rules_test.go",
+          "internal/core/pipeline/triage/windows_test.go",
+          "internal/core/pipeline/triage/synopsis_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When using `harness.StepKindUser`, the human messages will be parsed as verbatim."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-dba1dab0",
+      "dossier_scope": "core/pipeline/triage",
+      "timestamp": "2026-10-02T10:12:25+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/triage/rules.go",
+          "internal/core/pipeline/triage/windows.go",
+          "internal/core/pipeline/triage/synopsis.go",
+          "internal/core/pipeline/triage/triage.go",
+          "internal/core/pipeline/triage/rules_test.go",
+          "internal/core/pipeline/triage/windows_test.go",
+          "internal/core/pipeline/triage/synopsis_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "The `ep.Header.ID` doesn't exist, it is `EpisodeID`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-95735b85",
+      "dossier_scope": "core/pipeline/triage",
+      "timestamp": "2026-10-02T10:12:25+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/pipeline/triage/rules.go",
+          "internal/core/pipeline/triage/windows.go",
+          "internal/core/pipeline/triage/synopsis.go",
+          "internal/core/pipeline/triage/triage.go",
+          "internal/core/pipeline/triage/rules_test.go",
+          "internal/core/pipeline/triage/windows_test.go",
+          "internal/core/pipeline/triage/synopsis_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "(none)"
+      }
+    }
+  ],
+  "created_at": "2026-10-02T09:12:25Z",
+  "batch_id": "01M3XY5R58TD6YXRNKS7NNZGAB"
+}

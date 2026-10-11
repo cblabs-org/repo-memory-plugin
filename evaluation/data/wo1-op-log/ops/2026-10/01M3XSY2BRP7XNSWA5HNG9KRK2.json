@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-f2c2c14b",
+      "dossier_scope": "packaging/antigravity",
+      "timestamp": "2026-10-02T08:58:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "packaging/antigravity/sidecar.json",
+          "packaging/antigravity/templates_test.go",
+          "cmd/repo-memory/install_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Kept cron expression strictly aligned with `*/1 * * * *` per workorder instructions and updated corresponding test expectations."
+      }
+    }
+  ],
+  "created_at": "2026-10-02T07:58:19Z",
+  "batch_id": "01M3XSY2BRP7XNSWA5HNG9KRK2"
+}

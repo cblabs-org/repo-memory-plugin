@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-4c5a859b",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-02T09:26:15+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_search.go",
+          "idx.SearchEpisodes()",
+          "cmd/repo-memory/cmd_search_test.go",
+          "cmd/repo-memory/install_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Chose to output to a `tabwriter` that explicitly directs to `cmd.OutOrStdout()` to prevent breaking execution loops in Cobra testing."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-dcc31349",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-02T09:26:15+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_search.go",
+          "idx.SearchEpisodes()",
+          "cmd/repo-memory/cmd_search_test.go",
+          "cmd/repo-memory/install_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Updated `install_test.go` since the `search` stub now correctly throws an error when invoked outside a valid memory-enabled directory."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-a67dc99c",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-02T09:26:15+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_search.go",
+          "idx.SearchEpisodes()",
+          "cmd/repo-memory/cmd_search_test.go",
+          "cmd/repo-memory/install_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When writing tests with `cobra.Command`, one must strictly bind any stdout calls (`fmt.Fprintln()`) to `cmd.OutOrStdout()` and set `rootCmd.SetOut(buf)` instead of directly using `os.Stdout`. Otherwise output capture assertions fail."
+      }
+    }
+  ],
+  "created_at": "2026-10-02T08:26:15Z",
+  "batch_id": "01M3XVH72R7DKNCJKGDRF7PEVJ"
+}

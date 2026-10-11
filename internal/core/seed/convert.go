@@ -3,6 +3,7 @@ package seed
 import (
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
@@ -13,6 +14,25 @@ import (
 func generateDeterministicID(relPath string, section string, bulletText string) string {
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s", relPath, section, bulletText)))
 	return fmt.Sprintf("seed-%x", hash[:4])
+}
+
+// isJunkText returns true for placeholder entries that PA agents produce
+// when they haven't filled in a section. These waste injection budget.
+func isJunkText(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return true
+	}
+	lower := strings.ToLower(t)
+	switch lower {
+	case "none.", "none", "(pending)", "n/a", "pending", "tbd", "todo":
+		return true
+	}
+	if strings.HasPrefix(lower, "none encountered") || strings.HasPrefix(lower, "none identified") ||
+		strings.HasPrefix(lower, "no issues") || strings.HasPrefix(lower, "nothing to") {
+		return true
+	}
+	return false
 }
 
 func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path string, commitTime time.Time, existingIDs map[string]bool) []ops.Op {
@@ -38,6 +58,9 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 	}
 
 	for _, dec := range report.Decisions {
+		if isJunkText(dec) {
+			continue
+		}
 		entryID := generateDeterministicID(path, "dec", dec)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
@@ -57,6 +80,9 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 	}
 
 	for _, de := range report.DeadEnds {
+		if isJunkText(de) {
+			continue
+		}
 		entryID := generateDeterministicID(path, "rul", de)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
@@ -76,6 +102,9 @@ func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path 
 	}
 
 	for _, finding := range report.Findings {
+		if isJunkText(finding) {
+			continue
+		}
 		entryID := generateDeterministicID(path, "issue", finding)
 		if existingIDs != nil && existingIDs[entryID] {
 			continue
