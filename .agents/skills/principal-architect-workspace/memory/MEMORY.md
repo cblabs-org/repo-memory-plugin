@@ -1,15 +1,15 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-11T17:19:00+01:00 -->
+<!-- Last updated: 2026-10-11T19:34:00+01:00 -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **14/19 complete** (PR-01 through PR-09b). Stage 0 done. Next: PR-10 evaluation v2 (Stage 1: offline retrieval). |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **14/19 complete** (PR-01 through PR-09b). Stage 0 done. **PR-10-eval-v2 active** (evaluation v2, Stage 0b). Original PR-10 distillation renumbered, gated on eval results. |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| *(none)* | — | — | — |
+| pr-10-eval-v2 | WO1/7 — template build ready | Evaluation, esp32 template, harness | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
