@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
@@ -82,6 +82,11 @@ func extractTargetFile(argsRaw json.RawMessage) string {
 	return ""
 }
 
+// Note on about_to_edit limitation:
+// The about_to_edit moment rarely fires because the model typically decides and edits
+// in the same turn, so PreToolUse for the edit tool call is the first signal.
+// By then the decision is already made and a "you're about to edit X" injection is too late.
+// Note: a future approach might use PostToolUse on file-read as a proxy for "interested in this file."
 func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
 	if os.Getenv("REPO_MEMORY_DISABLED") == "1" {
 		return allowResponse, nil
@@ -133,11 +138,8 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		repoID = entry.RepoID
 	}
 	if repoID == "" {
-		cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-		cmd.Dir = workspaceRoot
-		out, err := cmd.Output()
-		if err == nil {
-			repoID = filepath.Base(strings.TrimSpace(string(out)))
+		if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil {
+			repoID, _ = gitops.GenerateRepoID(root)
 		}
 	}
 	if repoID == "" {
@@ -149,7 +151,7 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		return allowResponse, nil
 	}
 
-	idxPath := filepath.Join(dataDir, repoID, "index.db")
+	idxPath := index.IndexPath(dataDir, repoID)
 	idx, err := index.NewIndex(idxPath)
 	if err != nil {
 		return allowResponse, nil

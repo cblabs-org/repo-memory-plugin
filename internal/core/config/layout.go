@@ -111,3 +111,12 @@ func EnsureStorageLayout(dataDir, repoID string, repoRoot ...string) error {
 
 	return nil
 }
+
+// IndexPath returns the canonical SQLite index file path: <dataDir>/<repoID>/index.db.
+// If dataDir is empty, DataDir() is used.
+func IndexPath(dataDir, repoID string) string {
+	if dataDir == "" {
+		dataDir = DataDir()
+	}
+	return filepath.Join(dataDir, repoID, "index.db")
+}

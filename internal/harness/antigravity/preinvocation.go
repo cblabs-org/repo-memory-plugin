@@ -13,6 +13,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
@@ -89,30 +90,27 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		repoID = entry.RepoID
 	}
 	if repoID == "" {
-		cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-		cmd.Dir = workspaceRoot
-		out, err := cmd.Output()
-		if err == nil {
-			repoID = filepath.Base(strings.TrimSpace(string(out)))
+		if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil {
+			repoID, _ = gitops.GenerateRepoID(root)
 		}
 	}
 	if repoID == "" {
 		return []byte("{}"), nil
 	}
 
-	idxPath := filepath.Join(dataDir, repoID, "index.db")
+	idxPath := index.IndexPath(dataDir, repoID)
 	idx, err := index.NewIndex(idxPath)
 	if err != nil {
 		return []byte("{}"), nil
 	}
 	defer idx.Close()
 
-	engine := delivery.NewEngine(idx, workspaceRoot)
-	
 	ledger, err := LoadLedger(dataDir, repoID, input.ConversationID)
 	if err != nil || ledger == nil {
 		ledger = delivery.NewLedger(input.ConversationID)
 	}
+
+	engine := delivery.NewEngine(idx, workspaceRoot, delivery.WithInjectedSet(ledger.InjectedSet))
 	// Snapshot the injection count at load time. Only records added *after*
 	// this point belong to this invocation and must be replayed under the lock.
 	injectionBase := len(ledger.Injections)
@@ -236,7 +234,11 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		// err is intentionally ignored — single-commit repos just get no diff paths.
 
 		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
-		if err == nil && len(entries) > 0 {
+		if err != nil {
+			injectSteps = append(injectSteps, InjectStep{
+				EphemeralMessage: fmt.Sprintf("[repo-memory] search error: %v", err),
+			})
+		} else if len(entries) > 0 {
 			formatted := delivery.FormatEntries(entries)
 			injectSteps = append(injectSteps, InjectStep{
 				EphemeralMessage: formatted,

@@ -10,7 +10,12 @@ type RankedEntry struct {
 	Entry       dossiers.Entry
 	Score       int
 	AnchorMatch string // "exact", "directory", "scope", or ""
+	FTSScore    float64
 }
+
+// DefaultMinRelevanceScore is the default minimum score required for an entry to be injected.
+// Entries with no anchor match and low type score (e.g. score < 50) are filtered out.
+const DefaultMinRelevanceScore = 50
 
 var typeOrderRanking = map[dossiers.EntryType]int{
 	dossiers.EntryTypeInvariant:        80,
@@ -23,7 +28,11 @@ var typeOrderRanking = map[dossiers.EntryType]int{
 	dossiers.EntryTypeOpenIssue:        5,
 }
 
-func RankEntries(entries []dossiers.Entry, targetAnchors []string) []RankedEntry {
+func RankEntries(entries []dossiers.Entry, targetAnchors []string, ftsScores ...map[string]float64) []RankedEntry {
+	var scores map[string]float64
+	if len(ftsScores) > 0 {
+		scores = ftsScores[0]
+	}
 	var ranked []RankedEntry
 	
 	targetSet := make(map[string]bool)
@@ -85,10 +94,20 @@ func RankEntries(entries []dossiers.Entry, targetAnchors []string) []RankedEntry
 		}
 		score += evScore
 
+		// 5. FTS BM25 relevance score
+		var ftsScore float64
+		if scores != nil {
+			ftsScore = scores[e.ID]
+		}
+		if ftsScore > 0 {
+			score += int(ftsScore * 100)
+		}
+
 		ranked = append(ranked, RankedEntry{
 			Entry:       e,
 			Score:       score,
 			AnchorMatch: anchorMatch,
+			FTSScore:    ftsScore,
 		})
 	}
 
@@ -99,11 +118,22 @@ func RankEntries(entries []dossiers.Entry, targetAnchors []string) []RankedEntry
 	return ranked
 }
 
-func SelectWithinBudget(ranked []RankedEntry, tokenBudget int) []RankedEntry {
+func RankEntriesWithScores(entries []dossiers.Entry, targetAnchors []string, scores map[string]float64) []RankedEntry {
+	return RankEntries(entries, targetAnchors, scores)
+}
+
+func SelectWithinBudget(ranked []RankedEntry, tokenBudget int, minScore ...int) []RankedEntry {
+	threshold := DefaultMinRelevanceScore
+	if len(minScore) > 0 {
+		threshold = minScore[0]
+	}
 	var selected []RankedEntry
 	usedTokens := 0
 	
 	for _, r := range ranked {
+		if r.Score < threshold {
+			continue
+		}
 		tokens := len(r.Entry.Text) / 4
 		if tokens == 0 {
 			tokens = 1

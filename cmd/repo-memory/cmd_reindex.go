@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
@@ -19,17 +20,34 @@ var reindexCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		repoRoot, err := gitops.FindRepoRoot(".")
+		targetDir := "."
+		if len(args) > 0 {
+			targetDir = args[0]
+		}
+
+		repoRoot, err := gitops.FindRepoRoot(targetDir)
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
 		}
 
-		cacheDir := filepath.Join(repoRoot, ".memory", ".cache")
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
-			return fmt.Errorf("creating cache dir: %w", err)
+		dataDir := config.DataDir()
+		repoID := ""
+		if entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot); found && entry != nil {
+			repoID = entry.RepoID
+		}
+		if repoID == "" {
+			var err error
+			repoID, err = gitops.GenerateRepoID(repoRoot)
+			if err != nil {
+				return fmt.Errorf("generating repo ID: %w", err)
+			}
 		}
 
-		dbPath := filepath.Join(cacheDir, "index.db")
+		dbPath := index.IndexPath(dataDir, repoID)
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+			return fmt.Errorf("creating index dir: %w", err)
+		}
+
 		idx, err := index.NewIndex(dbPath)
 		if err != nil {
 			return fmt.Errorf("opening index: %w", err)
@@ -44,7 +62,7 @@ var reindexCmd = &cobra.Command{
 			return fmt.Errorf("rebuilding index from op log: %w", err)
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "Index rebuilt successfully in .memory/.cache/index.db")
+		fmt.Fprintf(cmd.OutOrStdout(), "Index rebuilt successfully in %s\n", dbPath)
 		return nil
 	},
 }
