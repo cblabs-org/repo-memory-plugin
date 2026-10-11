@@ -1,0 +1,919 @@
+{
+  "ConversationID": "5a60620b-34de-495e-84bc-ae36e9c35b84",
+  "Injections": [
+    {
+      "EntryID": "seed-7a5f2cce",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-b1617c95",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5653e267",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-664ccba0",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-01e79d6d",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-db3299bd",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-069a4cc4",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-203c1800",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3ace6d21",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-b1617c95",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4367d3cc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ce39aaca",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ad1c898f",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 7,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a3027bbf",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 10,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e061d96d",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 10,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-f61bac8b",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 10,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3ace6d21",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 13,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-db3299bd",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 13,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-411b878c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 13,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 23,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 23,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 23,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 26,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 26,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 26,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 31,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7a5f2cce",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 31,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e344cefe",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 42,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 42,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1a602f9b",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 42,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4c2dd2e9",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 51,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-64752358",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 51,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a67dc99c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 74,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3a98c0c9",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 74,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-d378e842",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 74,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1c3bab6e",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 74,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 81,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 81,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 81,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 84,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 84,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 84,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 93,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 93,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 93,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 96,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 96,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 96,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "SeenDossiers": {
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/cmd": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness": true
+  },
+  "SeenAnchors": {
+    ".": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/cmd/repo-memory/cmd_hook.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/cmd/repo-memory/fastpath_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/cmd/repo-memory/probe_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/config/config_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/anchor.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/anchors.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/delivery_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/engine.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/formatter.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/ledger.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/delivery/ranker.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/index/entry_anchors.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/core/index/index.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/attribution.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/attribution_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/hooks.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/posttooluse.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/posttooluse_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/preinvocation.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/preinvocation_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/pretooluse.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.OWag8whPkN/repo/internal/harness/antigravity/pretooluse_test.go": true,
+    "cmd/repo-memory/cmd_hook.go": true,
+    "cmd/repo-memory/fastpath_test.go": true,
+    "cmd/repo-memory/probe_test.go": true,
+    "internal/core/config/config_test.go": true,
+    "internal/core/delivery/anchor.go": true,
+    "internal/core/delivery/anchors.go": true,
+    "internal/core/delivery/delivery_test.go": true,
+    "internal/core/delivery/engine.go": true,
+    "internal/core/delivery/formatter.go": true,
+    "internal/core/delivery/ledger.go": true,
+    "internal/core/delivery/ranker.go": true,
+    "internal/core/index/entry_anchors.go": true,
+    "internal/core/index/index.go": true,
+    "internal/harness/antigravity/attribution.go": true,
+    "internal/harness/antigravity/attribution_test.go": true,
+    "internal/harness/antigravity/hooks.go": true,
+    "internal/harness/antigravity/posttooluse.go": true,
+    "internal/harness/antigravity/posttooluse_test.go": true,
+    "internal/harness/antigravity/preinvocation.go": true,
+    "internal/harness/antigravity/preinvocation_test.go": true,
+    "internal/harness/antigravity/pretooluse.go": true,
+    "internal/harness/antigravity/pretooluse_test.go": true
+  },
+  "AcknowledgedGates": {},
+  "ExposureList": [
+    {
+      "EntryID": "seed-7a5f2cce",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-b1617c95",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5653e267",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-664ccba0",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-01e79d6d",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-db3299bd",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-069a4cc4",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-203c1800",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3ace6d21",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-b1617c95",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4367d3cc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ce39aaca",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ad1c898f",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a3027bbf",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e061d96d",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-f61bac8b",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3ace6d21",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-db3299bd",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-411b878c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7a5f2cce",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e344cefe",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1a602f9b",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4c2dd2e9",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-64752358",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a67dc99c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-3a98c0c9",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-d378e842",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1c3bab6e",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5592e8e5",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-dea19596",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c91eb6fc",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "last_handled_checkpoint_step": -1,
+  "last_processed_step_index": 156
+}

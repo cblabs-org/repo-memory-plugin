@@ -23,7 +23,7 @@
           "cmd/repo-memory/cmd_tick.go"
         ],
         "entry_type": "decision",
-        "text": "Maintained strict core/adapter boundary boundaries per SPEC §18.2: `internal/core/tick` defines the `SessionAttributor` interface and does not import concrete adapters (`boundary_test.go` passed 100% with 0 violations across 61 files)."
+        "text": "Maintained strict core/adapter boundary boundaries per SPEC \u00a718.2: `internal/core/tick` defines the `SessionAttributor` interface and does not import concrete adapters (`boundary_test.go` passed 100% with 0 violations across 61 files)."
       }
     },
     {
@@ -99,31 +99,6 @@
         ],
         "entry_type": "ruled-out",
         "text": "Direct imports of concrete harness adapters from `internal/core` are forbidden by `boundary_test.go`. Interface injection via `SessionAttributor` avoided boundary violations while allowing full concrete functionality."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-69baf7ff",
-      "dossier_scope": "modernc.org",
-      "timestamp": "2026-10-02T08:56:57+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "file:///",
-          "modernc.org/sqlite",
-          "conversation_summaries.db",
-          "tick.SessionAttributor",
-          "internal/core/tick/sweep.go",
-          "internal/core/tick/sweep.go",
-          "internal/core/tick/tick.go",
-          "spool.Entry",
-          "hooks.go",
-          "antigravity.NewSessionAttributor()",
-          "tick.NewTicker",
-          "cmd/repo-memory/cmd_tick.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "None."
       }
     }
   ],

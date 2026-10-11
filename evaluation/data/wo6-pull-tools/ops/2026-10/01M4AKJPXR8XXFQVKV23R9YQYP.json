@@ -39,24 +39,6 @@
     },
     {
       "type": "add",
-      "entry_id": "seed-0adcc49f",
-      "dossier_scope": "harness/antigravity",
-      "timestamp": "2026-10-07T08:17:23+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/harness/antigravity/pretooluse.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "antigravity.HandlePreToolUse",
-          "internal/harness/antigravity/pretooluse_test.go",
-          "cmd/repo-memory/hook_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "None encountered in PreToolUse handler."
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "seed-f124f548",
       "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-07T08:17:23+01:00",

@@ -1,0 +1,624 @@
+{
+  "ConversationID": "f70ddec1-cf1b-480d-8498-348d67a458f8",
+  "Injections": [
+    {
+      "EntryID": "seed-6ebc82d6",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4ac0c7aa",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-084601c6",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c868830a",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-d378e842",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-92402404",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-6f48704f",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5fd3847d",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a67dc99c",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bcda28c3",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-270012fa",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1c3bab6e",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bceb01f9",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "StepIndex": 1,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ce39aaca",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ad1c898f",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 4,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 11,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-909c1e20",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 11,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-2c90e2ae",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 11,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 18,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 21,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 21,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 21,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-01f06942",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 24,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1e638d55",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 24,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-97de0061",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 24,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bd8c65c3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 24,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 38,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 38,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-77325143",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 38,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 47,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-95b3ba69",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "StepIndex": 47,
+      "ContentHash": "",
+      "Tag": "",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "SeenDossiers": {
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal": true,
+    "private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core": true
+  },
+  "SeenAnchors": {
+    ".": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/docs/design-v2-distillation-retrieval.md": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/boundary_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/config/scopes.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/anchor.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/delivery_test.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/doc.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/engine.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/formatter.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/ledger.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/ranker.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/delivery/types.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/dossiers/entry.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/dossiers/projector.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/dossiers/renderer.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/index/entries.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/index/entry_anchors.go": true,
+    "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.j6pRmmHyLC/repo/internal/core/index/v2_test.go": true,
+    "docs/design-v2-distillation-retrieval.md": true,
+    "internal/core/boundary_test.go": true,
+    "internal/core/config/scopes.go": true,
+    "internal/core/delivery/anchor.go": true,
+    "internal/core/delivery/delivery_test.go": true,
+    "internal/core/delivery/doc.go": true,
+    "internal/core/delivery/engine.go": true,
+    "internal/core/delivery/formatter.go": true,
+    "internal/core/delivery/ledger.go": true,
+    "internal/core/delivery/ranker.go": true,
+    "internal/core/delivery/types.go": true,
+    "internal/core/dossiers/entry.go": true,
+    "internal/core/dossiers/projector.go": true,
+    "internal/core/dossiers/renderer.go": true,
+    "internal/core/index/entries.go": true,
+    "internal/core/index/entry_anchors.go": true,
+    "internal/core/index/v2_test.go": true
+  },
+  "AcknowledgedGates": {},
+  "ExposureList": [
+    {
+      "EntryID": "seed-6ebc82d6",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4ac0c7aa",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-084601c6",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c868830a",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-d378e842",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-92402404",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-6f48704f",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-5fd3847d",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-a67dc99c",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bcda28c3",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-270012fa",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1c3bab6e",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bceb01f9",
+      "Channel": "ephemeral",
+      "Moment": "task_start",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-42169b28",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-e67606f4",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ce39aaca",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-ad1c898f",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-54b99462",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-909c1e20",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-2c90e2ae",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-c1392cd3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-01f06942",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-1e638d55",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-97de0061",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-bd8c65c3",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-370ea357",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-7399e38c",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-77325143",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-4e193660",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    },
+    {
+      "EntryID": "seed-95b3ba69",
+      "Channel": "ephemeral",
+      "Moment": "first_touch",
+      "Timestamp": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "last_handled_checkpoint_step": -1,
+  "last_processed_step_index": 101
+}

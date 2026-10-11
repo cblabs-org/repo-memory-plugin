@@ -1,0 +1,8 @@
+internal/core/dossiers/dossier.go
+internal/core/dossiers/dossiers_test.go
+internal/core/dossiers/entry.go
+internal/core/dossiers/handedit.go
+internal/core/dossiers/lint.go
+internal/core/dossiers/projector.go
+internal/core/dossiers/renderer.go
+internal/core/dossiers/writer.go

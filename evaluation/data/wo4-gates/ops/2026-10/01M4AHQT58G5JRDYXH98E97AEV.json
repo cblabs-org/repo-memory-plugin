@@ -3,24 +3,6 @@
   "ops": [
     {
       "type": "add",
-      "entry_id": "seed-b60a7966",
-      "dossier_scope": "harness/antigravity",
-      "timestamp": "2026-10-07T07:45:13+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/harness/antigravity/preinvocation.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "v2_spike_channels.go",
-          "preinvocation_test.go",
-          "cmd/repo-memory/enrolment_test.go"
-        ],
-        "entry_type": "decision",
-        "text": "(pending)"
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "seed-3ace6d21",
       "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-07T07:45:13+01:00",
@@ -53,60 +35,6 @@
         ],
         "entry_type": "decision",
         "text": "Used `config.DeriveModuleScopes` to determine scopes of touched files."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-49690164",
-      "dossier_scope": "harness/antigravity",
-      "timestamp": "2026-10-07T07:45:13+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/harness/antigravity/preinvocation.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "v2_spike_channels.go",
-          "preinvocation_test.go",
-          "cmd/repo-memory/enrolment_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "(pending)"
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-d591a9f8",
-      "dossier_scope": "harness/antigravity",
-      "timestamp": "2026-10-07T07:45:13+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/harness/antigravity/preinvocation.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "v2_spike_channels.go",
-          "preinvocation_test.go",
-          "cmd/repo-memory/enrolment_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "N/A"
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-f701a196",
-      "dossier_scope": "harness/antigravity",
-      "timestamp": "2026-10-07T07:45:13+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/harness/antigravity/preinvocation.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "v2_spike_channels.go",
-          "preinvocation_test.go",
-          "cmd/repo-memory/enrolment_test.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "(pending)"
       }
     },
     {

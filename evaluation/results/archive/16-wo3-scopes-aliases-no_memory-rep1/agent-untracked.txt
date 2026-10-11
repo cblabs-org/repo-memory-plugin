@@ -1,0 +1,2 @@
+internal/core/config/scopes.go
+internal/core/config/scopes_test.go

@@ -1,0 +1,11 @@
+{
+  "id": "spool-1791661238757895000-06a66a6f14db",
+  "kind": "capture",
+  "timestamp": "2026-10-10T19:40:38.757895Z",
+  "harness": "antigravity",
+  "conversation_id": "5c325a2b-91f0-4f8f-8beb-0219779636f9",
+  "transcript_path": "/Users/mcneillm/.gemini/antigravity-cli/brain/5c325a2b-91f0-4f8f-8beb-0219779636f9/.system_generated/logs/transcript_full.jsonl",
+  "repo_root": "/private/var/folders/3d/3dzd6kf54bv8t8nhbghbmgvc0000gp/T/tmp.tTkIlXMbuN/repo",
+  "branch": "main",
+  "head": "6a144fad999abe0a87b4e60236ce387b9e7453ca"
+}

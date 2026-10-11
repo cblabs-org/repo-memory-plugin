@@ -14,7 +14,7 @@
           "internal/harness/claudecode/copier.go",
           "~/.claude/projects/",
           "subagents/*.jsonl",
-          "\u003cdata-dir\u003e/\u003crepo-id\u003e/raw/claude-code/",
+          "<data-dir>/<repo-id>/raw/claude-code/",
           "memory/",
           "claudecode.CopyTranscripts",
           "cmd/repo-memory/cmd_tick.go",
@@ -22,29 +22,6 @@
         ],
         "entry_type": "decision",
         "text": "Used a decoupled registration pattern (`tick.RegisterCopier`) to keep `internal/core` free of adapter dependencies."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-de536fc6",
-      "dossier_scope": "memory",
-      "timestamp": "2026-10-02T09:01:52+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/tick/sweep.go",
-          "internal/core/tick/tick.go",
-          "internal/harness/claudecode/copier.go",
-          "~/.claude/projects/",
-          "subagents/*.jsonl",
-          "\u003cdata-dir\u003e/\u003crepo-id\u003e/raw/claude-code/",
-          "memory/",
-          "claudecode.CopyTranscripts",
-          "cmd/repo-memory/cmd_tick.go",
-          "internal/harness/claudecode/copier_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "None."
       }
     },
     {
@@ -60,14 +37,14 @@
           "internal/harness/claudecode/copier.go",
           "~/.claude/projects/",
           "subagents/*.jsonl",
-          "\u003cdata-dir\u003e/\u003crepo-id\u003e/raw/claude-code/",
+          "<data-dir>/<repo-id>/raw/claude-code/",
           "memory/",
           "claudecode.CopyTranscripts",
           "cmd/repo-memory/cmd_tick.go",
           "internal/harness/claudecode/copier_test.go"
         ],
         "entry_type": "open-issue",
-        "text": "Transcript parsing and compaction are deferred to Release 2 (R2.1) per SPEC §18.6 rule 11."
+        "text": "Transcript parsing and compaction are deferred to Release 2 (R2.1) per SPEC \u00a718.6 rule 11."
       }
     }
   ],

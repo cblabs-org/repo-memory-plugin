@@ -1,0 +1,2 @@
+error: You have exhausted your capacity on this model. Your quota will reset after 3h7m50s.
+AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): You have exhausted your capacity on this model. Your quota will reset after 3h7m50s.","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true,"error_id":"69ea11b6-e5a4-4ef7-b83b-37e9b5adde39-35"}

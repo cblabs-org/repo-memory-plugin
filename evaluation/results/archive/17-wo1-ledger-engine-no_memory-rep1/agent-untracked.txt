@@ -1,0 +1,7 @@
+internal/core/delivery/anchor.go
+internal/core/delivery/delivery_test.go
+internal/core/delivery/engine.go
+internal/core/delivery/formatter.go
+internal/core/delivery/ledger.go
+internal/core/delivery/ranker.go
+internal/core/delivery/types.go

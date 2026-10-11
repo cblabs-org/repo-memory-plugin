@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-09-v2-x6-lite
 > **Base branch:** PR-08-v2-delivery
-> **Status:** ☐ Planned
+> **Status:** ✅ Complete (STOP — task type wrong, not a fail)
 > **SPEC ref:** [SPEC.md](../../../SPEC.md) v0.10
 > **Plan ref:** [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
 
@@ -53,8 +53,8 @@ The protocol is written down and approved by the user before any run.
 | 1 | `wo1-protocol` | Write the pre-registered protocol: work-order selection with reasons, time cuts, conditions, seeds, primary and secondary metrics, threshold, and quota budget and schedule. The user approves it before any run. | interactive | ✅ Complete |
 | 2 | `wo2-dossier-build` | For each selected work order, build time-cut dossiers with `--before <parent commit>`, and time-cut PA documents. The user reviews the dossiers for leakage and accuracy. | standard | ✅ Complete |
 | 3 | `wo3-replay-harness` | A harness that checks out the parent commit, runs a worker on the work order's text under each condition, and collects test results, steps and tokens. Reuse the PR-03 eval harness. | standard | ✅ Complete |
-| 4 | `wo4-runs` | Execute the runs to the schedule and budget. | interactive | ☐ Planned |
-| 5 | `wo5-report-decision` | Report the results against the pre-registered threshold. Recommend continue, redirect (for example, delivery-only with PA-sourced dossiers) or stop. The user decides. | standard | ☐ Planned |
+| 4 | `wo4-runs` | Execute the runs to the schedule and budget. | interactive | ✅ Closed (STOP) |
+| 5 | `wo5-report-decision` | Report the results against the pre-registered threshold. Recommend continue, redirect (for example, delivery-only with PA-sourced dossiers) or stop. The user decides. | standard | ✅ Closed (STOP) |
 
 ## Exit Criteria
 
@@ -88,3 +88,12 @@ The protocol is written down and approved by the user before any run.
 - WO3 (Replay Harness) successfully built `internal/eval/x6_replay.go` containing the dry-run tested evaluation loops.
 - Created branch `pr-09-v2-x6-lite/wo4-runs` based on `wo3-replay-harness`.
 - Prepared WO4 WORKORDER.md (interactive complexity). Handoff ready.
+
+### 2026-10-11 — WO4/WO5 Closed: STOP Verdict
+- **Verdict: STOP.** The no-memory baseline scored 84% (42/50 hidden tests). The remaining failures are oracle-specific wording/tie-breaking details that no memory system could supply. The pre-registered gate threshold (dossiers − no-memory ≥ 15 points) is mathematically unreachable.
+- **This is not evidence memory doesn't help.** It is evidence that well-specified new-package tasks are the wrong instrument: the specification already does memory's job.
+- **Cost:** 92 agent runs, ~22.1M tokens (budget was 7M). Three iterations: v1 invalidated (harness defects), v2 invalidated (pilot issues), v3 clean but instrument wrong.
+- **Three product fixes found and validated:** `systemMessage`→`ephemeralMessage` (`8d7ad7b`), native tool-call parser (`d57f561`), placeholder filter (`3036eb4`). These ship in a follow-on product PR.
+- **Harness infrastructure validated and reusable:** standalone clones, filter-repo isolation, pinned builds, oracle tests with API contracts, agent diff archival, interleaved scheduling.
+- **PA retrieval effectiveness study (231 esp32 transcripts):** Only 3/71 top-level esp32 sessions read the local MEMORY.md (1.3%). PA skill fires for orchestration, not knowledge retrieval. Pull-based memory (both PA skill and MCP tools) effectively unused. See `docs/evaluations/pa-memory-retrieval-effectiveness.md`.
+- **Evaluation v2 pivot approved:** Forward-task 2×2 factorial on esp32-app-foundation (5 conditions: nothing, PA, push, pull, both). Staged: offline retrieval → pilot → main. 7.5M token cap. See `docs/evaluations/memory-value-evaluation-proposal.md`.

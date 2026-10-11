@@ -1,0 +1,2 @@
+{"agy_exit_code": 0, "condition": "no_memory", "duration_seconds": 831, "error": "", "exit_tests_pass": true, "seed": 42, "status": "pass", "steps_taken": 1, "timestamp": "2026-10-10T07:12:41Z", "total_tokens": 339600, "work_order": "wo1-op-log"}
+{"agy_exit_code": 0, "condition": "dossiers", "duration_seconds": 439, "error": "", "exit_tests_pass": true, "seed": 42, "status": "pass", "steps_taken": 1, "timestamp": "2026-10-10T07:20:12Z", "total_tokens": 206634, "work_order": "wo1-op-log"}
