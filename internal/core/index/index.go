@@ -6,8 +6,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	_ "modernc.org/sqlite"
 )
+
+// IndexPath returns the canonical SQLite index file path for a repository:
+// <data-dir>/<repo-id>/index.db.
+// If dataDir is empty, config.DataDir() is used.
+func IndexPath(dataDir, repoID string) string {
+	return config.IndexPath(dataDir, repoID)
+}
 
 // Index provides SQLite FTS indexing over episodes and v2 entries.
 type Index struct {
