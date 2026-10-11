@@ -1,0 +1,10 @@
+private_key.pem
+.pio/build/
+.agents/plugins.json
+.memory/.enrolled
+.memory/
+.vscode/
+.agents/tmp/
+release/
+releases/
+.DS_Store
