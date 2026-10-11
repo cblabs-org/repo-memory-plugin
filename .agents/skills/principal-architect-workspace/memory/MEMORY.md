@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| *(none)* | — | — | — |
+| pr-09b-product-fixes | ☐ Active — WO0/2 | Delivery, Index, Ranker, Seeder | [PROJECT.md](../pr-09b-product-fixes/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
