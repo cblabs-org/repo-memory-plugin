@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-203c1800",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-05T23:23:20+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/v2_spike_channels.go",
+          "cmd/repo-memory/cmd_hook.go",
+          "internal/harness/antigravity/v2_spike_channels_test.go",
+          "docs/experiments/X5-channels.md"
+        ],
+        "entry_type": "decision",
+        "text": "Bypassed the fast-path explicitly for `PreInvocation` in `cmd_hook.go` to ensure the hook fired."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-b1617c95",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-05T23:23:20+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/v2_spike_channels.go",
+          "cmd/repo-memory/cmd_hook.go",
+          "internal/harness/antigravity/v2_spike_channels_test.go",
+          "docs/experiments/X5-channels.md"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Antigravity completely ignores `systemMessage` and `userMessage` fields returned from `PreInvocation`. The hook gets executed and returns the data, but it is not injected into the transcript."
+      }
+    }
+  ],
+  "created_at": "2026-10-05T22:23:20Z",
+  "batch_id": "01M472M3Y06F2Y4K337QB48D2X"
+}

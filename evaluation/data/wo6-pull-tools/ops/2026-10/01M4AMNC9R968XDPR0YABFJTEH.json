@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-cffc3736",
+      "dossier_scope": "mcpserver",
+      "timestamp": "2026-10-07T08:36:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/mcpserver/server.go",
+          "internal/mcpserver/tools.go",
+          "idx.ResolveAlias",
+          "idx.SearchEntries",
+          "dossiers.EntryType",
+          "ops.OpAdd",
+          "ops.Writer",
+          "internal/mcpserver/tools_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `HandleMemoryHistory`, combined queries from `ListEntriesByScope` (for entries marked retired/superseded), `GetHistory` for each entry ID, and direct query of `entry_history` via `WriteTx` with deduplication to ensure retired entries are reliably discovered regardless of whether the index was populated via ops replay or direct insertion."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-1c34eec8",
+      "dossier_scope": "mcpserver",
+      "timestamp": "2026-10-07T08:36:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/mcpserver/server.go",
+          "internal/mcpserver/tools.go",
+          "idx.ResolveAlias",
+          "idx.SearchEntries",
+          "dossiers.EntryType",
+          "ops.OpAdd",
+          "ops.Writer",
+          "internal/mcpserver/tools_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `HandleMemoryWhy`, supported both `entry.Evidence` slice and `entry.Source` fallback to guarantee evidence provenance is printed."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-3511d024",
+      "dossier_scope": "mcpserver",
+      "timestamp": "2026-10-07T08:36:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/mcpserver/server.go",
+          "internal/mcpserver/tools.go",
+          "idx.ResolveAlias",
+          "idx.SearchEntries",
+          "dossiers.EntryType",
+          "ops.OpAdd",
+          "ops.Writer",
+          "internal/mcpserver/tools_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `HandleMemoryNote`, wrote the op batch to disk via `ops.Writer` and additionally upserted the entry into `idx` (when present) so subsequent queries in the same process can immediately access newly captured notes."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-acc7225d",
+      "dossier_scope": "mcpserver",
+      "timestamp": "2026-10-07T08:36:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/mcpserver/server.go",
+          "internal/mcpserver/tools.go",
+          "idx.ResolveAlias",
+          "idx.SearchEntries",
+          "dossiers.EntryType",
+          "ops.OpAdd",
+          "ops.Writer",
+          "internal/mcpserver/tools_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "SQLite `entries` table schema does not store a `retired` column (retired entries reside in `entry_history`). Therefore, in `HandleMemoryBrief`, entries retrieved from `ListEntriesByScope` are cross-checked against `GetHistory(ctx, e.ID)` to ensure retired entries are filtered out."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-6d43540c",
+      "dossier_scope": "mcpserver",
+      "timestamp": "2026-10-07T08:36:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/mcpserver/server.go",
+          "internal/mcpserver/tools.go",
+          "idx.ResolveAlias",
+          "idx.SearchEntries",
+          "dossiers.EntryType",
+          "ops.OpAdd",
+          "ops.Writer",
+          "internal/mcpserver/tools_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "`internal/harness/antigravity/attribution_test.go` (`TestSessionAttributor_Integration`) failed due to an idle time assumption (`expected c1 to be idle (modified 1h ago)`). This is an existing timing test failure outside the `internal/mcpserver` boundary box."
+      }
+    }
+  ],
+  "created_at": "2026-10-07T07:36:19Z",
+  "batch_id": "01M4AMNC9R968XDPR0YABFJTEH"
+}

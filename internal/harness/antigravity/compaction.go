@@ -100,9 +100,6 @@ func BuildReinjection(ctx context.Context, idx *index.Index, lost []delivery.Inj
 	formatted := delivery.FormatEntries(selected)
 
 	return &InjectStep{
-		SystemMessage: &SystemMessageEntry{
-			SystemMessage: formatted,
-			Metadata:      map[string]string{"moment": "re-injection"},
-		},
+		EphemeralMessage: formatted,
 	}, nil
 }

@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-7967253a",
+      "dossier_scope": "modernc.org",
+      "timestamp": "2026-10-02T08:56:57+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "file:///",
+          "modernc.org/sqlite",
+          "conversation_summaries.db",
+          "tick.SessionAttributor",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/tick.go",
+          "spool.Entry",
+          "hooks.go",
+          "antigravity.NewSessionAttributor()",
+          "tick.NewTicker",
+          "cmd/repo-memory/cmd_tick.go"
+        ],
+        "entry_type": "decision",
+        "text": "Maintained strict core/adapter boundary boundaries per SPEC \u00a718.2: `internal/core/tick` defines the `SessionAttributor` interface and does not import concrete adapters (`boundary_test.go` passed 100% with 0 violations across 61 files)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-0c419ff6",
+      "dossier_scope": "modernc.org",
+      "timestamp": "2026-10-02T08:56:57+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "file:///",
+          "modernc.org/sqlite",
+          "conversation_summaries.db",
+          "tick.SessionAttributor",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/tick.go",
+          "spool.Entry",
+          "hooks.go",
+          "antigravity.NewSessionAttributor()",
+          "tick.NewTicker",
+          "cmd/repo-memory/cmd_tick.go"
+        ],
+        "entry_type": "decision",
+        "text": "Subagents with empty or missing `workspace_uris` recursively inherit their enrolled repository attribution from their parent conversation up the hierarchy tree."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-1eba9bad",
+      "dossier_scope": "modernc.org",
+      "timestamp": "2026-10-02T08:56:57+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "file:///",
+          "modernc.org/sqlite",
+          "conversation_summaries.db",
+          "tick.SessionAttributor",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/tick.go",
+          "spool.Entry",
+          "hooks.go",
+          "antigravity.NewSessionAttributor()",
+          "tick.NewTicker",
+          "cmd/repo-memory/cmd_tick.go"
+        ],
+        "entry_type": "decision",
+        "text": "When de-duplicating between app and CLI databases, the record with the latest timestamp is preferred for status/activity, while preserving non-empty workspace paths and parent IDs from either store."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c6513a63",
+      "dossier_scope": "modernc.org",
+      "timestamp": "2026-10-02T08:56:57+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "file:///",
+          "modernc.org/sqlite",
+          "conversation_summaries.db",
+          "tick.SessionAttributor",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/sweep.go",
+          "internal/core/tick/tick.go",
+          "spool.Entry",
+          "hooks.go",
+          "antigravity.NewSessionAttributor()",
+          "tick.NewTicker",
+          "cmd/repo-memory/cmd_tick.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Direct imports of concrete harness adapters from `internal/core` are forbidden by `boundary_test.go`. Interface injection via `SessionAttributor` avoided boundary violations while allowing full concrete functionality."
+      }
+    }
+  ],
+  "created_at": "2026-10-02T07:56:57Z",
+  "batch_id": "01M3XSVJ98DWDFP44FDJV8NYZ8"
+}

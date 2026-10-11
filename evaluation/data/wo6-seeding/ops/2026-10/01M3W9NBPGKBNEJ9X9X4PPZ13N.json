@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-01e79d6d",
+      "dossier_scope": "\u003cdata-dir\u003e/\u003crepo-id\u003e",
+      "timestamp": "2026-10-01T18:54:42+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/gitops/repoid.go",
+          "internal/core/gitops/repoid_test.go",
+          "internal/core/config/registry.go",
+          "internal/core/config/config.go",
+          "internal/core/config/registry_test.go",
+          "internal/harness/fastpath.go",
+          "registry.json",
+          "internal/harness/fastpath_test.go",
+          "cmd/repo-memory/cmd_init.go",
+          "GEMINI.md",
+          "registry.json",
+          "cmd/repo-memory/cmd_leave.go",
+          "registry.json",
+          "\u003cdata-dir\u003e/\u003crepo-id\u003e/",
+          ".memory/",
+          "cmd/repo-memory/cmd_enable.go",
+          "cmd/repo-memory/cmd_disable.go",
+          "cmd/repo-memory/cmd_hook.go",
+          "cmd/repo-memory/main.go",
+          "cmd/repo-memory/enrolment_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Symlinks \u0026 Subdirectory Enrolment: Registered paths are indexed both as raw paths and evaluated symlink paths (e.g. `/var` vs `/private/var` on macOS). `FindRegistryEntry` also supports subdirectories within enrolled repositories so hooks invoked from subfolders match correctly."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-4367d3cc",
+      "dossier_scope": "\u003cdata-dir\u003e/\u003crepo-id\u003e",
+      "timestamp": "2026-10-01T18:54:42+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/gitops/repoid.go",
+          "internal/core/gitops/repoid_test.go",
+          "internal/core/config/registry.go",
+          "internal/core/config/config.go",
+          "internal/core/config/registry_test.go",
+          "internal/harness/fastpath.go",
+          "registry.json",
+          "internal/harness/fastpath_test.go",
+          "cmd/repo-memory/cmd_init.go",
+          "GEMINI.md",
+          "registry.json",
+          "cmd/repo-memory/cmd_leave.go",
+          "registry.json",
+          "\u003cdata-dir\u003e/\u003crepo-id\u003e/",
+          ".memory/",
+          "cmd/repo-memory/cmd_enable.go",
+          "cmd/repo-memory/cmd_disable.go",
+          "cmd/repo-memory/cmd_hook.go",
+          "cmd/repo-memory/main.go",
+          "cmd/repo-memory/enrolment_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Origin URL Canonicalization: Normalized SSH (`git@host:owner/repo.git`), schemes (`ssh://`, `git://`), trailing slashes, and `.git` suffixes to `https://host/owner/repo` so all clone protocols produce matching Repo IDs."
+      }
+    }
+  ],
+  "created_at": "2026-10-01T17:54:42Z",
+  "batch_id": "01M3W9NBPGKBNEJ9X9X4PPZ13N"
+}
