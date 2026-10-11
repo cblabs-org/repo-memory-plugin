@@ -29,7 +29,7 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
 | 1 | [wo1-template-build](wo1-template-build/WORKORDER.md) | Build the esp32 evaluation template per §9: rsync working tree with exclusions, verify build (`pio run` + `pio test -e native`), squash history, create condition templates (tpl-a/b/c/d). Produce the template verification script. | standard | ✅ Complete |
-| 2 | [wo2-protection-harness](wo2-protection-harness/WORKORDER.md) | Implement §10 protection: env vars (`GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`), one-time verification check, BugFixer/sidecar disable instructions, run-copy procedure with APFS clonefile. Produce `eval_run.sh` orchestration script. | standard | ☐ Planned |
+| 2 | [wo2-protection-harness](wo2-protection-harness/WORKORDER.md) | Implement §10 protection: env vars (`GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`), one-time verification check, BugFixer/sidecar disable instructions, run-copy procedure with APFS clonefile. Produce `eval_run.sh` orchestration script. | standard | ✅ Complete |
 | 3 | [wo3-index-build](wo3-index-build/WORKORDER.md) | Build the esp32 index from the PA workspace at HEAD. Seed dossiers from the 105 PA project dirs / 435 workorders. Verify non-trivial entry count and FTS search works. | standard | ☐ Planned |
 | 4 | [wo4-offline-retrieval](wo4-offline-retrieval/WORKORDER.md) | Stage 1: Offline retrieval quality check. Queries = task prompts + sample historical issue texts. Rate top-k injected entries for relevance. Compare against plain search over PA docs and code. Pre-set precision@k thresholds. | interactive | ☐ Planned |
 | 5 | [wo5-pilot](wo5-pilot/WORKORDER.md) | Stage 2a: Pilot run. 1 task × (a),(c) × 1 run. Validate harness (contamination check, protection, archival). Measure cost per run to set 2b's size. | interactive | ☐ Planned |
@@ -87,3 +87,12 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 - Verification script and MANIFEST.md created. platformio.ini SHA-256: `d4e548eb...`.
 - No out-of-scope findings. No dead ends (fsmonitor socket warning resolved by .git removal).
 - Branching WO2 for protection harness.
+
+### 2026-10-11 — WO2 Complete (protection harness)
+- `eval_env.sh`: sets `GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`, unsets `SSH_AUTH_SOCK`.
+- `verify_protection.sh`: one-time check — `gh api user` fails (Bad credentials), `git push` fails (terminal prompts disabled). Both verified.
+- `eval_run.sh`: full orchestration — APFS clonefile copy, per-run plugin/data dirs for conditions c/d, safety prompt appended, archive phase (git diff, untracked files, transcript, ledger).
+- `check_contamination.sh`: transcript scanner for real checkout path, `git push`, `gh` writes, cross-run references. Tested on clean and contaminated inputs.
+- `PROTECTION.md`: threat model, scope/limitations, BugFixer/sidecar disable/restore procedures.
+- No out-of-scope findings. No blockers.
+- Branching WO3 for index build.
