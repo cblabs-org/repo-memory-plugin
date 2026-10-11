@@ -37,18 +37,18 @@ Additionally, X6-lite found an **index wiring issue:** `reindex`, the tick pipel
 
 ## Line-Item Instructions
 
-- [ ] **Review the 3 X6-lite fixes** — They are already on main. Read the diffs at commits `8d7ad7b`, `d57f561`, `3036eb4`. Verify they are clean and have proper tests. If any fix lacks test coverage, add tests.
+- [x] **Review the 3 X6-lite fixes** — They are already on main. Read the diffs at commits `8d7ad7b`, `d57f561`, `3036eb4`. Verify they are clean and have proper tests. If any fix lacks test coverage, add tests.
 
-- [ ] **Fix index wiring** — Trace how the index path is resolved in:
+- [x] **Fix index wiring** — Trace how the index path is resolved in:
   - `cmd/repo-memory/cmd_reindex.go` (the `reindex` subcommand)
   - `internal/core/pipeline/tick.go` (the tick pipeline)  
   - `internal/harness/antigravity/preinvocation.go` (the hook reader)
   - `internal/mcpserver/tools.go` (the MCP pull tools)
   Ensure all four resolve to the same index file path. The canonical location should be `<data-dir>/<repo-hash>/index.db`. Add a shared `IndexPath()` function if one doesn't exist.
 
-- [ ] **Verify the installed binary is current** — Run `which repo-memory` and check the build date/version. If stale, rebuild with `go build -o /usr/local/bin/repo-memory ./cmd/repo-memory/` (or wherever the binary is installed).
+- [x] **Verify the installed binary is current** — Run `which repo-memory` and check the build date/version. If stale, rebuild with `go build -o /usr/local/bin/repo-memory ./cmd/repo-memory/` (or wherever the binary is installed).
 
-- [ ] **Smoke test** — After all fixes, enrol a test repo, run the tick, and verify that:
+- [x] **Smoke test** — After all fixes, enrol a test repo, run the tick, and verify that:
   - The index has > 0 entries
   - A `PreInvocation` hook call produces injection content (not an error)
   - The MCP `memory_search` tool returns results
@@ -64,4 +64,31 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+Complete. All 4 line items implemented and verified. All 26 product test packages pass cleanly, and end-to-end smoke testing validated index population, PreInvocation hook injection, and MCP tool results against canonical index path.
+
+### Changes Made
+- `internal/core/config/layout.go`: Added `config.IndexPath(dataDir, repoID)` helper returning `<data-dir>/<repo-id>/index.db` with default fallback to `config.DataDir()`.
+- `internal/core/index/index.go`: Added `index.IndexPath(dataDir, repoID)` wrapper delegating to `config.IndexPath`.
+- `cmd/repo-memory/cmd_reindex.go`: Updated index target resolution to use canonical `index.IndexPath` and `gitops.FindRepoRoot` / `GenerateRepoID`, rebuilding index into `<data-dir>/<repo-id>/index.db`.
+- `internal/core/tick/pipeline.go`: Updated `ProcessPipeline` to open `index.IndexPath(t.dataDir, repoID)` (replacing `index.sqlite`), and updated `p.Run(ctx)` to rebuild from `.memory/ops` when ops exist.
+- `internal/harness/antigravity/preinvocation.go`, `pretooluse.go`, `posttooluse.go`: Consolidated index path resolution to `index.IndexPath(dataDir, repoID)` and standardized repoID derivation using `gitops.FindRepoRoot` and `gitops.GenerateRepoID`.
+- `cmd/repo-memory/cmd_mcp.go`: Consolidated index opening to `index.IndexPath(dataDir, repoID)`, resolved repoID via registry / gitops, and configured `opsWriter` to point to `<repoRoot>/.memory/ops`.
+- `internal/harness/antigravity/attribution.go` & `attribution_test.go`: Fixed idle conversation check to evaluate the newest primary transcript mtime when transcript path is a directory; synchronized mock directory mtimes in `attribution_test.go`.
+- `internal/harness/antigravity/preinvocation_test.go`: Added `TestPreInvocation_AntigravityNativeToolCalls` unit test verifying Antigravity native `{name, args}` tool calls.
+- `internal/core/seed/seed_test.go`: Added `TestReportToOps_JunkFiltered` unit test verifying that placeholder/junk strings (`"None."`, `"N/A"`, `"(pending)"`, `"TBD"`, etc.) are discarded.
+- Rebuilt binary to `./repo-memory` and installed to `~/.local/bin/repo-memory`.
+
+### Decisions Made
+- Canonical index location is strictly `<data-dir>/<repo-id>/index.db` across all four pathways (`cmd_reindex`, `tick`, hooks, `mcp`).
+- In `internal/core/tick/pipeline.go`, added op-log replay during `Run` so periodic ticks automatically project newly added ops from `.memory/ops` into `index.db`.
+
+### Dead Ends & Warnings
+- When using macOS `/tmp`, symlinks resolve to `/private/tmp`, so registry lookups and path derivations must always support `filepath.EvalSymlinks` or `gitops.FindRepoRoot`.
+
+### Out-of-Scope Findings
+- None.
+
+### Blockers
+None.
