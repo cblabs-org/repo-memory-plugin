@@ -66,28 +66,6 @@
         "entry_type": "ruled-out",
         "text": "When testing Windows and Linux data directory resolution on a Darwin host, path separators in unit tests must be handled with platform awareness or mock functions. Used `dataDirForOS` with injected env and home getters to allow cross-platform testing on any host OS."
       }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-ba800236",
-      "dossier_scope": "core/config",
-      "timestamp": "2026-10-01T18:39:01+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/config/datadir.go",
-          "~/.local/share/repo-memory",
-          "internal/core/config/config.go",
-          "config.yaml",
-          "internal/core/config/layout.go",
-          "internal/core/config/config_test.go",
-          "go.mod",
-          "go.sum",
-          "gopkg.in/yaml.v3"
-        ],
-        "entry_type": "open-issue",
-        "text": "None."
-      }
     }
   ],
   "created_at": "2026-10-01T17:39:01Z",

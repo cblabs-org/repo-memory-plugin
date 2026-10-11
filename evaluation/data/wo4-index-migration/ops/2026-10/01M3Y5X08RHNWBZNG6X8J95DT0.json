@@ -20,23 +20,6 @@
     },
     {
       "type": "add",
-      "entry_id": "seed-d900dbd5",
-      "dossier_scope": "core/pipeline",
-      "timestamp": "2026-10-02T12:27:27+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/pipeline/verify/verifier.go",
-          "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
-          "prompts/verify/prompt.md"
-        ],
-        "entry_type": "ruled-out",
-        "text": "N/A"
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "seed-6c04bb11",
       "dossier_scope": "core/pipeline",
       "timestamp": "2026-10-02T12:27:27+01:00",

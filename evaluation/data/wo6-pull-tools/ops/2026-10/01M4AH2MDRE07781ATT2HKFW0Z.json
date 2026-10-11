@@ -45,27 +45,6 @@
     },
     {
       "type": "add",
-      "entry_id": "seed-d31c5341",
-      "dossier_scope": "core/delivery",
-      "timestamp": "2026-10-07T07:33:39+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/delivery/doc.go",
-          "internal/core/delivery/types.go",
-          "internal/core/delivery/ledger.go",
-          "internal/core/delivery/anchor.go",
-          "internal/core/delivery/ranker.go",
-          "internal/core/delivery/formatter.go",
-          "internal/core/delivery/engine.go",
-          "internal/core/delivery/delivery_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "None"
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "seed-c91eb6fc",
       "dossier_scope": "core/delivery",
       "timestamp": "2026-10-07T07:33:39+01:00",

@@ -1,0 +1,5 @@
+--- FAIL: TestSessionAttributor_Integration (0.00s)
+    attribution_test.go:483: expected c1 to be idle (modified 1h ago)
+FAIL
+FAIL	github.com/cblabs-org/repo-memory-plugin/internal/harness/antigravity	1.157s
+FAIL
