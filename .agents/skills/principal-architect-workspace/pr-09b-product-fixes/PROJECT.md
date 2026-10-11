@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-09b-product-fixes
 > **Base branch:** main (post PR-09 merge at `45a68cd`)
-> **Status:** ☐ Active — WO0/2
+> **Status:** ☐ Active — WO1/2
 > **Human approval:** Decomposition approved 2026-10-11 as part of the post-X6-lite action plan.
 
 ## Objective
@@ -16,7 +16,7 @@ Additionally, fix the ranker to produce relevant results: the current ranker ign
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | [wo1-delivery-fixes](wo1-delivery-fixes/WORKORDER.md) | Cherry-pick and integrate the 3 validated delivery fixes from X6-lite (`8d7ad7b`, `d57f561`, `3036eb4`). Fix index wiring (reindex/tick/hooks use different index files). Rebuild and reinstall the plugin binary. | standard | ☐ Planned |
+| 1 | [wo1-delivery-fixes](wo1-delivery-fixes/WORKORDER.md) | Cherry-pick and integrate the 3 validated delivery fixes from X6-lite (`8d7ad7b`, `d57f561`, `3036eb4`). Fix index wiring (reindex/tick/hooks use different index files). Rebuild and reinstall the plugin binary. | standard | ✅ Complete |
 | 2 | [wo2-ranker-improvements](wo2-ranker-improvements/WORKORDER.md) | Ranker: incorporate bm25 relevance score in final ranking; per-session deduplication; surface FTS errors; add relevance threshold (inject nothing when nothing clears the bar). Fix `about_to_edit` moment (fires too late because model decides and edits in same turn). | standard | ☐ Planned |
 
 ## Dependencies
@@ -42,3 +42,12 @@ Additionally, fix the ranker to produce relevant results: the current ranker ign
 - Created as Stage 0 of the evaluation v2 proposal
 - 2 WOs: delivery fixes (cherry-pick + index wiring) and ranker improvements
 - Spawning WO1 first, WO2 stacks on top
+
+### 2026-10-11 — WO1 Complete
+- Canonical `IndexPath()` consolidates all 4 pathways (reindex, tick, hooks, MCP) to `<data-dir>/<repo-id>/index.db`
+- New unit tests: native tool-call parser (`TestPreInvocation_AntigravityNativeToolCalls`), junk filter (`TestReportToOps_JunkFiltered`)
+- Fixed `TestSessionAttributor_Integration` (mtime sync issue)
+- Binary rebuilt and installed at `~/.local/bin/repo-memory`
+- End-to-end smoke: enrol → seed → tick → index populated → PreInvocation injects → MCP returns results
+- Commit `3bf063c` on `pr-09b/wo1-delivery-fixes`
+- Branching WO2 for ranker improvements
