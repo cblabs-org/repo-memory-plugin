@@ -165,18 +165,14 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	}
 	
 	step := resp.InjectSteps[0]
-	if step.SystemMessage == nil {
-		t.Fatalf("expected systemMessage entry, got nil")
-	}
-	
-	sysMsg := step.SystemMessage.SystemMessage
-	if sysMsg == "" {
-		t.Errorf("systemMessage text is empty")
+	ephMsg := step.EphemeralMessage
+	if ephMsg == "" {
+		t.Fatalf("expected ephemeralMessage entry, got empty")
 	}
 	
 	// Check tag
-	if !strings.Contains(sysMsg, "[repo-memory test-1]") {
-		t.Errorf("systemMessage missing tag, got: %s", sysMsg)
+	if !strings.Contains(ephMsg, "[repo-memory test-1]") {
+		t.Errorf("ephemeralMessage missing tag, got: %s", ephMsg)
 	}
 }
 
@@ -272,13 +268,13 @@ func TestPreInvocation_AboutToEdit(t *testing.T) {
 		if step.EphemeralMessage != "" {
 			ephemeralMsg = step.EphemeralMessage
 		}
-		if step.SystemMessage != nil {
+		if step.EphemeralMessage != "" && !strings.Contains(step.EphemeralMessage, "[repo-memory]") {
 			hasSystemMsg = true
 		}
 	}
 
 	if !hasSystemMsg {
-		t.Errorf("expected first-touch systemMessage to be present")
+		t.Errorf("expected first-touch ephemeralMessage to be present")
 	}
 
 	wantEphemeral := "[repo-memory] Check injected entries above before editing file.go"
@@ -384,9 +380,9 @@ CHECKPOINT
 		t.Fatalf("expected inject steps, got none")
 	}
 
-	sysMsg := resp.InjectSteps[0].SystemMessage.SystemMessage
-	if !strings.Contains(sysMsg, "Must preserve state after compaction") {
-		t.Errorf("expected reinjection text in system message, got: %s", sysMsg)
+	ephMsg := resp.InjectSteps[0].EphemeralMessage
+	if !strings.Contains(ephMsg, "Must preserve state after compaction") {
+		t.Errorf("expected reinjection text in ephemeral message, got: %s", ephMsg)
 	}
 
 	// verify dedup is cleared
