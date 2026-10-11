@@ -105,12 +105,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	}
 	defer idx.Close()
 
-	engine := delivery.NewEngine(idx, workspaceRoot)
-	
 	ledger, err := LoadLedger(dataDir, repoID, input.ConversationID)
 	if err != nil || ledger == nil {
 		ledger = delivery.NewLedger(input.ConversationID)
 	}
+
+	engine := delivery.NewEngine(idx, workspaceRoot, delivery.WithInjectedSet(ledger.InjectedSet))
 	// Snapshot the injection count at load time. Only records added *after*
 	// this point belong to this invocation and must be replayed under the lock.
 	injectionBase := len(ledger.Injections)
@@ -234,7 +234,11 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		// err is intentionally ignored — single-commit repos just get no diff paths.
 
 		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
-		if err == nil && len(entries) > 0 {
+		if err != nil {
+			injectSteps = append(injectSteps, InjectStep{
+				EphemeralMessage: fmt.Sprintf("[repo-memory] search error: %v", err),
+			})
+		} else if len(entries) > 0 {
 			formatted := delivery.FormatEntries(entries)
 			injectSteps = append(injectSteps, InjectStep{
 				EphemeralMessage: formatted,
