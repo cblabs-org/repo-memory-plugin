@@ -156,3 +156,44 @@ func TestScanner(t *testing.T) {
 		t.Errorf("expected %s, got %s", validWO, files[0])
 	}
 }
+
+func TestReportToOps_JunkFiltered(t *testing.T) {
+	report := &seed.CompletionReport{
+		Changes: []seed.Change{
+			{Path: "pkg/core.go", Description: "core change"},
+		},
+		Decisions: []string{
+			"None.",
+			"Valid decision to keep",
+			"n/a",
+			"TBD",
+		},
+		DeadEnds: []string{
+			"(pending)",
+			"None encountered during implementation",
+			"Real dead end that failed",
+		},
+		Findings: []string{
+			"Pending",
+			"No issues found",
+			"Nothing to report",
+			"Important finding about concurrency",
+		},
+	}
+
+	resolver := config.NewScopeResolver(nil, nil, nil)
+	opsList := seed.ReportToOps(report, resolver, "wo1/WORKORDER.md", time.Time{}, nil)
+
+	if len(opsList) != 3 {
+		t.Fatalf("expected exactly 3 ops after filtering junk, got %d: %+v", len(opsList), opsList)
+	}
+
+	for _, o := range opsList {
+		text := o.Fields["text"].(string)
+		if text != "Valid decision to keep" &&
+			text != "Real dead end that failed" &&
+			text != "Important finding about concurrency" {
+			t.Errorf("unexpected op text survived junk filter: %q", text)
+		}
+	}
+}

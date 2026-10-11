@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/mcpserver"
@@ -33,14 +32,15 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 
 		// Derive repoID consistently with the hooks: use registry or git rev-parse.
 		repoID := ""
+		repoRoot := workspaceRoot
 		if entry, found, _ := config.FindRegistryEntry(dataDir, workspaceRoot); found && entry != nil {
 			repoID = entry.RepoID
+			repoRoot = entry.RootPath
 		}
 		if repoID == "" {
-			gitCmd := exec.Command("git", "rev-parse", "--show-toplevel")
-			gitCmd.Dir = workspaceRoot
-			if out, err := gitCmd.Output(); err == nil {
-				repoID = filepath.Base(strings.TrimSpace(string(out)))
+			if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil {
+				repoRoot = root
+				repoID, _ = gitops.GenerateRepoID(root)
 			}
 		}
 
@@ -51,19 +51,18 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 			srv = mcpserver.NewServer(nil)
 		} else {
 			// Enrolled repo: create index and serve normally.
-			idxDir := filepath.Join(dataDir, repoID)
-			if err := os.MkdirAll(idxDir, 0755); err != nil {
+			idxPath := index.IndexPath(dataDir, repoID)
+			if err := os.MkdirAll(filepath.Dir(idxPath), 0755); err != nil {
 				return fmt.Errorf("creating index directory: %w", err)
 			}
 
-			idxPath := filepath.Join(idxDir, "index.db")
 			idx, err := index.NewIndex(idxPath)
 			if err != nil {
 				return fmt.Errorf("opening index: %w", err)
 			}
 			defer idx.Close()
 
-			opsDir := filepath.Join(dataDir, repoID, "ops")
+			opsDir := filepath.Join(repoRoot, ".memory", "ops")
 			srv = mcpserver.NewServer(idx,
 				mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
 			)

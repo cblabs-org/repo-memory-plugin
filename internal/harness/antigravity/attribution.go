@@ -570,7 +570,23 @@ func IsConversationIdle(summary ConversationSummary, transcriptPath string, now 
 
 	if transcriptPath != "" {
 		if fi, err := os.Stat(transcriptPath); err == nil {
-			if now.Sub(fi.ModTime()) < idleCutoff {
+			modTime := fi.ModTime()
+			if fi.IsDir() {
+				if files, err := spool.ResolvePrimaryTranscript(transcriptPath); err == nil && len(files) > 0 {
+					var newest time.Time
+					for _, f := range files {
+						if tfi, err := os.Stat(f); err == nil {
+							if tfi.ModTime().After(newest) {
+								newest = tfi.ModTime()
+							}
+						}
+					}
+					if !newest.IsZero() {
+						modTime = newest
+					}
+				}
+			}
+			if now.Sub(modTime) < idleCutoff {
 				return false
 			}
 		}

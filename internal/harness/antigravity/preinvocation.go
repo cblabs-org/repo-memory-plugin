@@ -13,6 +13,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
@@ -89,18 +90,15 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		repoID = entry.RepoID
 	}
 	if repoID == "" {
-		cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-		cmd.Dir = workspaceRoot
-		out, err := cmd.Output()
-		if err == nil {
-			repoID = filepath.Base(strings.TrimSpace(string(out)))
+		if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil {
+			repoID, _ = gitops.GenerateRepoID(root)
 		}
 	}
 	if repoID == "" {
 		return []byte("{}"), nil
 	}
 
-	idxPath := filepath.Join(dataDir, repoID, "index.db")
+	idxPath := index.IndexPath(dataDir, repoID)
 	idx, err := index.NewIndex(idxPath)
 	if err != nil {
 		return []byte("{}"), nil
