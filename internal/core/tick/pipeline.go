@@ -16,6 +16,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
@@ -44,9 +45,12 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 		return fmt.Errorf("loading repo config: %w", err)
 	}
 
-	repoDataDir := filepath.Join(t.dataDir, repoID)
 	epStore := episode.NewStore(t.dataDir, repoID)
-	idx, err := index.NewIndex(filepath.Join(repoDataDir, "index.sqlite"))
+	idxPath := index.IndexPath(t.dataDir, repoID)
+	if err := os.MkdirAll(filepath.Dir(idxPath), 0755); err != nil {
+		return fmt.Errorf("creating index directory: %w", err)
+	}
+	idx, err := index.NewIndex(idxPath)
 	if err != nil {
 		return fmt.Errorf("opening index: %w", err)
 	}
@@ -133,6 +137,16 @@ func (p *PipelineExecutor) ConvertCapturesToEvidence(ctx context.Context) error 
 func (p *PipelineExecutor) Run(ctx context.Context) error {
 	if err := p.convertCapturesToEvidence(ctx); err != nil {
 		return err
+	}
+
+	if p.idx != nil && p.repoRoot != "" {
+		opsDir := filepath.Join(p.repoRoot, ".memory", "ops")
+		if fi, err := os.Stat(opsDir); err == nil && fi.IsDir() {
+			opsReader := ops.NewReader(opsDir)
+			if err := p.idx.RebuildFromOpLog(ctx, opsReader); err != nil {
+				return fmt.Errorf("rebuilding index from op log: %w", err)
+			}
+		}
 	}
 
 	log.Println("v1 pipeline stages removed; v2 distillation not yet implemented")

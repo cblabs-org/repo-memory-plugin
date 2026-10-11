@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
@@ -17,6 +18,8 @@ type Engine struct {
 	scopeResolver *config.ScopeResolver
 	workspaceRoot string
 	budgets       map[Moment]int
+	minScore      int
+	injectedSet   map[string]bool
 }
 
 type EngineOption func(*Engine)
@@ -33,16 +36,70 @@ func WithScopeResolver(resolver *config.ScopeResolver) EngineOption {
 	}
 }
 
+func WithMinScore(minScore int) EngineOption {
+	return func(e *Engine) {
+		e.minScore = minScore
+	}
+}
+
+func WithInjectedSet(set map[string]bool) EngineOption {
+	return func(e *Engine) {
+		e.injectedSet = set
+	}
+}
+
 func NewEngine(idx *index.Index, workspaceRoot string, opts ...EngineOption) *Engine {
 	e := &Engine{
 		index:         idx,
 		workspaceRoot: workspaceRoot,
 		budgets:       DefaultBudgets(),
+		minScore:      DefaultMinRelevanceScore,
+		injectedSet:   make(map[string]bool),
 	}
 	for _, opt := range opts {
 		opt(e)
 	}
+	if e.injectedSet == nil {
+		e.injectedSet = make(map[string]bool)
+	}
 	return e
+}
+
+func (e *Engine) InjectedSet() map[string]bool {
+	return e.injectedSet
+}
+
+func (e *Engine) IsInjected(id string) bool {
+	return e.injectedSet != nil && e.injectedSet[id]
+}
+
+func (e *Engine) MarkInjected(id string) {
+	if e.injectedSet == nil {
+		e.injectedSet = make(map[string]bool)
+	}
+	e.injectedSet[id] = true
+}
+
+func (e *Engine) ResetInjected() {
+	e.injectedSet = make(map[string]bool)
+}
+
+func (e *Engine) filterUninjected(entries []dossiers.Entry) []dossiers.Entry {
+	var uninjected []dossiers.Entry
+	for _, ent := range entries {
+		if !e.IsInjected(ent.ID) {
+			uninjected = append(uninjected, ent)
+		}
+	}
+	return uninjected
+}
+
+func (e *Engine) selectAndRecord(ranked []RankedEntry, moment Moment) []RankedEntry {
+	selected := SelectWithinBudget(ranked, e.budgets[moment], e.minScore)
+	for _, s := range selected {
+		e.MarkInjected(s.Entry.ID)
+	}
+	return selected
 }
 
 func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
@@ -112,22 +169,24 @@ const maxFTSResults = 20
 
 func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, diffPaths []string) ([]RankedEntry, error) {
 	entryMap := make(map[string]dossiers.Entry)
+	ftsScores := make(map[string]float64)
 
-	// Query by prompt terms — search errors do NOT discard diff-path results.
+	// Query by prompt terms — search errors are surfaced to caller.
 	if len(promptTerms) > 0 {
 		query := sanitizeFTSQuery(promptTerms)
 		if query != "" {
-			results, err := e.index.SearchEntries(ctx, query)
-			if err == nil {
-				// Cap to top N by bm25 to keep only the most relevant.
-				if len(results) > maxFTSResults {
-					results = results[:maxFTSResults]
-				}
-				for _, ent := range results {
-					entryMap[ent.ID] = ent
-				}
+			results, err := e.index.SearchEntriesWithScore(ctx, query)
+			if err != nil {
+				return nil, fmt.Errorf("FTS search: %w", err)
 			}
-			// On error, log/ignore — diff-path results still proceed.
+			// Cap to top N by bm25 to keep only the most relevant.
+			if len(results) > maxFTSResults {
+				results = results[:maxFTSResults]
+			}
+			for _, res := range results {
+				entryMap[res.Entry.ID] = res.Entry
+				ftsScores[res.Entry.ID] = res.Score
+			}
 		}
 	}
 
@@ -152,9 +211,9 @@ func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, dif
 		entries = append(entries, ent)
 	}
 
-	validEntries := e.filterAndVerify(entries)
-	ranked := RankEntries(validEntries, diffPaths)
-	return SelectWithinBudget(ranked, e.budgets[MomentTaskStart]), nil
+	validEntries := e.filterUninjected(e.filterAndVerify(entries))
+	ranked := RankEntries(validEntries, diffPaths, ftsScores)
+	return e.selectAndRecord(ranked, MomentTaskStart), nil
 }
 
 func (e *Engine) DossierEntries(ctx context.Context, scope string) ([]RankedEntry, error) {
@@ -170,9 +229,9 @@ func (e *Engine) DossierEntries(ctx context.Context, scope string) ([]RankedEntr
 		}
 	}
 	
-	validEntries := e.filterAndVerify(valid)
+	validEntries := e.filterUninjected(e.filterAndVerify(valid))
 	ranked := RankEntries(validEntries, nil)
-	return SelectWithinBudget(ranked, e.budgets[MomentFirstEntry]), nil
+	return e.selectAndRecord(ranked, MomentFirstEntry), nil
 }
 
 func (e *Engine) AnchorEntries(ctx context.Context, anchor string) ([]RankedEntry, error) {
@@ -193,9 +252,9 @@ func (e *Engine) AnchorEntries(ctx context.Context, anchor string) ([]RankedEntr
 		}
 	}
 	
-	validEntries := e.filterAndVerify(entries)
+	validEntries := e.filterUninjected(e.filterAndVerify(entries))
 	ranked := RankEntries(validEntries, []string{anchor})
-	return SelectWithinBudget(ranked, e.budgets[MomentFirstTouch]), nil
+	return e.selectAndRecord(ranked, MomentFirstTouch), nil
 }
 
 // patternMatchesOutput returns true if the pattern matches the tool output.
@@ -230,9 +289,9 @@ func (e *Engine) ErrorEntries(ctx context.Context, commandPrefix string, output 
 		}
 	}
 	
-	validEntries := e.filterAndVerify(entries)
+	validEntries := e.filterUninjected(e.filterAndVerify(entries))
 	ranked := RankEntries(validEntries, nil)
-	return SelectWithinBudget(ranked, e.budgets[MomentError]), nil
+	return e.selectAndRecord(ranked, MomentError), nil
 }
 
 // gatePattern is compiled once at package level for efficiency.
@@ -278,5 +337,5 @@ func (e *Engine) GateEntries(ctx context.Context, targetFile string, ledger *Led
 	
 	validEntries := e.filterAndVerify(entries)
 	ranked := RankEntries(validEntries, []string{targetFile})
-	return SelectWithinBudget(ranked, e.budgets[MomentGate]), nil
+	return SelectWithinBudget(ranked, e.budgets[MomentGate], e.minScore), nil
 }

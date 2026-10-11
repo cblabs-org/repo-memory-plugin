@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,10 +52,14 @@ func TestLedger(t *testing.T) {
 	if !l.HasSeenAnchor("anchor-B") {
 		t.Errorf("expected anchor-B to be seen")
 	}
+
+	if !l.HasInjected("inv-01") {
+		t.Errorf("expected inv-01 to be marked as injected")
+	}
 	
 	l.RearmDedup()
-	if l.HasSeenDossier("scope-A") || l.HasSeenAnchor("anchor-B") {
-		t.Errorf("expected seen lists to be cleared")
+	if l.HasSeenDossier("scope-A") || l.HasSeenAnchor("anchor-B") || l.HasInjected("inv-01") {
+		t.Errorf("expected seen lists and injected set to be cleared")
 	}
 	
 	after := l.FindInjectionAfterStep(5)
@@ -191,21 +196,37 @@ func TestEngineIntegration(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("data"), 0644)
 	
 	e1 := dossiers.Entry{
-		ID: "inv-01",
-		Type: dossiers.EntryTypeInvariant,
+		ID:           "inv-01",
+		Type:         dossiers.EntryTypeInvariant,
 		DossierScope: "global",
-		Text: "test data here gate: edit",
-		Anchors: []string{"test.txt"},
+		Text:         "test data here gate: edit",
+		Anchors:      []string{"test.txt"},
 	}
 	e2 := dossiers.Entry{
-		ID: "dec-02",
-		Type: dossiers.EntryTypeDecision,
+		ID:           "dec-02",
+		Type:         dossiers.EntryTypeDecision,
 		DossierScope: "global",
-		Text: "something else",
+		Text:         "something else",
+	}
+	e3 := dossiers.Entry{
+		ID:           "inv-03",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "global",
+		Text:         "dossier invariant entry",
+	}
+	e4 := dossiers.Entry{
+		ID:           "inv-04",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "other",
+		Text:         "anchor invariant entry",
+		Anchors:      []string{"test.txt"},
 	}
 	idx.UpsertEntry(context.Background(), e1)
 	idx.UpsertEntry(context.Background(), e2)
+	idx.UpsertEntry(context.Background(), e3)
+	idx.UpsertEntry(context.Background(), e4)
 	idx.UpsertEntryAnchors(context.Background(), e1.ID, e1.Anchors)
+	idx.UpsertEntryAnchors(context.Background(), e4.ID, e4.Anchors)
 	
 	eng := NewEngine(idx, tmpDir)
 	
@@ -218,7 +239,7 @@ func TestEngineIntegration(t *testing.T) {
 		t.Errorf("TaskStartEntries expected results")
 	}
 	
-	// DossierEntries
+	// DossierEntries (e1 is deduplicated; e3 is returned)
 	res, err = eng.DossierEntries(context.Background(), "global")
 	if err != nil {
 		t.Errorf("DossierEntries failed: %v", err)
@@ -227,7 +248,7 @@ func TestEngineIntegration(t *testing.T) {
 		t.Errorf("DossierEntries expected results")
 	}
 	
-	// AnchorEntries
+	// AnchorEntries (e1 is deduplicated; e4 is returned)
 	res, err = eng.AnchorEntries(context.Background(), "test.txt")
 	if err != nil {
 		t.Errorf("AnchorEntries failed: %v", err)
@@ -253,5 +274,176 @@ func TestEngineIntegration(t *testing.T) {
 	}
 	if len(res) != 0 {
 		t.Errorf("GateEntries expected 0 results after ack, got %d", len(res))
+	}
+}
+
+func TestRanker_BM25Relevance(t *testing.T) {
+	// Procedure has low type score (20), but high FTS bm25 relevance (2.5 -> +250 = 270)
+	highBM25 := dossiers.Entry{
+		ID:   "proc-01",
+		Type: dossiers.EntryTypeProcedure,
+		Text: "Specific procedure for banana buffer",
+	}
+	// Invariant has high type score (80), but low FTS bm25 relevance (0.1 -> +10 = 90)
+	highType := dossiers.Entry{
+		ID:   "inv-02",
+		Type: dossiers.EntryTypeInvariant,
+		Text: "Global system invariant",
+	}
+
+	scores := map[string]float64{
+		"proc-01": 2.5,
+		"inv-02":  0.1,
+	}
+
+	ranked := RankEntries([]dossiers.Entry{highType, highBM25}, nil, scores)
+	if len(ranked) != 2 {
+		t.Fatalf("expected 2 ranked entries, got %d", len(ranked))
+	}
+
+	if ranked[0].Entry.ID != "proc-01" {
+		t.Errorf("expected high BM25 entry proc-01 to outrank high-type entry, got %s first", ranked[0].Entry.ID)
+	}
+	if ranked[0].Score <= ranked[1].Score {
+		t.Errorf("expected score %d > %d", ranked[0].Score, ranked[1].Score)
+	}
+	if ranked[0].FTSScore != 2.5 {
+		t.Errorf("expected FTSScore 2.5, got %f", ranked[0].FTSScore)
+	}
+}
+
+func TestEngine_PerSessionDeduplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx, err := index.NewIndex(filepath.Join(tmpDir, "index.db"))
+	if err != nil {
+		t.Fatalf("failed to open index: %v", err)
+	}
+	defer idx.Close()
+
+	os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("package main"), 0644)
+
+	e1 := dossiers.Entry{
+		ID:           "inv-dup",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core",
+		Text:         "important invariant about file.go",
+		Anchors:      []string{"file.go"},
+	}
+	ctx := context.Background()
+	if err := idx.UpsertEntry(ctx, e1); err != nil {
+		t.Fatalf("UpsertEntry: %v", err)
+	}
+	if err := idx.UpsertEntryAnchors(ctx, e1.ID, e1.Anchors); err != nil {
+		t.Fatalf("UpsertEntryAnchors: %v", err)
+	}
+
+	eng := NewEngine(idx, tmpDir)
+
+	// Moment 1: TaskStartEntries injects e1
+	res1, err := eng.TaskStartEntries(ctx, []string{"important"}, nil)
+	if err != nil {
+		t.Fatalf("TaskStartEntries: %v", err)
+	}
+	if len(res1) != 1 || res1[0].Entry.ID != "inv-dup" {
+		t.Fatalf("expected inv-dup injected at task start, got %v", res1)
+	}
+
+	// Moment 2: AnchorEntries touches file.go — e1 must be skipped as duplicate
+	res2, err := eng.AnchorEntries(ctx, "file.go")
+	if err != nil {
+		t.Fatalf("AnchorEntries: %v", err)
+	}
+	if len(res2) != 0 {
+		t.Errorf("expected 0 entries (deduplicated), got %d", len(res2))
+	}
+
+	// Moment 3: DossierEntries for scope core — e1 must be skipped as duplicate
+	res3, err := eng.DossierEntries(ctx, "core")
+	if err != nil {
+		t.Fatalf("DossierEntries: %v", err)
+	}
+	if len(res3) != 0 {
+		t.Errorf("expected 0 entries (deduplicated), got %d", len(res3))
+	}
+
+	// Reset per-session state — e1 should now be eligible again
+	eng.ResetInjected()
+	res4, err := eng.AnchorEntries(ctx, "file.go")
+	if err != nil {
+		t.Fatalf("AnchorEntries after reset: %v", err)
+	}
+	if len(res4) != 1 || res4[0].Entry.ID != "inv-dup" {
+		t.Errorf("expected inv-dup after reset, got %v", res4)
+	}
+}
+
+func TestEngine_SurfaceFTSErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx, err := index.NewIndex(filepath.Join(tmpDir, "index.db"))
+	if err != nil {
+		t.Fatalf("failed to open index: %v", err)
+	}
+	eng := NewEngine(idx, tmpDir)
+
+	// Closing the underlying index forces an error on query
+	idx.Close()
+
+	ctx := context.Background()
+	_, err = eng.TaskStartEntries(ctx, []string{"query"}, nil)
+	if err == nil {
+		t.Fatalf("expected FTS search error to be surfaced, got nil")
+	}
+	if !strings.Contains(err.Error(), "FTS search") {
+		t.Errorf("expected error message to mention 'FTS search', got %v", err)
+	}
+}
+
+func TestSelectWithinBudget_RelevanceThreshold(t *testing.T) {
+	entries := []dossiers.Entry{
+		{
+			ID:      "inv-01",
+			Type:    dossiers.EntryTypeInvariant, // type score 80 (>= 50)
+			Text:    "important rule",
+			Anchors: []string{"other.txt"},
+		},
+		{
+			ID:      "proc-02",
+			Type:    dossiers.EntryTypeProcedure, // type score 20 (< 50)
+			Text:    "minor procedure",
+			Anchors: []string{"other.txt"},
+		},
+		{
+			ID:      "issue-03",
+			Type:    dossiers.EntryTypeOpenIssue, // type score 5 (< 50)
+			Text:    "open question",
+			Anchors: []string{"other.txt"},
+		},
+	}
+
+	// Target anchors don't match other.txt, so anchor match is "" (0 points)
+	ranked := RankEntries(entries, []string{"target.txt"})
+	if len(ranked) != 3 {
+		t.Fatalf("expected 3 ranked entries, got %d", len(ranked))
+	}
+
+	// Default threshold is 50. Only inv-01 (score 80) should pass.
+	selectedDefault := SelectWithinBudget(ranked, 1000)
+	if len(selectedDefault) != 1 {
+		t.Fatalf("expected 1 entry with default threshold 50, got %d", len(selectedDefault))
+	}
+	if selectedDefault[0].Entry.ID != "inv-01" {
+		t.Errorf("expected inv-01, got %s", selectedDefault[0].Entry.ID)
+	}
+
+	// Custom threshold 10: inv-01 (80) and proc-02 (20) should pass, issue-03 (5) filtered
+	selectedCustom := SelectWithinBudget(ranked, 1000, 10)
+	if len(selectedCustom) != 2 {
+		t.Fatalf("expected 2 entries with threshold 10, got %d", len(selectedCustom))
+	}
+
+	// Custom threshold 0: all pass
+	selectedZero := SelectWithinBudget(ranked, 1000, 0)
+	if len(selectedZero) != 3 {
+		t.Fatalf("expected 3 entries with threshold 0, got %d", len(selectedZero))
 	}
 }

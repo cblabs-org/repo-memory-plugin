@@ -214,15 +214,23 @@ func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossi
 	return results, nil
 }
 
-// SearchEntries performs an FTS5 search over the entries_fts table.
-func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.Entry, error) {
+type ScoredEntry struct {
+	Entry dossiers.Entry
+	Score float64
+}
+
+// SearchEntriesWithScore performs an FTS5 search over the entries_fts table,
+// returning matching entries with their BM25 relevance score.
+// In SQLite FTS5, bm25() returns negative numbers where more negative is more relevant.
+// This function negates the value (-bm25) so higher score represents higher relevance.
+func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]ScoredEntry, error) {
 	matchQuery := strings.TrimSpace(query)
 	if matchQuery == "" {
-		return []dossiers.Entry{}, nil
+		return []ScoredEntry{}, nil
 	}
 
 	sqlQuery := `
-	SELECT e.id, e.type, e.dossier_scope, e.text, e.source, e.verified, e.closes_when, e.created_at, e.updated_at
+	SELECT e.id, e.type, e.dossier_scope, e.text, e.source, e.verified, e.closes_when, e.created_at, e.updated_at, bm25(entries_fts)
 	FROM entries_fts
 	JOIN entries e ON entries_fts.rowid = e.rowid
 	WHERE entries_fts MATCH ?
@@ -234,11 +242,12 @@ func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.E
 	}
 	defer rows.Close()
 
-	var results []dossiers.Entry
+	var results []ScoredEntry
 	for rows.Next() {
 		var e dossiers.Entry
 		var typeStr string
 		var source, verified, closesWhen, createdAtStr, updatedAtStr sql.NullString
+		var rawBM25 float64
 		if err := rows.Scan(
 			&e.ID,
 			&typeStr,
@@ -249,6 +258,7 @@ func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.E
 			&closesWhen,
 			&createdAtStr,
 			&updatedAtStr,
+			&rawBM25,
 		); err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
 		}
@@ -258,22 +268,43 @@ func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.E
 		e.ClosesWhen = closesWhen.String
 		e.CreatedAt = parseTime(createdAtStr.String)
 		e.UpdatedAt = parseTime(updatedAtStr.String)
-		results = append(results, e)
+
+		relevance := -rawBM25
+		if relevance < 0 {
+			relevance = 0
+		}
+		results = append(results, ScoredEntry{
+			Entry: e,
+			Score: relevance,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
 	for i := range results {
-		anchors, err := idx.getEntryAnchors(ctx, results[i].ID)
+		anchors, err := idx.getEntryAnchors(ctx, results[i].Entry.ID)
 		if err != nil {
 			return nil, err
 		}
-		results[i].Anchors = anchors
+		results[i].Entry.Anchors = anchors
 	}
 
 	if results == nil {
-		results = []dossiers.Entry{}
+		results = []ScoredEntry{}
+	}
+	return results, nil
+}
+
+// SearchEntries performs an FTS5 search over the entries_fts table.
+func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.Entry, error) {
+	scored, err := idx.SearchEntriesWithScore(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]dossiers.Entry, len(scored))
+	for i, s := range scored {
+		results[i] = s.Entry
 	}
 	return results, nil
 }

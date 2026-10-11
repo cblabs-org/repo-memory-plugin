@@ -29,6 +29,7 @@ type Ledger struct {
 	LastHandledCheckpointStep int                 `json:"last_handled_checkpoint_step,omitempty"`
 	PendingGates              map[string][]string `json:"pending_gates,omitempty"`
 	LastProcessedStepIndex    int                 `json:"last_processed_step_index,omitempty"`
+	InjectedSet               map[string]bool     `json:"injected_set,omitempty"`
 }
 
 func NewLedger(conversationID string) *Ledger {
@@ -41,11 +42,16 @@ func NewLedger(conversationID string) *Ledger {
 		ExposureList:              make([]ExposureRecord, 0),
 		LastHandledCheckpointStep: -1,
 		PendingGates:              make(map[string][]string),
+		InjectedSet:               make(map[string]bool),
 	}
 }
 
 func (l *Ledger) RecordInjection(rec InjectionRecord) {
 	l.Injections = append(l.Injections, rec)
+	if l.InjectedSet == nil {
+		l.InjectedSet = make(map[string]bool)
+	}
+	l.InjectedSet[rec.EntryID] = true
 	l.ExposureList = append(l.ExposureList, ExposureRecord{
 		EntryID:   rec.EntryID,
 		Channel:   rec.Channel,
@@ -113,6 +119,18 @@ func (l *Ledger) AcknowledgePendingGates(file string) {
 func (l *Ledger) RearmDedup() {
 	l.SeenDossiers = make(map[string]bool)
 	l.SeenAnchors = make(map[string]bool)
+	l.InjectedSet = make(map[string]bool)
+}
+
+func (l *Ledger) HasInjected(entryID string) bool {
+	return l.InjectedSet != nil && l.InjectedSet[entryID]
+}
+
+func (l *Ledger) MarkInjected(entryID string) {
+	if l.InjectedSet == nil {
+		l.InjectedSet = make(map[string]bool)
+	}
+	l.InjectedSet[entryID] = true
 }
 
 func (l *Ledger) GetExposureList() []ExposureRecord {
