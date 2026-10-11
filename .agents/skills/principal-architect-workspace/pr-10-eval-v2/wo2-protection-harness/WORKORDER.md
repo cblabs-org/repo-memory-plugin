@@ -47,7 +47,7 @@ Use standard shell scripting (bash/zsh). Scripts must be portable across macOS (
 
 ## Line-Item Instructions
 
-- [ ] **Create `evaluation/eval-v2/scripts/eval_env.sh`** — a sourceable environment file that sets:
+- [x] **Create `evaluation/eval-v2/scripts/eval_env.sh`** — a sourceable environment file that sets:
   ```bash
   export GH_TOKEN=invalid
   export GIT_CONFIG_NOSYSTEM=1
@@ -56,14 +56,14 @@ Use standard shell scripting (bash/zsh). Scripts must be portable across macOS (
   ```
   Include a comment block explaining why each variable is set.
 
-- [ ] **Create `evaluation/eval-v2/scripts/verify_protection.sh`** — the one-time check script:
+- [x] **Create `evaluation/eval-v2/scripts/verify_protection.sh`** — the one-time check script:
   1. Sources `eval_env.sh`
   2. Runs `gh api user` and asserts it fails (non-zero exit)
   3. Creates a temporary git repo with a dummy remote, runs `git push`, and asserts it fails
   4. Prints a clear PASS/FAIL summary
   5. Cleans up the temporary repo
 
-- [ ] **Create `evaluation/eval-v2/scripts/eval_run.sh`** — the per-run orchestration script:
+- [x] **Create `evaluation/eval-v2/scripts/eval_run.sh`** — the per-run orchestration script:
   Takes arguments: `--condition {a,b,c,d}`, `--task <task-file>`, `--run-id <id>`, `--eval-root <path>`
   
   The script must:
@@ -76,7 +76,7 @@ Use standard shell scripting (bash/zsh). Scripts must be portable across macOS (
   7. After the agent run (when called with `--archive`): archive the `git diff baseline` + untracked files, transcript, and ledger to `$EVAL_ROOT/runs/$RUN_ID/archive/`
   8. Delete the run's repo copy (but keep the archive)
 
-- [ ] **Create `evaluation/eval-v2/scripts/check_contamination.sh`** — the transcript scan:
+- [x] **Create `evaluation/eval-v2/scripts/check_contamination.sh`** — the transcript scan:
   Takes a transcript file path.
   Scans for:
   - Any reference to the real esp32 checkout path (`~/Documents/Projects/esp32-app-foundation` and its absolute expansion)
@@ -85,13 +85,13 @@ Use standard shell scripting (bash/zsh). Scripts must be portable across macOS (
   - Any reference to another run's directory
   Reports findings and exits non-zero if contamination detected.
 
-- [ ] **Create `evaluation/eval-v2/PROTECTION.md`** — document:
+- [x] **Create `evaluation/eval-v2/PROTECTION.md`** — document:
   1. What the protection covers and its scope
   2. What it does NOT cover (deliberately adversarial agent reading key files — a separate macOS user would be needed)
   3. Step-by-step instructions to disable BugFixer daemon plugin and repo-memory tick sidecar during batch runs, and restore them afterwards
   4. The one-time verification procedure
 
-- [ ] **Verify protection works** by running `verify_protection.sh` in the current environment and confirming both checks fail as expected.
+- [x] **Verify protection works** by running `verify_protection.sh` in the current environment and confirming both checks fail as expected.
 
 ## Verification Requirement
 
@@ -111,4 +111,39 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ## Completion Report (written by the worker at task completion)
 
-<!-- Template — to be filled in by the worker -->
+### Status
+complete
+
+### Changes Made
+- `evaluation/eval-v2/scripts/eval_env.sh` — Sourceable environment file defining local protection overrides (`GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`, `unset SSH_AUTH_SOCK`) with detailed rationales for each setting. Executable (`chmod +x`).
+- `evaluation/eval-v2/scripts/verify_protection.sh` — Executable verification script testing that `gh api user` (blocked HTTP 401) and HTTPS `git push` (blocked exit code 128) fail closed under the evaluation environment. Outputs formatted summary and cleans up temporary repositories.
+- `evaluation/eval-v2/scripts/eval_run.sh` — Orchestration script handling run setup across conditions (a, b, c, d) and post-run archival (`--archive`). Implements APFS cloning (`cp -c -R`), baseline tagging, isolated per-run data/plugin directories for conditions c and d, automated safety prompt appending ("Work locally. Do not push, open PRs, or comment on GitHub."), agent launch command and wrapper script generation (`run_agent.sh`), and `--archive` logic capturing `git diff baseline`, untracked files, transcripts, ledgers, and deleting the run repo copy while preserving archives. Executable (`chmod +x`).
+- `evaluation/eval-v2/scripts/check_contamination.sh` — Transcript scanner checking for leaks to the real `esp32-app-foundation` checkout path, `git push` commands, `gh` write operations (`gh pr create`, `gh issue create`, `gh api -X POST`, etc.), and cross-run directory accesses (`/runs/<other-id>`). Exits 0 on clean transcripts and non-zero on violations with line-numbered reports. Executable (`chmod +x`).
+- `evaluation/eval-v2/PROTECTION.md` — Complete specification documenting threat model, multi-layer protection architecture, scope and non-adversarial boundary limits, step-by-step procedures to disable/restore BugFixer daemon and repo-memory tick sidecar, and verification procedures.
+
+### Verification Results
+1. `verify_protection.sh` executed in the evaluation environment: PASSED (both `gh api user` and `git push` failed closed as expected).
+2. `eval_run.sh --help` displays usage, options, and run examples.
+3. End-to-end dry-run of `eval_run.sh` verified on a test run:
+   - Setup: successfully cloned template via APFS, tagged baseline, enrolled repo with per-run data/plugin dir, and appended safety instruction to task prompt.
+   - Archival: `eval_run.sh --archive` successfully generated `git diff baseline`, preserved untracked files, archived transcript and delivery ledger, and deleted the repo directory while retaining the archive.
+4. `check_contamination.sh` verified:
+   - Clean transcript: PASSED (exit code 0).
+   - Contaminated transcripts (`git push`, `gh pr create`, real checkout path): DETECTED (exit code 1) with line and category details.
+5. All scripts are executable (`chmod +x`).
+6. `PROTECTION.md` accurately documents the protection model and operational runbooks.
+
+### Decisions Made
+- Tagged `baseline` on HEAD upon initial template cloning in `eval_run.sh` so that `git diff baseline` is unambiguous regardless of whether the agent makes interim commits.
+- Configured isolated per-run plugin directory (`plugin/repo-memory`) with explicit `env REPO_MEMORY_DATA_DIR=...` commands in `hooks.json` and `mcp_config.json`, ensuring zero state bleed between runs.
+- Generated executable `run_agent.sh` in the run directory alongside the printed interactive command to facilitate reproducible execution.
+
+### Dead Ends & Warnings
+- When testing `run_command` in subshells, pre-tool hooks in the development environment correctly flagged dynamic write targets and direct `git push origin main` command strings, validating that pre-tool gates function as designed.
+
+### Out-of-Scope Findings
+(none)
+
+### Blockers
+(none)
+
