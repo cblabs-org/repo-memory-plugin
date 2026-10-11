@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10-eval-v2 | WO1/7 — template build ready | Evaluation, esp32 template, harness | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
+| pr-10-eval-v2 | WO3/7 — **Stage 0b complete.** WO4 (Stage 1, offline retrieval) blocked on human task prompts | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |

@@ -30,7 +30,7 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 |---|---|---|---|---|
 | 1 | [wo1-template-build](wo1-template-build/WORKORDER.md) | Build the esp32 evaluation template per §9: rsync working tree with exclusions, verify build (`pio run` + `pio test -e native`), squash history, create condition templates (tpl-a/b/c/d). Produce the template verification script. | standard | ✅ Complete |
 | 2 | [wo2-protection-harness](wo2-protection-harness/WORKORDER.md) | Implement §10 protection: env vars (`GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`), one-time verification check, BugFixer/sidecar disable instructions, run-copy procedure with APFS clonefile. Produce `eval_run.sh` orchestration script. | standard | ✅ Complete |
-| 3 | [wo3-index-build](wo3-index-build/WORKORDER.md) | Build the esp32 index from the PA workspace at HEAD. Seed dossiers from the 105 PA project dirs / 435 workorders. Verify non-trivial entry count and FTS search works. | standard | ☐ Planned |
+| 3 | [wo3-index-build](wo3-index-build/WORKORDER.md) | Build the esp32 index from the PA workspace at HEAD. Seed dossiers from the 105 PA project dirs / 435 workorders. Verify non-trivial entry count and FTS search works. | standard | ✅ Complete |
 | 4 | [wo4-offline-retrieval](wo4-offline-retrieval/WORKORDER.md) | Stage 1: Offline retrieval quality check. Queries = task prompts + sample historical issue texts. Rate top-k injected entries for relevance. Compare against plain search over PA docs and code. Pre-set precision@k thresholds. | interactive | ☐ Planned |
 | 5 | [wo5-pilot](wo5-pilot/WORKORDER.md) | Stage 2a: Pilot run. 1 task × (a),(c) × 1 run. Validate harness (contamination check, protection, archival). Measure cost per run to set 2b's size. | interactive | ☐ Planned |
 | 6 | [wo6-main-evaluation](wo6-main-evaluation/WORKORDER.md) | Stage 2b: Main evaluation. 2-3 tasks × conditions × 2 replicates, interleaved and pre-registered. Final Q1/Q2 verdicts. Rubric grading, token accounting, cost/quality frontier. | interactive | ☐ Planned |
@@ -96,3 +96,13 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 - `PROTECTION.md`: threat model, scope/limitations, BugFixer/sidecar disable/restore procedures.
 - No out-of-scope findings. No blockers.
 - Branching WO3 for index build.
+
+### 2026-10-11 — WO3 Complete (index build) — Stage 0b Done
+- Seeded **260 entries from 79 workorders** (of 435 total; 317 pending/unexecuted, 39 template-only). 0 parse errors.
+- Entry breakdown: 157 decisions, 58 ruled-out/dead-ends, 45 open-issues/findings, 2,206 entry anchors.
+- SQLite index: 492 KB, 260 rows in `entries`, FTS5 indexed.
+- FTS verification: display(13), portal(19), OTA(11), WiFi(13), LVGL(17), compound(38).
+- Hermetic rebuild via ephemeral staging repo — templates untouched.
+- `build_index.sh` repeatable automation with `--clean` flag.
+- `SEED_REPORT.md` complete.
+- **Stage 0b complete.** All 3 infrastructure WOs done. Next: WO4 (Stage 1, offline retrieval) — blocked on human task prompts.
