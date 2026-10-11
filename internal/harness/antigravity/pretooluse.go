@@ -82,6 +82,11 @@ func extractTargetFile(argsRaw json.RawMessage) string {
 	return ""
 }
 
+// Note on about_to_edit limitation:
+// The about_to_edit moment rarely fires because the model typically decides and edits
+// in the same turn, so PreToolUse for the edit tool call is the first signal.
+// By then the decision is already made and a "you're about to edit X" injection is too late.
+// Note: a future approach might use PostToolUse on file-read as a proxy for "interested in this file."
 func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
 	if os.Getenv("REPO_MEMORY_DISABLED") == "1" {
 		return allowResponse, nil
