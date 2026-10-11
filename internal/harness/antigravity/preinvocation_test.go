@@ -392,3 +392,107 @@ CHECKPOINT
 	}
 }
 
+func TestPreInvocation_AntigravityNativeToolCalls(t *testing.T) {
+	ctx := context.Background()
+	workspace, idxPath := setupEnrolledWorkspace(t)
+
+	// Create real file in workspace
+	filePath := filepath.Join(workspace, "service.go")
+	if err := os.WriteFile(filePath, []byte("package service\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed index with entry anchored to service.go
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := dossiers.Entry{
+		ID:           "native-entry-1",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core",
+		Text:         "Must preserve service.go invariants",
+		Anchors:      []string{"service.go"},
+	}
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.UpsertEntryAnchors(ctx, entry.ID, entry.Anchors); err != nil {
+		t.Fatal(err)
+	}
+	idx.Close()
+
+	// Create transcript using Antigravity native format: {"name": "...", "args": {...}}
+	transcriptDir := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+
+	step0 := map[string]any{"step_index": 0, "type": "USER_INPUT", "content": "Please check service.go"}
+	step1 := map[string]any{
+		"step_index": 1,
+		"type":       "PLANNER_RESPONSE",
+		"tool_calls": []map[string]any{
+			{
+				"name": "view_file",
+				"args": map[string]any{
+					"AbsolutePath": filePath,
+				},
+			},
+		},
+	}
+	step2 := map[string]any{"step_index": 2, "type": "TOOL_RESPONSE", "content": "package service"}
+	step3 := map[string]any{
+		"step_index": 3,
+		"type":       "PLANNER_RESPONSE",
+		"thinking":   "Now I will edit service.go to make the changes.",
+		"content":    "Making edit.",
+	}
+
+	b0, _ := json.Marshal(step0)
+	b1, _ := json.Marshal(step1)
+	b2, _ := json.Marshal(step2)
+	b3, _ := json.Marshal(step3)
+
+	content := strings.Join([]string{string(b0), string(b1), string(b2), string(b3)}, "\n") + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := `{
+		"conversationId": "conv-native-tool-calls",
+		"invocationNum": 0,
+		"initialNumSteps": 4,
+		"transcriptPath": "` + transcriptPath + `",
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	out, err := HandlePreInvocation(ctx, []byte(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var resp InjectStepsResponse
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(out))
+	}
+
+	var hasContext, hasWarning bool
+	for _, step := range resp.InjectSteps {
+		if strings.Contains(step.EphemeralMessage, "Must preserve service.go invariants") {
+			hasContext = true
+		}
+		if strings.Contains(step.EphemeralMessage, "before editing service.go") {
+			hasWarning = true
+		}
+	}
+
+	if !hasContext {
+		t.Errorf("expected context injection for service.go, got steps: %+v", resp.InjectSteps)
+	}
+	if !hasWarning {
+		t.Errorf("expected warning ephemeralMessage for service.go, got steps: %+v", resp.InjectSteps)
+	}
+}
+

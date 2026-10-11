@@ -424,8 +424,14 @@ func TestSessionAttributor_Integration(t *testing.T) {
 	c2TranscriptDir := filepath.Join(cliBrain, "c2", ".system_generated", "logs")
 	_ = os.MkdirAll(c2TranscriptDir, 0755)
 	_ = os.WriteFile(filepath.Join(c2TranscriptDir, "transcript_full.jsonl"), []byte("{}\n"), 0644)
-
 	now := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
+	transcriptModTime := now.Add(-1 * time.Hour)
+	_ = os.Chtimes(filepath.Join(c1TranscriptDir, "transcript_full.jsonl"), transcriptModTime, transcriptModTime)
+	_ = os.Chtimes(filepath.Join(c2TranscriptDir, "transcript_full.jsonl"), transcriptModTime, transcriptModTime)
+	_ = os.Chtimes(c1TranscriptDir, transcriptModTime, transcriptModTime)
+	_ = os.Chtimes(c2TranscriptDir, transcriptModTime, transcriptModTime)
+	_ = os.Chtimes(filepath.Join(appBrain, "c1"), transcriptModTime, transcriptModTime)
+	_ = os.Chtimes(filepath.Join(cliBrain, "c2"), transcriptModTime, transcriptModTime)
 
 	// App DB rows: c1 (enrolled, idle), c-dup (in both)
 	createTestDB(t, appDB, []string{

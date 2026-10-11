@@ -188,6 +188,12 @@ func loadLedgerLocked(dataDir, repoID, conversationID string) (*delivery.Ledger,
 	if ledger.PendingGates == nil {
 		ledger.PendingGates = make(map[string][]string)
 	}
+	if ledger.InjectedSet == nil {
+		ledger.InjectedSet = make(map[string]bool)
+	}
+	for _, inj := range ledger.Injections {
+		ledger.InjectedSet[inj.EntryID] = true
+	}
 
 	return &ledger, nil
 }
