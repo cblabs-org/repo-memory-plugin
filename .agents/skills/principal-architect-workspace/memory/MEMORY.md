@@ -9,6 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
+| pr-12-v2-distillation | **Active (0/6 WOs)** — Starting WO1 (`wo1-marks-inbox-and-subagent-registry`) | State (`marks`, `subagents`), Inbox (`notes`, `free_harvest`), Stop Hook (`stop_distill`), Prepare, Scrub, Tick (`fallback`), Config (`managed_block`) | [PROJECT.md](../pr-12-v2-distillation/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Ready to resume at WO4 (`wo4-dry-run`) | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
