@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-c7cd3d00",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-11T17:46:18+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_reindex.go",
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "cmd/repo-memory/cmd_mcp.go",
+          "internal/harness/antigravity/attribution.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Canonical index location is strictly `\u003cdata-dir\u003e/\u003crepo-id\u003e/index.db` across all four pathways (`cmd_reindex`, `tick`, hooks, `mcp`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-6e55b30c",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-11T17:46:18+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_reindex.go",
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "cmd/repo-memory/cmd_mcp.go",
+          "internal/harness/antigravity/attribution.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `internal/core/tick/pipeline.go`, added op-log replay during `Run` so periodic ticks automatically project newly added ops from `.memory/ops` into `index.db`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-2c36f72b",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-11T17:46:18+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          "internal/core/index/index.go",
+          "cmd/repo-memory/cmd_reindex.go",
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "cmd/repo-memory/cmd_mcp.go",
+          "internal/harness/antigravity/attribution.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When using macOS `/tmp`, symlinks resolve to `/private/tmp`, so registry lookups and path derivations must always support `filepath.EvalSymlinks` or `gitops.FindRepoRoot`."
+      }
+    }
+  ],
+  "created_at": "2026-10-11T16:46:18Z",
+  "batch_id": "01M4NXQ9WGMYC2H1Q73GQ8N3TJ"
+}

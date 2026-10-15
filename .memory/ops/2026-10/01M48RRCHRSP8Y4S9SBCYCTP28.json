@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-7244721d",
+      "dossier_scope": "core/ops",
+      "timestamp": "2026-10-06T15:09:23+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/ops/op.go",
+          "internal/core/ops/validate.go",
+          "internal/core/ops/writer.go",
+          "internal/core/ops/reader.go",
+          "internal/core/ops/iterator.go",
+          "internal/core/ops/migrate.go",
+          "internal/core/ops/doc.go",
+          "internal/core/ops/ops_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used standard `github.com/oklog/ulid/v2` matching existing codebase patterns for ULID generation."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c8ab4dea",
+      "dossier_scope": "core/ops",
+      "timestamp": "2026-10-06T15:09:23+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/ops/op.go",
+          "internal/core/ops/validate.go",
+          "internal/core/ops/writer.go",
+          "internal/core/ops/reader.go",
+          "internal/core/ops/iterator.go",
+          "internal/core/ops/migrate.go",
+          "internal/core/ops/doc.go",
+          "internal/core/ops/ops_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Designed `Iterator` to support both Go 1.23+ range sequence iteration (`iter.Seq2[*OpBatch, error]`) and pull iteration (`Next() (*OpBatch, error)` via `iter.Pull2`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-bd287837",
+      "dossier_scope": "core/ops",
+      "timestamp": "2026-10-06T15:09:23+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/ops/op.go",
+          "internal/core/ops/validate.go",
+          "internal/core/ops/writer.go",
+          "internal/core/ops/reader.go",
+          "internal/core/ops/iterator.go",
+          "internal/core/ops/migrate.go",
+          "internal/core/ops/doc.go",
+          "internal/core/ops/ops_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Made `split` validation accept both native Go slices/maps and JSON unmarshaled `[]any`/`map[string]any` to ensure round-trip validation seamlessly passes."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-b477db3f",
+      "dossier_scope": "core/ops",
+      "timestamp": "2026-10-06T15:09:23+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/ops/op.go",
+          "internal/core/ops/validate.go",
+          "internal/core/ops/writer.go",
+          "internal/core/ops/reader.go",
+          "internal/core/ops/iterator.go",
+          "internal/core/ops/migrate.go",
+          "internal/core/ops/doc.go",
+          "internal/core/ops/ops_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Supported `WithGitDir` on `Reader` to enable testing and flexible repository location resolution for `IterateBefore`."
+      }
+    }
+  ],
+  "created_at": "2026-10-06T14:09:23Z",
+  "batch_id": "01M48RRCHRSP8Y4S9SBCYCTP28"
+}
