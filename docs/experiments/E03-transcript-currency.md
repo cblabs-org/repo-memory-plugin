@@ -65,14 +65,14 @@ The gap between events confirms real-time processing: ~13s for invocation #0, ~4
 ### PreInvocation #0 Payload
 ```json
 {
-    "artifactDirectoryPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
+    "artifactDirectoryPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
     "conversationId": "00720941-a1f8-4b01-a3e3-4594859e844a",
     "initialNumSteps": 67,
     "invocationNum": 0,
     "modelName": "gemini-3.8-flash-tiered",
-    "transcriptPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
+    "transcriptPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
     "workspacePaths": [
-        "/Users/mcneillm/Documents/Projects/bug-fixer-loop-plugin"
+        "<projects-dir>/bug-fixer-loop-plugin"
     ]
 }
 ```
@@ -80,14 +80,14 @@ The gap between events confirms real-time processing: ~13s for invocation #0, ~4
 ### PreInvocation #1 Payload
 ```json
 {
-    "artifactDirectoryPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
+    "artifactDirectoryPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
     "conversationId": "00720941-a1f8-4b01-a3e3-4594859e844a",
     "initialNumSteps": 70,
     "invocationNum": 1,
     "modelName": "gemini-3.8-flash-tiered",
-    "transcriptPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
+    "transcriptPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
     "workspacePaths": [
-        "/Users/mcneillm/Documents/Projects/bug-fixer-loop-plugin"
+        "<projects-dir>/bug-fixer-loop-plugin"
     ]
 }
 ```
@@ -95,16 +95,16 @@ The gap between events confirms real-time processing: ~13s for invocation #0, ~4
 ### Stop Payload
 ```json
 {
-    "artifactDirectoryPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
+    "artifactDirectoryPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a",
     "conversationId": "00720941-a1f8-4b01-a3e3-4594859e844a",
     "error": "",
     "executionNum": 0,
     "fullyIdle": false,
     "modelName": "gemini-3.8-flash-tiered",
     "terminationReason": "NO_TOOL_CALL",
-    "transcriptPath": "/Users/mcneillm/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
+    "transcriptPath": "<home-dir>/.gemini/antigravity/brain/00720941-a1f8-4b01-a3e3-4594859e844a/.system_generated/logs/transcript_full.jsonl",
     "workspacePaths": [
-        "/Users/mcneillm/Documents/Projects/bug-fixer-loop-plugin"
+        "<projects-dir>/bug-fixer-loop-plugin"
     ]
 }
 ```

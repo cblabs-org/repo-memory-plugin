@@ -1,11 +1,11 @@
 # repo-memory — Programme Plan (v2.2)
 
 > **Programme:** repo-memory
-> **Specification:** [SPEC.md](../../../SPEC.md) v1.0 (in PR-10a) + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 (in PR-10a) + [Addendum A](../../../docs/addendum-a-provenance-and-hardening.md) rev 3 (in PR-10a)
+> **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
 > **Release:** 1 (Antigravity)
 > **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review) · **v2.2:** 2026-10-15 (post-X6-lite & Stage 1 synthesis, session 21)
-> **Total PRs:** 22 (14 complete, 1 paused at WO3/7, 7 planned).
-> **Base branch:** `pr-10-eval-v2/wo3-index-build` (`07fda90`, ahead of `main` `83edd25`).
+> **Total PRs:** 22 (15 complete, 1 paused at WO3/7, 6 planned).
+> **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (ahead of `pr-10-eval-v2/wo3-index-build` `ec96755` and `main` `83edd25`).
 > **Dependency model:**
 > - **PR-10a-v2-2-docs-and-specs** upgrades `SPEC.md` (v1.0), `docs/design-v2-distillation-retrieval.md` (Rev 4), `docs/addendum-a-provenance-and-hardening.md` (Rev 3), `docs/antigravity-hooks-reference.md`, and `README.md` first.
 > - **PR-10b-delivery-and-storage-fixes** fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` persistence regression, wires `DetectRewind`, and resolves open storage/seeder issues (`#10`–`#13`, `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
@@ -87,10 +87,10 @@ PR-09b     Stage 0 Product Fixes (IndexPath, bm25, dedup)              ✅
 PR-10-eval-v2 (WO1..WO3: Stage 0b templates/seeding + Stage 1 audit)   ✅ (Paused at WO3/7)
   │
   ▼
-PR-10a     v2.2 Specs, Design (Rev 4), Addendum A (Rev 3) & Info Docs  🔄 ACTIVE NEXT
+PR-10a     v2.2 Specs, Design (Rev 4), Addendum A (Rev 3) & Info Docs  ✅ COMPLETE
   │
   ▼
-PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#13 ☐
+PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#13 🔄 ACTIVE NEXT
   ├───► PR-10-eval-v2 (Resume WO4..WO7: Dry-Run, Stage 2a/2b, Report)  ☐
   └───► PR-11-v2      Doc-Seeded Dossiers, Lifecycles & {section?}     ☐
           │

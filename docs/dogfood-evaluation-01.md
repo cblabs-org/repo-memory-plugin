@@ -671,7 +671,7 @@ status: active
 | Component | Version/Value |
 |---|---|
 | repo-memory binary | Built from `pr-05b-dogfood-pilot/wo4-b5-evaluation` |
-| agy binary | `/Users/mcneillm/.local/bin/agy` |
+| agy binary | `<home-dir>/.local/bin/agy` |
 | Model | Gemini 3.8 Flash (High) |
 | Executor | `agy -p` via `internal/harness/antigravity/executor.go` |
 | Episode source | PA-imported from `.agents/skills/principal-architect-workspace/` |

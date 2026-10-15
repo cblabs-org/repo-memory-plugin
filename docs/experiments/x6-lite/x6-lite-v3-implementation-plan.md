@@ -100,8 +100,8 @@ If filter-repo still refuses ("not a fresh clone"), add `--force`. It's safe on 
 
 **`replace-paths.txt`** (literal replacements, applied in order, history-wide):
 ```
-/Users/mcneillm/Documents/Projects/repo-memory-plugin==>/workspace/repo-memory-plugin
-/Users/mcneillm/==>/home/dev/
+<repo-root>==>/workspace/repo-memory-plugin
+<home-dir>/==>/home/dev/
 ```
 This covers every tracked file containing a home-dir path, not just the original 4. At wo6-pull-tools' WO_COMMIT, 8 non-PA files contain one: `docs/dogfood-evaluation-01.md`, `docs/experiments/E02-include-resolution.md`, `E03-transcript-currency.md`, `E04-rule-activation.md`, `E05-hook-latency.md`, `phase0-plugin-split.md`, `packaging/antigravity/hook-wrapper.sh` and `testdata/e1-marker-hook.sh`. PA files kept in (b) are covered too. No Go test references the two scripts.
 
@@ -109,8 +109,8 @@ This covers every tracked file containing a home-dir path, not just the original
 1. Newest commit date: `git -C RUN_DIR log --all -1 --format=%cI` ≤ the WO_COMMIT date.
 2. No future content: `git -C RUN_DIR log --all --oneline -- <paths the oracle adds>` is empty.
 3. (a)/(c) only: `git -C RUN_DIR rev-list --all --objects | grep -c principal-architect-workspace` == 0.
-4. No home path anywhere in history: `git -C RUN_DIR log --all -p | grep -c '/Users/mcneillm'` == 0. A working-tree `grep -r` can't see packed objects.
-5. No home path in the working tree: `grep -r '/Users/mcneillm' RUN_DIR --exclude-dir=.git` finds 0.
+4. No home path anywhere in history: `git -C RUN_DIR log --all -p | grep -c '<home-dir>'` == 0. A working-tree `grep -r` can't see packed objects.
+5. No home path in the working tree: `grep -r '<home-dir>' RUN_DIR --exclude-dir=.git` finds 0.
 6. Clean tree: `git -C RUN_DIR status --porcelain` is empty.
 
 Record `base_sha_original` (WO_COMMIT) and `base_sha_filtered` (rewritten HEAD).
@@ -170,7 +170,7 @@ Record `base_sha_original` (WO_COMMIT) and `base_sha_filtered` (rewritten HEAD).
 4. Overwrite `$RUN_DIR/.agents/plugins.json` with `{"entries":[{"path":"$RUN_ROOT/plugin"}]}`.
 5. Build `index.db` with the pinned helper (2b) into `$RUN_ROOT/data/<repoID>/index.db`.
 6. **Preflight:**
-   - grep `$RUN_DIR` and `$RUN_ROOT/plugin` for `/Users/mcneillm/Documents` → 0;
+   - grep `$RUN_DIR` and `$RUN_ROOT/plugin` for `<home-dir>/Documents` → 0;
    - `index.db` has > 0 entries, with the newest ≤ cutoff;
    - the leak test (2b) passes.
 7. Launch agy with `REPO_MEMORY_DATA_DIR=$RUN_ROOT/data` (no `REPO_MEMORY_DISABLED`, no `REPO_MEMORY_HOUSEKEEPING`).
@@ -384,7 +384,7 @@ Condition (c) works only because the runner builds `index.db` by hand and pins a
 
 ## Pilot checklist (A9 + E-items)
 - [ ] Phase 0 binary contains the delivery engine; `PIN_COMMIT` and sha256 values recorded
-- [ ] Clone validations 1–6 pass, including `log --all -p` showing no `/Users/mcneillm`
+- [ ] Clone validations 1–6 pass, including `log --all -p` showing no `<home-dir>`
 - [ ] Main checkout, sibling dirs, the real data dir, and agy `implicit/` and `knowledge/` unchanged
 - [ ] (c): ledger exists with ≥1 injection record; (a): no ledger
 - [ ] (c): index helper dropped the expected op count; leak test clean

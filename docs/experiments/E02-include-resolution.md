@@ -25,9 +25,9 @@
 **Result**: Model confirmed it sees **BRAVO-8M5W** and does **not** see `ALPHA-3K7V`. The model explicitly stated *"the refresh worked."* Includes are re-resolved from disk at session start.
 
 ### Test 3: Resolution Path
-- `GEMINI.md` is at `/Users/mcneillm/Documents/Projects/repo-memory-plugin/GEMINI.md` (repo root).
+- `GEMINI.md` is at `<repo-root>/GEMINI.md` (repo root).
 - The include path `.memory/views/MAP-test.md` is a relative path.
-- The model resolved it to `/Users/mcneillm/Documents/Projects/repo-memory-plugin/.memory/views/MAP-test.md`.
+- The model resolved it to `<repo-root>/.memory/views/MAP-test.md`.
 - **Confirmed**: paths resolve relative to `GEMINI.md`'s directory (the repo root).
 
 ### Test 4: Missing Target File
@@ -65,7 +65,7 @@ replaced by BRAVO-8M5W. So it appears the refresh worked as intended."
 ### Context Delivery (observed in this session's system prompt)
 The `user_rules` section of this very conversation contains the resolved include content from `GEMINI.md`, wrapped in `<RULE[...]>` tags with the source file path:
 ```
-<RULE[/Users/mcneillm/Documents/Projects/repo-memory-plugin/GEMINI.md]>
+<RULE[<repo-root>/GEMINI.md]>
 @[memory map](.memory/views/MAP.md)
 # Test Memory Map
 MARKER-INCLUDE-E2-BRAVO-8M5W — This is the UPDATED marker...

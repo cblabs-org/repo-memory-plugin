@@ -44,7 +44,7 @@ In session `530432a7` (Test 1, before the wrong-key issue was identified), promp
 ### System Prompt Pointer (Observed in Current Session)
 This very experiment session (`41ec4be3`) had the corrected rule installed during testing. In the system prompt's `user_rules` section, the `model_decision` rule appeared as a **conditional rule pointer**:
 ```
-- file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/.agents/rules/test-model-decision.md: Activated when the user asks about OTA firmware updates or BLE connectivity
+- <repo-root>/.agents/rules/test-model-decision.md: Activated when the user asks about OTA firmware updates or BLE connectivity
 ```
 This is the progressive disclosure mechanism: only the description is always-on; the full rule content requires the model to choose to read it.
 
