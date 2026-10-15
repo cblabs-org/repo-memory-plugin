@@ -1,8 +1,8 @@
 # Proposed Specification Changes from Experiment Spike (E01–E12)
 
 > **Document:** Proposed Changes to `SPEC.md`  
-> **Status:** Pending Review / Awaiting User Approval  
-> **Date:** 2026-10-01  
+> **Status:** Applied in `SPEC.md` v1.0 (2026-10-15)  
+> **Date:** 2026-10-01 (Applied 2026-10-15)  
 > **Work Order:** WO4 — Spec Reconciliation  
 > **Evidence Base:** `docs/experiments/E01-ephemeral-message.md` through `E12-transcript-file-set.md`, plus `E01-architect-brief.md`
 

@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-10a-v2-2-docs-and-specs
 > **Base branch:** `pr-10-eval-v2/wo3-index-build` (`ec96755`)
-> **Status:** 🔄 Active (2/5 WOs complete)
+> **Status:** 🔄 Active (3/5 WOs complete)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan.
 
 ## Objective
@@ -16,7 +16,7 @@ Align all canonical specification, design, reference, and programme documents in
 |---|---|---|---|---|
 | 1 | [wo1-design-v2-rev4](wo1-design-v2-rev4/WORKORDER.md) | Upgrade `docs/design-v2-distillation-retrieval.md` from Revision 3 to **Revision 4 (`v2.2`)**: empirical grounding from `PR-09` & `PR-10` Stage 1; 3 cognitive lifecycles (`semantic`, `procedural`, `episodic`) & `{section?}` optional section rendering; Two-Stage 5-minute warm-cache distillation (100% automatic milestone-gated `Stop` `NO_TOOL_CALL` continuation primary + free `CHECKPOINT`/`brain/` harvest + optional `memory_note` mid-turn dedup + multi-turn `stream-json` consolidation); 5-tier state scope hierarchy & Pre-Consolidation Corroboration Gate; Doc-Seeded Dossiers (`repo-memory seed-docs`) & Async Doc Freshness ("Dreaming"); persistent `userMessage` vs transient `ephemeralMessage` delivery contract & `DetectRewind` wiring. | architect | ✅ Complete |
 | 2 | [wo2-addendum-a-rev3](wo2-addendum-a-rev3/WORKORDER.md) | Upgrade `docs/addendum-a-provenance-and-hardening.md` from Revision 2 to **Revision 3**: A7 `procedural` execution-outcome validation (`PostToolUse` exit-code tracking, `success_count`/`failure_count`, deterministic `.agents/skills/rm-<slug>/SKILL.md` graduation); A8 managed instruction block refinement (preserving automatic `Stop` end-of-turn capture while noting optional `memory_note` override); A9 `DocSeedSource` (`source: doc-seed` + git-diff freshness). | standard | ✅ Complete |
-| 3 | [wo3-spec-v1-0](wo3-spec-v1-0/WORKORDER.md) | Upgrade `SPEC.md` from `Draft v0.10` to **`v1.0`**, retiring v1 4-stage pipeline & `.memory/claims/` sections, incorporating all items from `docs/experiments/SPEC-CHANGES.md` and `design-v2-distillation-retrieval.md` Rev 4 while preserving `G1`/`P1` zero-cooperation capture and delivery. | architect | ☐ Pending |
+| 3 | [wo3-spec-v1-0](wo3-spec-v1-0/WORKORDER.md) | Upgrade `SPEC.md` from `Draft v0.10` to **`v1.0`**, retiring v1 4-stage pipeline & `.memory/claims/` sections, incorporating all items from `docs/experiments/SPEC-CHANGES.md` and `design-v2-distillation-retrieval.md` Rev 4 while preserving `G1`/`P1` zero-cooperation capture and delivery. | architect | ✅ Complete |
 | 4 | [wo4-info-docs-and-cleanup](wo4-info-docs-and-cleanup/WORKORDER.md) | Update `docs/antigravity-hooks-reference.md` with verified `agy 1.3.3` `userMessage` vs `ephemeralMessage` lifetime, `Stop` `NO_TOOL_CALL`, `invoke_subagent` hook ordering, and plugin split; update `README.md` to match `SPEC.md v1.0`; remove the stale v1 `E02` root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/` artifacts. | standard | ☐ Pending |
 | 5 | [wo5-verification-and-handover](wo5-verification-and-handover/WORKORDER.md) | Cross-check all internal markdown links, section references, and external GitHub hygiene across `SPEC.md`, `docs/`, and `.agents/skills/principal-architect-workspace/`; finalize `PR-10a` Session Log. | mechanical | ☐ Pending |
 
@@ -48,3 +48,8 @@ Align all canonical specification, design, reference, and programme documents in
 ### 2026-10-15 — WO2 Complete (`wo2-addendum-a-rev3`)
 - Upgraded `docs/addendum-a-provenance-and-hardening.md` from Revision 2 to **Revision 3** (`2026-10-15`).
 - Updated §8 (`A8: Managed instruction blocks` `v2` block + `VD19` machine-managed `GEMINI.md`), §10 (`A7: Procedures become skills` with `PostToolUse` exit-code `success_count`/`failure_count` tracking, build-manifest `stale_suspect` flagging, and graduation into `.agents/skills/rm-<slug>/SKILL.md`), §11 (`A9: DocSeedSource` Priority 0 built-in source + async "Dreaming" freshness), §16 (`index.db` via `index.IndexPath`, `doc_seeds`), and §17 (`PR-10a`/`PR-10b`/`PR-11` phasing).
+
+### 2026-10-15 — WO3 Complete (`wo3-spec-v1-0`)
+- Upgraded `SPEC.md` from `Draft v0.10` to **`v1.0` (`v2.2` Architecture, `2026-10-15`)**, retiring the v1 4-stage pipeline (`compact`/`triage`/`extract`/`reconcile`), `.memory/claims/`, `.memory/views/`, and `<data-dir>/<repo-id>/index.sqlite`.
+- Unified `SPEC.md` with `docs/design-v2-distillation-retrieval.md` Revision 4 and `docs/addendum-a-provenance-and-hardening.md` Revision 3: Two-Plugin Packaging Split (§4.6), append-only Op Log + 8 entry types across 3 cognitive lifecycles + `{section?}` rendering + 5-tier scope hierarchy + `<data-dir>/<repo-id>/index.db` (§5), Two-Stage 5-minute warm-cache distillation with automatic `Stop` `NO_TOOL_CALL` continuation primary + `CHECKPOINT`/`brain/` harvest + `repo-memory-distiller` `stream-json` consolidation + `DocSeedSource` (§6), persistent `userMessage` vs 1-step `ephemeralMessage` delivery + `DetectCompaction` & `DetectRewind` + 6 MCP pull tools (§7), `PostToolUse` procedural validation & `.agents/skills/rm-<slug>/SKILL.md` graduation (§8), Evaluation v2 2×2 factorial matrix (§10), E1–E12 & X1–X9 empirical summary (§12.1), and Go package layout (§18).
+- Marked `docs/experiments/SPEC-CHANGES.md` as `Applied in SPEC.md v1.0 (2026-10-15)`.
