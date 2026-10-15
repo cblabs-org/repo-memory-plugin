@@ -40,8 +40,17 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 	_, _ = tx.ExecContext(ctx, "INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
 
 	insertEntryQuery := `
-		INSERT OR REPLACE INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
+		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			type = excluded.type,
+			dossier_scope = excluded.dossier_scope,
+			text = excluded.text,
+			source = excluded.source,
+			verified = excluded.verified,
+			closes_when = excluded.closes_when,
+			created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END,
+			updated_at = excluded.updated_at
 	`
 	insertAnchorQuery := `INSERT INTO entry_anchors (entry_id, anchor) VALUES (?, ?)`
 	insertErrPatternQuery := `INSERT INTO error_patterns (entry_id, command_prefix, pattern, dossier_scope) VALUES (?, ?, ?, ?)`
@@ -63,6 +72,13 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 				entry.Source, entry.Verified, entry.ClosesWhen, createdAt, updatedAt)
 			if err != nil {
 				return fmt.Errorf("inserting entry %s: %w", entry.ID, err)
+			}
+
+			if _, err := tx.ExecContext(ctx, "DELETE FROM entry_anchors WHERE entry_id = ?", entry.ID); err != nil {
+				return fmt.Errorf("clearing anchors for %s: %w", entry.ID, err)
+			}
+			if _, err := tx.ExecContext(ctx, "DELETE FROM error_patterns WHERE entry_id = ?", entry.ID); err != nil {
+				return fmt.Errorf("clearing error patterns for %s: %w", entry.ID, err)
 			}
 
 			if len(entry.Anchors) > 0 {

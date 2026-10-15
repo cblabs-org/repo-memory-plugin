@@ -636,3 +636,149 @@ func TestBackwardCompatibility_Entities(t *testing.T) {
 		t.Fatalf("expected inverse relation from pkg:foo, got %v", invRels)
 	}
 }
+
+func TestUpsertAndReplaceEntry_NoOrphanFTSOrDuplicateChildren(t *testing.T) {
+	idx, cleanup := setupTestIndex(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// 1. Insert an entry with unique FTS token "orphancheckalpha", anchors, and error pattern,
+	// then replace/update it with "orphancheckbeta".
+	entry := dossiers.Entry{
+		ID:           "fail-orphan-001",
+		Type:         dossiers.EntryTypeFailureSignature,
+		DossierScope: "core/storage",
+		Text:         "command: go test\npattern: orphancheckalpha failure signature",
+		Anchors:      []string{"internal/core/storage/alpha.go", "internal/core/storage/alpha.go"},
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatalf("UpsertEntry initial: %v", err)
+	}
+	if err := idx.InsertErrorPattern(ctx, entry.ID, "go test", "orphancheckalpha failure signature", entry.DossierScope); err != nil {
+		t.Fatalf("InsertErrorPattern first: %v", err)
+	}
+	// Calling InsertErrorPattern again with identical values must be idempotent.
+	if err := idx.InsertErrorPattern(ctx, entry.ID, "go test", "orphancheckalpha failure signature", entry.DossierScope); err != nil {
+		t.Fatalf("InsertErrorPattern second: %v", err)
+	}
+
+	patterns, err := idx.LookupErrorPatterns(ctx, "go test ./...")
+	if err != nil {
+		t.Fatalf("LookupErrorPatterns initial: %v", err)
+	}
+	if len(patterns) != 1 {
+		t.Fatalf("expected 1 error pattern after duplicate InsertErrorPattern calls, got %d: %v", len(patterns), patterns)
+	}
+
+	// Update via UpsertEntry with "orphancheckbeta" and new anchor
+	entry.Text = "command: go test\npattern: orphancheckbeta replacement signature"
+	entry.Anchors = []string{"internal/core/storage/beta.go"}
+	entry.UpdatedAt = now.Add(time.Minute)
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatalf("UpsertEntry update: %v", err)
+	}
+
+	alphaMatches, err := idx.SearchEntries(ctx, "orphancheckalpha")
+	if err != nil {
+		t.Fatalf("SearchEntries orphancheckalpha: %v", err)
+	}
+	if len(alphaMatches) != 0 {
+		t.Errorf("expected 0 FTS matches for orphancheckalpha, got %d: %v", len(alphaMatches), alphaMatches)
+	}
+
+	betaMatches, err := idx.SearchEntries(ctx, "orphancheckbeta")
+	if err != nil {
+		t.Fatalf("SearchEntries orphancheckbeta: %v", err)
+	}
+	if len(betaMatches) != 1 || betaMatches[0].ID != entry.ID {
+		t.Errorf("expected 1 FTS match for orphancheckbeta, got %v", betaMatches)
+	}
+
+	gotEntry, err := idx.GetEntry(ctx, entry.ID)
+	if err != nil {
+		t.Fatalf("GetEntry: %v", err)
+	}
+	if len(gotEntry.Anchors) != 1 || gotEntry.Anchors[0] != "internal/core/storage/beta.go" {
+		t.Errorf("expected 1 replaced anchor, got %v", gotEntry.Anchors)
+	}
+
+	// 2. Call InsertEntry twice with updated text/anchors/error patterns and verify clean replacement.
+	entryV1 := dossiers.Entry{
+		ID:           "fail-orphan-002",
+		Type:         dossiers.EntryTypeFailureSignature,
+		DossierScope: "core/index",
+		Text:         "command: go build\npattern: insertentrygamma error",
+		Anchors:      []string{"internal/core/index/gamma1.go", "internal/core/index/gamma2.go"},
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := idx.InsertEntry(ctx, entryV1); err != nil {
+		t.Fatalf("InsertEntry v1: %v", err)
+	}
+
+	entryV2 := dossiers.Entry{
+		ID:           "fail-orphan-002",
+		Type:         dossiers.EntryTypeFailureSignature,
+		DossierScope: "core/index",
+		Text:         "command: go vet\npattern: insertentrydelta warning",
+		Anchors:      []string{"internal/core/index/delta.go"},
+		CreatedAt:    now,
+		UpdatedAt:    now.Add(2 * time.Minute),
+	}
+	if err := idx.InsertEntry(ctx, entryV2); err != nil {
+		t.Fatalf("InsertEntry v2: %v", err)
+	}
+
+	gammaMatches, err := idx.SearchEntries(ctx, "insertentrygamma")
+	if err != nil {
+		t.Fatalf("SearchEntries insertentrygamma: %v", err)
+	}
+	if len(gammaMatches) != 0 {
+		t.Errorf("expected 0 FTS matches for insertentrygamma after InsertEntry replacement, got %d", len(gammaMatches))
+	}
+
+	deltaMatches, err := idx.SearchEntries(ctx, "insertentrydelta")
+	if err != nil {
+		t.Fatalf("SearchEntries insertentrydelta: %v", err)
+	}
+	if len(deltaMatches) != 1 || deltaMatches[0].ID != "fail-orphan-002" {
+		t.Errorf("expected 1 FTS match for insertentrydelta, got %v", deltaMatches)
+	}
+
+	gotV2, err := idx.GetEntry(ctx, "fail-orphan-002")
+	if err != nil {
+		t.Fatalf("GetEntry fail-orphan-002: %v", err)
+	}
+	if len(gotV2.Anchors) != 1 || gotV2.Anchors[0] != "internal/core/index/delta.go" {
+		t.Errorf("expected [internal/core/index/delta.go], got %v", gotV2.Anchors)
+	}
+
+	oldAnchorLookup, err := idx.LookupByAnchor(ctx, "internal/core/index/gamma1.go")
+	if err != nil {
+		t.Fatalf("LookupByAnchor gamma1.go: %v", err)
+	}
+	if len(oldAnchorLookup) != 0 {
+		t.Errorf("expected 0 matches for old anchor gamma1.go, got %v", oldAnchorLookup)
+	}
+
+	buildPatterns, err := idx.LookupErrorPatterns(ctx, "go build ./...")
+	if err != nil {
+		t.Fatalf("LookupErrorPatterns 'go build ./...': %v", err)
+	}
+	if len(buildPatterns) != 0 {
+		t.Errorf("expected 0 error patterns for old command 'go build', got %v", buildPatterns)
+	}
+
+	vetPatterns, err := idx.LookupErrorPatterns(ctx, "go vet ./...")
+	if err != nil {
+		t.Fatalf("LookupErrorPatterns 'go vet ./...': %v", err)
+	}
+	if len(vetPatterns) != 1 || vetPatterns[0].EntryID != "fail-orphan-002" || vetPatterns[0].Pattern != "insertentrydelta warning" {
+		t.Errorf("expected 1 error pattern for 'go vet', got %v", vetPatterns)
+	}
+}

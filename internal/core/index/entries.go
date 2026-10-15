@@ -80,14 +80,104 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 				return err
 			}
 			defer stmt.Close()
+			seen := make(map[string]bool, len(entry.Anchors))
 			for _, a := range entry.Anchors {
 				trimmed := strings.TrimSpace(a)
-				if trimmed == "" {
+				if trimmed == "" || seen[trimmed] {
 					continue
 				}
+				seen[trimmed] = true
 				if _, err := stmt.ExecContext(ctx, entry.ID, trimmed); err != nil {
 					return err
 				}
+			}
+		}
+
+		if entry.Type != dossiers.EntryTypeFailureSignature {
+			if _, err := tx.ExecContext(ctx, "DELETE FROM error_patterns WHERE entry_id = ?", entry.ID); err != nil {
+				return err
+			}
+		} else if entry.DossierScope != "" {
+			if _, err := tx.ExecContext(ctx, "UPDATE error_patterns SET dossier_scope = ? WHERE entry_id = ?", entry.DossierScope, entry.ID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// InsertEntry inserts or replaces an entry and all of its child rows (entry_anchors, error_patterns)
+// while keeping entries_fts synchronized without orphan FTS rows.
+func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
+	createdAt := formatTime(entry.CreatedAt)
+	updatedAt := formatTime(entry.UpdatedAt)
+	if updatedAt == "" {
+		updatedAt = formatTime(time.Now().UTC())
+	}
+
+	return idx.WriteTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM entry_anchors WHERE entry_id = ?", entry.ID); err != nil {
+			return fmt.Errorf("clearing anchors for %s: %w", entry.ID, err)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM error_patterns WHERE entry_id = ?", entry.ID); err != nil {
+			return fmt.Errorf("clearing error patterns for %s: %w", entry.ID, err)
+		}
+
+		query := `
+		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			type = excluded.type,
+			dossier_scope = excluded.dossier_scope,
+			text = excluded.text,
+			source = excluded.source,
+			verified = excluded.verified,
+			closes_when = excluded.closes_when,
+			created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END,
+			updated_at = excluded.updated_at
+		`
+		_, err := tx.ExecContext(ctx, query,
+			entry.ID,
+			string(entry.Type),
+			entry.DossierScope,
+			entry.Text,
+			entry.Source,
+			entry.Verified,
+			entry.ClosesWhen,
+			createdAt,
+			updatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("inserting entry %s: %w", entry.ID, err)
+		}
+
+		if len(entry.Anchors) > 0 {
+			stmt, err := tx.PrepareContext(ctx, "INSERT INTO entry_anchors (entry_id, anchor) VALUES (?, ?)")
+			if err != nil {
+				return err
+			}
+			defer stmt.Close()
+			seen := make(map[string]bool, len(entry.Anchors))
+			for _, a := range entry.Anchors {
+				trimmed := strings.TrimSpace(a)
+				if trimmed == "" || seen[trimmed] {
+					continue
+				}
+				seen[trimmed] = true
+				if _, err := stmt.ExecContext(ctx, entry.ID, trimmed); err != nil {
+					return err
+				}
+			}
+		}
+
+		if entry.Type == dossiers.EntryTypeFailureSignature {
+			cmdPrefix, pattern := parseErrorPatternFromEntry(entry)
+			if _, err := tx.ExecContext(ctx,
+				"INSERT INTO error_patterns (entry_id, command_prefix, pattern, dossier_scope) VALUES (?, ?, ?, ?)",
+				entry.ID, cmdPrefix, pattern, entry.DossierScope,
+			); err != nil {
+				return fmt.Errorf("inserting error pattern for %s: %w", entry.ID, err)
 			}
 		}
 
@@ -319,12 +409,17 @@ type ErrorPatternResult struct {
 
 // InsertErrorPattern registers an error pattern for a failure-signature entry.
 func (idx *Index) InsertErrorPattern(ctx context.Context, entryID, commandPrefix, pattern, scope string) error {
-	query := `INSERT INTO error_patterns (entry_id, command_prefix, pattern, dossier_scope) VALUES (?, ?, ?, ?)`
-	_, err := idx.db.ExecContext(ctx, query, entryID, commandPrefix, pattern, scope)
-	if err != nil {
-		return fmt.Errorf("inserting error pattern for %s: %w", entryID, err)
-	}
-	return nil
+	return idx.WriteTx(ctx, func(tx *sql.Tx) error {
+		delQuery := `DELETE FROM error_patterns WHERE entry_id = ? AND COALESCE(command_prefix, '') = ? AND pattern = ?`
+		if _, err := tx.ExecContext(ctx, delQuery, entryID, commandPrefix, pattern); err != nil {
+			return fmt.Errorf("clearing existing error pattern for %s: %w", entryID, err)
+		}
+		insQuery := `INSERT INTO error_patterns (entry_id, command_prefix, pattern, dossier_scope) VALUES (?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, insQuery, entryID, commandPrefix, pattern, scope); err != nil {
+			return fmt.Errorf("inserting error pattern for %s: %w", entryID, err)
+		}
+		return nil
+	})
 }
 
 // LookupErrorPatterns returns matching failure-signature entries for a command.

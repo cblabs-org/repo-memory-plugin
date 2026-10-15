@@ -157,3 +157,82 @@ func TestDossiersEmptySections(t *testing.T) {
 		t.Errorf("non-empty section 'Invariants' was not rendered")
 	}
 }
+
+func TestProjector_ReAddUnderDifferentScopeMovesEntry(t *testing.T) {
+	tempDir := t.TempDir()
+	opsWriter := ops.NewWriter(tempDir)
+	opsReader := ops.NewReader(tempDir)
+
+	now := time.Now().UTC()
+	entryID := "inv-cross-scope-001"
+
+	op1 := ops.Op{
+		Type:         ops.OpAdd,
+		EntryID:      entryID,
+		DossierScope: "core/mod-a",
+		Timestamp:    now,
+		Source:       ops.SourceSeed,
+		Fields: map[string]any{
+			"entry_type": "invariant",
+			"text":       "Original text in mod-a",
+		},
+	}
+	op2 := ops.Op{
+		Type:         ops.OpAdd,
+		EntryID:      entryID,
+		DossierScope: "core/mod-b",
+		Timestamp:    now.Add(time.Minute),
+		Source:       ops.SourceSeed,
+		Fields: map[string]any{
+			"entry_type": "invariant",
+			"text":       "Updated text moved to mod-b",
+		},
+	}
+
+	batch := ops.NewBatch([]ops.Op{op1, op2})
+	if err := opsWriter.Write(batch); err != nil {
+		t.Fatalf("failed to write batch: %v", err)
+	}
+
+	dossiersMap, err := NewProjector(opsReader).Project(context.Background())
+	if err != nil {
+		t.Fatalf("failed to project: %v", err)
+	}
+
+	modA, ok := dossiersMap["core/mod-a"]
+	if !ok {
+		t.Fatalf("expected core/mod-a dossier to exist")
+	}
+	if len(modA.Entries) != 0 {
+		t.Errorf("expected 0 entries in core/mod-a after cross-scope re-add, got %d: %v", len(modA.Entries), modA.Entries)
+	}
+
+	modB, ok := dossiersMap["core/mod-b"]
+	if !ok {
+		t.Fatalf("expected core/mod-b dossier to exist")
+	}
+	if len(modB.Entries) != 1 {
+		t.Fatalf("expected 1 entry in core/mod-b, got %d: %v", len(modB.Entries), modB.Entries)
+	}
+	if modB.Entries[0].ID != entryID {
+		t.Errorf("expected ID %s in core/mod-b, got %s", entryID, modB.Entries[0].ID)
+	}
+	if modB.Entries[0].DossierScope != "core/mod-b" {
+		t.Errorf("expected DossierScope core/mod-b, got %s", modB.Entries[0].DossierScope)
+	}
+	if modB.Entries[0].Text != "Updated text moved to mod-b" {
+		t.Errorf("expected updated text in core/mod-b, got %q", modB.Entries[0].Text)
+	}
+
+	totalOccurrences := 0
+	for _, d := range dossiersMap {
+		for _, e := range d.Entries {
+			if e.ID == entryID {
+				totalOccurrences++
+			}
+		}
+	}
+	if totalOccurrences != 1 {
+		t.Errorf("expected exactly 1 occurrence of %s across all scopes, got %d", entryID, totalOccurrences)
+	}
+}
