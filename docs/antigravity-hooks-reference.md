@@ -385,49 +385,53 @@ Empirically validated in `E08` and `X8`:
 ### 1. Persistent dossier injection with `InjectedSet`, `DetectCompaction`, and `DetectRewind`
 
 ```go
-// Check for context compaction (CHECKPOINT) or transcript rewind (step_index regression)
-compacted, newOffset, _ := DetectCompaction(input.TranscriptPath, ledger.CompactionByteOffset)
-rewound, maxStep, _ := DetectRewind(input.TranscriptPath, ledger.LastSeenStepIndex)
-if compacted || rewound {
-    ledger.ClearInjectedSet()
+// Check for transcript rewind (step count regression) or context compaction (CHECKPOINT)
+if DetectRewind(steps, ledger.LastKnownStepCount) {
+    ledger.RearmDedup()
 }
-ledger.CompactionByteOffset = newOffset
-ledger.LastSeenStepIndex = maxStep
+ledger.LastKnownStepCount = len(steps)
 
-// Filter out entries already present in the session's persistent context
-uninjected := FilterUninjected(candidates, ledger.InjectedSet)
-if len(uninjected) == 0 {
-    return []byte("{}"), nil
+if len(ledger.Injections) > 0 && len(steps) > 0 {
+    res := DetectCompaction(steps, ledger)
+    if res.Detected && res.CheckpointStepIdx > ledger.LastHandledCheckpointStep {
+        reinjStep, err := BuildReinjection(ctx, idx, res.LostInjections, checkpointText, 1000)
+        if err == nil && reinjStep != nil {
+            injectSteps = append(injectSteps, *reinjStep)
+            ledger.LastHandledCheckpointStep = res.CheckpointStepIdx
+            ledger.RearmDedup()
+        }
+    }
 }
 
-// Inject as persistent userMessage so entries survive across tool calls and turns
-response := InjectStepsResponse{
-    InjectSteps: []InjectStep{{
-        UserMessage: RenderDossierBlock(uninjected),
-    }},
+// Engine filters out entries already present in ledger.InjectedSet
+taskPayload, err := engine.EvaluateMoment(ctx, delivery.MomentTaskStart, taskCtx)
+if err == nil && len(taskPayload.Entries) > 0 {
+    // Inject as persistent UserMessage so entries survive across tool calls and turns
+    injectSteps = append(injectSteps, InjectStep{
+        UserMessage: taskPayload.FormattedText,
+    })
 }
 ```
 
-### 2. Automatic Stage 1 milestone-gated reflection via `Stop` continuation
+### 2. Automatic Stage 1 milestone-gated turn note via `Stop` continuation
 
 ```go
-if input.TerminationReason == "NO_TOOL_CALL" && input.ExecutionNum == 0 {
-    if PassesMilestoneGate(ledger) && !ledger.MemoryNoteCalledInTurn {
+if strings.EqualFold(input.TerminationReason, "NO_TOOL_CALL") && input.FullyIdle && input.ExecutionNum == 0 {
+    if PassesMilestoneGate(stepsSinceMark) {
         return json.Marshal(map[string]string{
             "decision": "continue",
-            "reason":   BuildStage1ReflectionPrompt(ledger.TouchedScopes),
+            "reason":   BuildTurnNotePrompt(priorNoteTitles),
         })
     }
 }
 return json.Marshal(map[string]string{"decision": "stop"})
 ```
 
-### 3. Single-step `ephemeralMessage` for transient gate or error alerts
+### 3. Single-step `ephemeralMessage` for transient hints or error-match fixes
 
 ```go
-response := InjectStepsResponse{
-    InjectSteps: []InjectStep{{
-        EphemeralMessage: "Note: command failed with known error signature; see scope dossier above.",
-    }},
-}
+// Used strictly for 1-step hints (about-to-edit pointers, error-match fixes, FTS warnings)
+injectSteps = append(injectSteps, InjectStep{
+    EphemeralMessage: errPayload.FormattedText,
+})
 ```
