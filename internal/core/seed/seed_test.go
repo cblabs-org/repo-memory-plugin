@@ -2,6 +2,7 @@ package seed_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -195,5 +196,134 @@ func TestReportToOps_JunkFiltered(t *testing.T) {
 			text != "Important finding about concurrency" {
 			t.Errorf("unexpected op text survived junk filter: %q", text)
 		}
+	}
+}
+
+func TestParseCompletionReport_FiltersNonPathTokens(t *testing.T) {
+	content := `
+## Completion Report
+
+### Status
+✅ Complete
+
+### Changes Made
+- ` + "`internal/core/seed/parser.go`" + ` — tightened ` + "`*claims.Claim`" + `, ` + "`cand.EpisodeID`" + `, ` + "`Reader.IterateBefore`" + `, and ` + "`!config.IsEnrolledFast(cwd)`" + `
+- ` + "`.memory/config.yaml`" + ` — ignored ` + "`*_test.go`" + `, ` + "`<data-dir>/<repo-id>/metrics/*.jsonl`" + `, ` + "`~/.gemini/antigravity/hooks/hooks.json`" + `, and ` + "`modernc.org/sqlite`" + `
+- ` + "`SPEC.md`" + ` — documented specification
+`
+	report, err := seed.ParseCompletionReport(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report == nil {
+		t.Fatalf("expected report, got nil")
+	}
+
+	wantPaths := []string{
+		"internal/core/seed/parser.go",
+		".memory/config.yaml",
+		"SPEC.md",
+	}
+	if len(report.Changes) != len(wantPaths) {
+		var got []string
+		for _, c := range report.Changes {
+			got = append(got, c.Path)
+		}
+		t.Fatalf("got changes %v, want %v", got, wantPaths)
+	}
+	for i, want := range wantPaths {
+		if report.Changes[i].Path != want {
+			t.Errorf("change[%d].Path = %q, want %q", i, report.Changes[i].Path, want)
+		}
+	}
+}
+
+func runGitWithDate(t *testing.T, dir string, date string, args ...string) string {
+	t.Helper()
+	fullArgs := append([]string{"-c", "user.name=test", "-c", "user.email=test@example.com"}, args...)
+	cmd := exec.Command("git", fullArgs...)
+	cmd.Dir = dir
+	if date != "" {
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_DATE="+date,
+			"GIT_COMMITTER_DATE="+date,
+		)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(out))
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp(t *testing.T) {
+	tmpDir := t.TempDir()
+	runGitWithDate(t, tmpDir, "", "init")
+
+	realFile := filepath.Join(tmpDir, "internal", "real", "file.go")
+	if err := os.MkdirAll(filepath.Dir(realFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(realFile, []byte("package real\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	woPath := filepath.Join(tmpDir, ".agents", "p1", "wo1", "WORKORDER.md")
+	if err := os.MkdirAll(filepath.Dir(woPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	woContent := `# Work Order 1
+
+## Completion Report
+
+### Status
+✅ Complete
+
+### Changes Made
+- ` + "`internal/real/file.go`" + ` — real tracked file
+- ` + "`internal/nonexistent/ghost.go`" + ` — nonexistent path that looks syntactic
+
+### Decisions Made
+- Validated paths against repository tree
+`
+	if err := os.WriteFile(woPath, []byte(woContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	commit1TimeStr := "2026-01-10T10:00:00Z"
+	runGitWithDate(t, tmpDir, commit1TimeStr, "add", ".")
+	runGitWithDate(t, tmpDir, commit1TimeStr, "commit", "-m", "commit 1")
+	commit1SHA := runGitWithDate(t, tmpDir, "", "rev-parse", "HEAD")
+
+	// Commit 2 modifies WORKORDER.md at a later date so HEAD has a newer commit timestamp
+	commit2TimeStr := "2026-06-15T12:00:00Z"
+	if err := os.WriteFile(woPath, []byte(woContent+"\n<!-- post-cutoff edit -->\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGitWithDate(t, tmpDir, commit2TimeStr, "add", ".")
+	runGitWithDate(t, tmpDir, commit2TimeStr, "commit", "-m", "commit 2")
+
+	parsed, err := seed.ScanAndParse(filepath.Join(tmpDir, ".agents"), seed.SeedOptions{
+		RepoRoot:     tmpDir,
+		BeforeCommit: commit1SHA,
+	})
+	if err != nil {
+		t.Fatalf("ScanAndParse failed: %v", err)
+	}
+	if len(parsed) != 1 {
+		t.Fatalf("got %d parsed workorders, want 1", len(parsed))
+	}
+
+	changes := parsed[0].Report.Changes
+	if len(changes) != 1 || changes[0].Path != "internal/real/file.go" {
+		t.Fatalf("got changes %+v, want only internal/real/file.go", changes)
+	}
+
+	wantTime, err := time.Parse(time.RFC3339, commit1TimeStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed[0].CommitTime.UTC().Equal(wantTime) {
+		t.Errorf("got CommitTime %v, want %v (from BeforeCommit, not HEAD)", parsed[0].CommitTime.UTC(), wantTime)
 	}
 }
