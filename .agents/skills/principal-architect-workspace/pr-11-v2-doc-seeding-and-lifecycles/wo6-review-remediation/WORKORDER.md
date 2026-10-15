@@ -23,7 +23,7 @@ Resolve all 3 findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`) from the Cold-Fir
 
 ## Checklist of Changes
 
-- [ ] **1. Fix `[MAJOR-1]` in `internal/core/seed/doc_seed.go` & `internal/core/seed/doc_seed_test.go`**:
+- [x] **1. Fix `[MAJOR-1]` in `internal/core/seed/doc_seed.go` & `internal/core/seed/doc_seed_test.go`**:
   - In `collectRepoFileAnchors(repoRoot string) []string` (`internal/core/seed/doc_seed.go:806-835`):
     - Skip any dot-prefixed directory (`if strings.HasPrefix(base, ".") && base != "." { return filepath.SkipDir }`).
     - Only append regular files that contain `/` and do not start with `.` (`if d.Type().IsRegular() && strings.Contains(relSlash, "/") && !strings.HasPrefix(relSlash, ".")`).
@@ -37,7 +37,7 @@ Resolve all 3 findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`) from the Cold-Fir
       - Otherwise set `dossierScope = "root"`.
     - Keep `anchors` in `op.Fields["anchors"]` intact so valid file anchors like `.memory/config.yaml` or `Makefile` are still recorded on the entry inside `root.md` (or the matched declared scope).
   - Add a unit test `TestParseDocToOps_NoPollutedScopes` in `internal/core/seed/doc_seed_test.go` verifying that doc bullets referencing `.memory/config.yaml`, `.agents/skills`, and `Makefile` resolve to `"root"` (never `.memory`, `.agents`, or `Makefile`) and that running `RunOpsGC` after `SeedDocs` reports `ScopesRepaired == 0`.
-- [ ] **2. Fix `[MAJOR-2]` in `internal/core/dossiers/writer.go`, `dossiers_test.go`, and `internal/core/tick/dream_freshness_test.go`**:
+- [x] **2. Fix `[MAJOR-2]` in `internal/core/dossiers/writer.go`, `dossiers_test.go`, and `internal/core/tick/dream_freshness_test.go`**:
   - In `Writer.WriteDossier(d *Dossier) error` (`internal/core/dossiers/writer.go:19-40`):
     - When `len(d.Entries) == 0`:
       - Do NOT write `scopePath` (`filepath.Join(dossiersDir, d.Scope+".md")`); instead, remove `scopePath` if it exists (`_ = os.Remove(scopePath)`).
@@ -50,9 +50,9 @@ Resolve all 3 findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`) from the Cold-Fir
       - Do NOT append an `AtlasEntry` to `atlas.Dossiers` when `len(d.Entries) == 0` (so `ATLAS.md` never has `0`-entry or `0001-01-01T00:00:00Z` rows).
     - Walk `filepath.Join(w.baseDir, "dossiers")` (if it exists) and remove any `.md` files not in the expected file set (cleaning up orphaned `.md` files and any newly-empty subdirectories).
   - Add unit test coverage in `internal/core/dossiers/dossiers_test.go` and `internal/core/tick/dream_freshness_test.go` verifying that when all entries in a scope are retired (e.g. when `docs/arch.md` is deleted in `TestCheckDocFreshness_DetectsModifiedAndDeletedDocs`), `<scope>.md` does not exist on disk, `<scope>.history.md` exists on disk, and `.memory/ATLAS.md` contains no `0001-01-01T00:00:00Z` or `| 0 |` entry row.
-- [ ] **3. Fix `[MINOR-1]` in `internal/core/seed/doc_seed.go`**:
+- [x] **3. Fix `[MINOR-1]` in `internal/core/seed/doc_seed.go`**:
   - In `SeedDocs` (`internal/core/seed/doc_seed.go:533-536`), when `stat.Added > 0 || stat.Amended > 0 || stat.Retired > 0`, increment `res.FilesSeeded++`; `else` (when `stat.Added == 0 && stat.Amended == 0 && stat.Retired == 0`), set `stat.Skipped = true` and increment `res.FilesSkipped++`.
-- [ ] **4. Clean & Re-Seed `.memory/`, Rebuild `~/.local/bin/repo-memory` & `index.db`**:
+- [x] **4. Clean & Re-Seed `.memory/`, Rebuild `~/.local/bin/repo-memory` & `index.db`**:
   - Remove the previous `.memory/ops/2026-10/01M50MAEJDR5SPBR8M771BEMF0.json` batch.
   - Rebuild `~/.local/bin/repo-memory`:
     ```bash
@@ -79,9 +79,16 @@ All commands must exit 0.
 
 ## Completion Report
 
-*(To be filled in by the Execution Worker upon approval)*
-
-- **Status:** Pending
+- **Status:** Complete
 - **Commits:**
+  - `23f082d`: `fix(seed,dossiers): prevent polluted doc-seed scopes and clean retired dossiers`
 - **Summary of Changes:**
+  - **`[MAJOR-1]` (`internal/core/seed/doc_seed.go`, `internal/core/seed/doc_seed_test.go`, `.memory/`)**: Filtered dot-prefixed directories and root-level files in `collectRepoFileAnchors`, filtered `DeriveModuleScopes(repoFiles)` against `isPollutedScope`, restricted `scopeAnchors` in `ParseDocToOps` to `strings.Contains(a, "/") && !strings.HasPrefix(a, ".")` with fallback to `"root"` when `dossierScope == "" || isPollutedScope(dossierScope)`, and added `TestParseDocToOps_NoPollutedScopes`.
+  - **`[MAJOR-2]` (`internal/core/dossiers/writer.go`, `internal/core/dossiers/dossiers_test.go`, `internal/core/tick/dream_freshness_test.go`)**: Updated `Writer.WriteDossier` to remove `<scope>.md` and only write `<scope>.history.md` when `len(d.Entries) == 0`; updated `Writer.WriteAll` to exclude `0`-entry dossiers from `ATLAS.md` and prune orphaned `.md` files and empty directories under `.memory/dossiers/`.
+  - **`[MINOR-1]` (`internal/core/seed/doc_seed.go`)**: Incremented `res.FilesSkipped++` and set `stat.Skipped = true` when a scanned markdown file yields zero added/amended/retired ops.
+  - **Dogfood Re-Seed (`.memory/`)**: Replaced `.memory/ops/2026-10/01M50MAEJDR5SPBR8M771BEMF0.json` with `01M50N8B38698HRTF64HBG369H.json` (12 entries across `core/seed`, `eval`, and `root`), removed `.memory/dossiers/{.agents,.memory,Makefile}.md`, verified `seed-docs` + `ops gc --dry-run` idempotence (`scopes_repaired=0`), and rebuilt `~/.local/bin/repo-memory` and `index.db`.
 - **Verification Output:**
+  - `go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...`: exit 0
+  - `go vet ./cmd/... ./internal/... ./evaluation/cmd/build-index/...`: exit 0
+  - `GOOS=windows go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...`: exit 0
+  - `go test -race -count=1 ./cmd/... ./internal/...`: exit 0 (all packages passed)
