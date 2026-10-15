@@ -1,15 +1,15 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-15T17:30:00Z -->
+<!-- Last updated: 2026-10-15T19:26:00Z -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan approved (2026-10-15).** **PR-10a-v2-2-docs-and-specs complete (5/5 WOs)** (`SPEC.md` v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, `README.md`, v1 views removed). Next active project: **PR-10b-delivery-and-storage-fixes** (`UserMessage` persistence fix, `DetectRewind`, issues `#10`–`#13`, `#16`) before resuming **PR-10-eval-v2** Stage 2 (`WO4`–`WO7`). |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan approved (2026-10-15).** **PR-10a-v2-2-docs-and-specs complete (5/5 WOs)** (`SPEC.md` v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, `README.md`, v1 views removed). Next active project: **PR-10b-delivery-and-storage-fixes** (`UserMessage` persistence fix, `DetectRewind`, issues `#10`–`#13`, `#16`, PR #18 review remediation) before resuming **PR-10-eval-v2** Stage 2 (`WO4`–`WO7`). |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10b-delivery-and-storage-fixes | **Active (5/5 WOs complete — pending Chief Architect PR audit)** — WO1 (`89595e4`), WO2 (`a808fa5`), WO3 (`bed436e`), WO4 (`2b97c02`), WO5 (`60fd200`) complete | Delivery (`UserMessage`, `DetectRewind`), Index (`#13`), Projector (`#11`), Seeder (`#10`, `#12`), Ops (`#16`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
+| pr-10b-delivery-and-storage-fixes | **Active (6/6 WOs complete — pending Chief Architect PR #18 re-verification)** — WO1 (`89595e4`), WO2 (`a808fa5`), WO3 (`bed436e`), WO4 (`2b97c02`), WO5 (`60fd200`), WO6 (`bcdfae0`) complete | Delivery (`UserMessage`, `DetectRewind`, `InjectedSet`), Index (`#13`), Projector (`#11`), Seeder (`#10`, `#12`), Ops (`#16`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Resumes at WO4 (`wo4-dry-run`) after `pr-10b` lands | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
