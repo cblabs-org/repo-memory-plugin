@@ -4,12 +4,11 @@
     {
       "type": "add",
       "entry_id": "seed-6cc75a12",
-      "dossier_scope": "~/.gemini/antigravity/sidecar-data/repo-memory-daemon",
+      "dossier_scope": "root",
       "timestamp": "2026-10-05T19:22:09+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
-          "~/.gemini/antigravity/sidecar_data/repo-memory-daemon/backups",
           "config.json",
           "cmd_install.go",
           ".agents/plugins.json",
@@ -19,7 +18,6 @@
           "cmd_doctor.go",
           "cmd_uninstall.go",
           ".agents/plugins.json",
-          "filepath.Clean",
           "GEMINI.md",
           "PROGRAM-PLAN.md",
           "PROJECT.md",
@@ -35,12 +33,11 @@
     {
       "type": "add",
       "entry_id": "seed-5e480c6a",
-      "dossier_scope": "~/.gemini/antigravity/sidecar-data/repo-memory-daemon",
+      "dossier_scope": "root",
       "timestamp": "2026-10-05T19:22:09+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
-          "~/.gemini/antigravity/sidecar_data/repo-memory-daemon/backups",
           "config.json",
           "cmd_install.go",
           ".agents/plugins.json",
@@ -50,7 +47,6 @@
           "cmd_doctor.go",
           "cmd_uninstall.go",
           ".agents/plugins.json",
-          "filepath.Clean",
           "GEMINI.md",
           "PROGRAM-PLAN.md",
           "PROJECT.md",

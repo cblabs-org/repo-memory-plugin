@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-aeb2bf53",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-15T18:30:41Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/parser.go",
+          "internal/core/seed/scanner.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Implemented two-layer anchor path filtering: syntactic validation in `extractBacktickPaths` so pure parser callers reject code expressions and external/home paths without requiring a filesystem root, paired with repository-tree validation (`git ls-tree` at `BeforeCommit` or `os.Stat`) in `ScanAndParse` when `RepoRoot` is provided."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T18:30:41Z",
+  "batch_id": "01M50D9A38TRQG8ZJPFNYGM1J5"
+}

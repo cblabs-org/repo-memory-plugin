@@ -9,7 +9,6 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "Compactor.Compact()",
           "internal/core/pipeline/compact/compact.go",
           "compact_test.go"
         ],
@@ -25,7 +24,6 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "Compactor.Compact()",
           "internal/core/pipeline/compact/compact.go",
           "compact_test.go"
         ],
@@ -41,7 +39,6 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "Compactor.Compact()",
           "internal/core/pipeline/compact/compact.go",
           "compact_test.go"
         ],

@@ -11,7 +11,6 @@
         "anchors": [
           "internal/core/tick/lock_unix.go",
           "lock_windows.go",
-          "tick.lock",
           "internal/core/tick/tick.go",
           "internal/core/tick/sweep.go",
           "cmd/repo-memory/cmd_tick.go"
@@ -30,7 +29,6 @@
         "anchors": [
           "internal/core/tick/lock_unix.go",
           "lock_windows.go",
-          "tick.lock",
           "internal/core/tick/tick.go",
           "internal/core/tick/sweep.go",
           "cmd/repo-memory/cmd_tick.go"

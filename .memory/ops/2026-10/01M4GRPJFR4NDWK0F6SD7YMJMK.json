@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-0f88894d",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-09T17:42:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Snapshotting method: Manually created `.memory/evidence/x6-lite-protocol.md` from WO1's completion report text since the document didn't explicitly exist as a separate file. Then snapshotted all candidate WO PA documents into `.memory/evidence/pa-workspace/` to protect them from Antigravity pruning."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-a2a1eb84",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-09T17:42:19+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Storage layout for time-cut data: For each of the 8 WOs, extracted their exact `chore(PA)` parent commit. Executed `repo-memory seed --before \u003ccommit\u003e` into `evaluation/data/\u003cwo-name\u003e/ops/`. Captured `PROJECT.md` and `MEMORY.md` (via git show at the parent commit) into `evaluation/data/\u003cwo-name\u003e/pa_docs/`. Then rendered the time-cut dossiers into `evaluation/data/\u003cwo-name\u003e/dossiers/` and `evaluation/data/\u003cwo-name\u003e/ATLAS.md` using the core dossiers Projector/Writer."
+      }
+    }
+  ],
+  "created_at": "2026-10-09T16:42:19Z",
+  "batch_id": "01M4GRPJFR4NDWK0F6SD7YMJMK"
+}

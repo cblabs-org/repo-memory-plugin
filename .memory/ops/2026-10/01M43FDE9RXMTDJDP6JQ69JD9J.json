@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-f1b5b2e2",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-04T13:49:55+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/executor.go"
+        ],
+        "entry_type": "decision",
+        "text": "Added a workaround extraction method in `processReconcile` to lookup the real underlying session ULID via string manipulation of the job's idempotency key since the extracted candidates did not reliably capture it back from the extraction payload arrays."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-72ca47ce",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-04T13:49:55+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/executor.go"
+        ],
+        "entry_type": "decision",
+        "text": "Explicitly defined a robust `DO NOT USE ANY TOOLS` instruction inside the standard prompt wrapping JSON since the LLM executor defaults to tool-enabled environments and was actively attempting out-of-bounds bash calls."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-084601c6",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-04T13:49:55+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/executor.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When using `agy` as a background LLM execution harness, always map inputs via `-p -` and provide them through `stdin` to avoid maximum argument size limits which truncate the JSON structures and crash processing."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-5fd3847d",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-04T13:49:55+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/executor.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "The pipeline `processReconcile` job sequence scales sequentially which takes roughly 10 seconds per candidate. This creates significant wall-clock latency (e.g. 60+ minutes) for bulk backfilling."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-9387a988",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-04T13:49:55+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/pipeline.go",
+          "internal/harness/antigravity/executor.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "Usage analytics and pipeline LLM costs are not being written to the database; they are currently discarded using a dummy `\u0026jobs.Cost{}` object on completion for every stage."
+      }
+    }
+  ],
+  "created_at": "2026-10-04T12:49:55Z",
+  "batch_id": "01M43FDE9RXMTDJDP6JQ69JD9J"
+}

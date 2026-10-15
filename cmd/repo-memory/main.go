@@ -42,5 +42,6 @@ func init() {
 	rootCmd.AddCommand(snapshotCmd)
 	rootCmd.AddCommand(usageCmd)
 	rootCmd.AddCommand(seedCmd)
+	rootCmd.AddCommand(opsCmd)
 }
 

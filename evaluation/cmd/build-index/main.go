@@ -70,14 +70,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Step 2b: Remove placeholder/junk entries that waste injection budget.
-	junkDeleted, err := deleteJunkEntries(*dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: cleaning junk entries: %v\n", err)
-	} else if junkDeleted > 0 {
-		fmt.Printf("Cleaned %d junk entries (None., (pending), N/A, empty)\n", junkDeleted)
-	}
-
 	// Step 3: Verify.
 	count, maxTS, err := verifyIndex(*dbPath)
 	if err != nil {
@@ -229,32 +221,4 @@ func openSQLite(path string) (*sqlDB, error) {
 
 type sqlDB struct {
 	*sql.DB
-}
-
-// deleteJunkEntries removes placeholder and empty entries from the index
-// that would waste injection budget. Returns the number of entries deleted.
-func deleteJunkEntries(dbPath string) (int64, error) {
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-
-	// Delete entries whose text is a known placeholder pattern
-	result, err := db.Exec(`
-		DELETE FROM entries
-		WHERE TRIM(text) IN ('', 'None.', 'None', '(pending)', 'N/A')
-		   OR TRIM(text) LIKE 'None encountered%'
-	`)
-	if err != nil {
-		return 0, err
-	}
-	deleted, _ := result.RowsAffected()
-
-	// Also clean up FTS entries for deleted rows
-	if deleted > 0 {
-		db.Exec(`DELETE FROM entries_fts WHERE rowid NOT IN (SELECT rowid FROM entries)`)
-	}
-
-	return deleted, nil
 }

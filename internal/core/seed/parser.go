@@ -53,7 +53,9 @@ var allowedSingleSegmentNames = map[string]bool{
 	"LICENSE":    true,
 }
 
-func isValidAnchorPathSyntax(p string) bool {
+// IsValidAnchorPathSyntax returns true when p looks like a valid repository-relative
+// file or directory path rather than an arbitrary code token, glob, or external path.
+func IsValidAnchorPathSyntax(p string) bool {
 	p = strings.TrimSpace(p)
 	p = strings.TrimSuffix(p, "/")
 	if p == "" || p == "." || p == ".." || strings.Contains(p, " ") {
@@ -98,6 +100,10 @@ func isValidAnchorPathSyntax(p string) bool {
 	}
 
 	return true
+}
+
+func isValidAnchorPathSyntax(p string) bool {
+	return IsValidAnchorPathSyntax(p)
 }
 
 func extractBacktickPaths(s string) []string {

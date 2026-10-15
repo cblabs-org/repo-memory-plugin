@@ -4,7 +4,7 @@
     {
       "type": "add",
       "entry_id": "seed-01e79d6d",
-      "dossier_scope": "\u003cdata-dir\u003e/\u003crepo-id\u003e",
+      "dossier_scope": "core",
       "timestamp": "2026-10-01T18:54:42+01:00",
       "source": "seed",
       "fields": {
@@ -22,8 +22,6 @@
           "registry.json",
           "cmd/repo-memory/cmd_leave.go",
           "registry.json",
-          "\u003cdata-dir\u003e/\u003crepo-id\u003e/",
-          ".memory/",
           "cmd/repo-memory/cmd_enable.go",
           "cmd/repo-memory/cmd_disable.go",
           "cmd/repo-memory/cmd_hook.go",
@@ -37,7 +35,7 @@
     {
       "type": "add",
       "entry_id": "seed-4367d3cc",
-      "dossier_scope": "\u003cdata-dir\u003e/\u003crepo-id\u003e",
+      "dossier_scope": "core",
       "timestamp": "2026-10-01T18:54:42+01:00",
       "source": "seed",
       "fields": {
@@ -55,8 +53,6 @@
           "registry.json",
           "cmd/repo-memory/cmd_leave.go",
           "registry.json",
-          "\u003cdata-dir\u003e/\u003crepo-id\u003e/",
-          ".memory/",
           "cmd/repo-memory/cmd_enable.go",
           "cmd/repo-memory/cmd_disable.go",
           "cmd/repo-memory/cmd_hook.go",

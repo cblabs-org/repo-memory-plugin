@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-f9a780a4",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-06T15:44:53+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "internal/core/index/entries.go",
+          "internal/core/index/entry_anchors.go",
+          "internal/core/index/rebuild.go",
+          "internal/core/index/v2_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used FTS5 external content table (`content=entries, content_rowid=rowid`) with SQLite triggers for automatic insert, update, and delete synchronization between `entries` and `entries_fts`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c1392cd3",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-06T15:44:53+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "internal/core/index/entries.go",
+          "internal/core/index/entry_anchors.go",
+          "internal/core/index/rebuild.go",
+          "internal/core/index/v2_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Anchors are stored normalized in `entry_anchors`, with `LookupByAnchor` executing a `LIKE ?` prefix query and `LookupByAnchorExact` performing exact match."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-7399e38c",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-06T15:44:53+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "internal/core/index/entries.go",
+          "internal/core/index/entry_anchors.go",
+          "internal/core/index/rebuild.go",
+          "internal/core/index/v2_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "`GetEntry` and scope listings hydrate anchors from `entry_anchors` so caller receives fully populated `dossiers.Entry` objects."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-370ea357",
+      "dossier_scope": "core/index",
+      "timestamp": "2026-10-06T15:44:53+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/index/index.go",
+          "internal/core/index/entries.go",
+          "internal/core/index/entry_anchors.go",
+          "internal/core/index/rebuild.go",
+          "internal/core/index/v2_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Preserved existing `Rebuild` function signature and added `RebuildV1Index` alias so callers like `cmd/repo-memory/cmd_reindex.go` compile without changes."
+      }
+    }
+  ],
+  "created_at": "2026-10-06T14:44:53Z",
+  "batch_id": "01M48TSCM8YEKP8FQE6SP7A0RB"
+}

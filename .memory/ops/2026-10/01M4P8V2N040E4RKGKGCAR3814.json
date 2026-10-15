@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-becfef06",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T21:00:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/eval_env.sh",
+          "evaluation/eval-v2/scripts/verify_protection.sh",
+          "evaluation/eval-v2/scripts/eval_run.sh",
+          "evaluation/eval-v2/scripts/check_contamination.sh",
+          "evaluation/eval-v2/PROTECTION.md"
+        ],
+        "entry_type": "decision",
+        "text": "Tagged `baseline` on HEAD upon initial template cloning in `eval_run.sh` so that `git diff baseline` is unambiguous regardless of whether the agent makes interim commits."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-06f07015",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T21:00:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/eval_env.sh",
+          "evaluation/eval-v2/scripts/verify_protection.sh",
+          "evaluation/eval-v2/scripts/eval_run.sh",
+          "evaluation/eval-v2/scripts/check_contamination.sh",
+          "evaluation/eval-v2/PROTECTION.md"
+        ],
+        "entry_type": "decision",
+        "text": "Configured isolated per-run plugin directory (`plugin/repo-memory`) with explicit `env REPO_MEMORY_DATA_DIR=...` commands in `hooks.json` and `mcp_config.json`, ensuring zero state bleed between runs."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-842e919e",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T21:00:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/eval_env.sh",
+          "evaluation/eval-v2/scripts/verify_protection.sh",
+          "evaluation/eval-v2/scripts/eval_run.sh",
+          "evaluation/eval-v2/scripts/check_contamination.sh",
+          "evaluation/eval-v2/PROTECTION.md"
+        ],
+        "entry_type": "decision",
+        "text": "Generated executable `run_agent.sh` in the run directory alongside the printed interactive command to facilitate reproducible execution."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-a12bbd8a",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T21:00:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/eval_env.sh",
+          "evaluation/eval-v2/scripts/verify_protection.sh",
+          "evaluation/eval-v2/scripts/eval_run.sh",
+          "evaluation/eval-v2/scripts/check_contamination.sh",
+          "evaluation/eval-v2/PROTECTION.md"
+        ],
+        "entry_type": "ruled-out",
+        "text": "When testing `run_command` in subshells, pre-tool hooks in the development environment correctly flagged dynamic write targets and direct `git push origin main` command strings, validating that pre-tool gates function as designed."
+      }
+    }
+  ],
+  "created_at": "2026-10-11T20:00:36Z",
+  "batch_id": "01M4P8V2N040E4RKGKGCAR3814"
+}

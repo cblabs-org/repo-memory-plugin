@@ -10,10 +10,7 @@
       "fields": {
         "anchors": [
           "internal/core/tick/pipeline.go",
-          "cand.EpisodeID",
-          "epStore.Read()",
           "internal/core/pipeline/extract/extractor.go",
-          "jsonschema.Reflect",
           "internal/harness/antigravity/executor.go"
         ],
         "entry_type": "decision",
@@ -29,10 +26,7 @@
       "fields": {
         "anchors": [
           "internal/core/tick/pipeline.go",
-          "cand.EpisodeID",
-          "epStore.Read()",
           "internal/core/pipeline/extract/extractor.go",
-          "jsonschema.Reflect",
           "internal/harness/antigravity/executor.go"
         ],
         "entry_type": "decision",
@@ -48,10 +42,7 @@
       "fields": {
         "anchors": [
           "internal/core/tick/pipeline.go",
-          "cand.EpisodeID",
-          "epStore.Read()",
           "internal/core/pipeline/extract/extractor.go",
-          "jsonschema.Reflect",
           "internal/harness/antigravity/executor.go"
         ],
         "entry_type": "ruled-out",
@@ -67,10 +58,7 @@
       "fields": {
         "anchors": [
           "internal/core/tick/pipeline.go",
-          "cand.EpisodeID",
-          "epStore.Read()",
           "internal/core/pipeline/extract/extractor.go",
-          "jsonschema.Reflect",
           "internal/harness/antigravity/executor.go"
         ],
         "entry_type": "ruled-out",
@@ -86,10 +74,7 @@
       "fields": {
         "anchors": [
           "internal/core/tick/pipeline.go",
-          "cand.EpisodeID",
-          "epStore.Read()",
           "internal/core/pipeline/extract/extractor.go",
-          "jsonschema.Reflect",
           "internal/harness/antigravity/executor.go"
         ],
         "entry_type": "open-issue",

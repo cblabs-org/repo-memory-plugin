@@ -11,10 +11,8 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/index/entries.go",
-          "sql.ErrNoRows",
           "internal/core/index/entry_anchors.go",
           "internal/core/index/rebuild.go",
-          "dossiers.NewProjector(opsReader).Project(ctx)",
           "internal/core/index/v2_test.go"
         ],
         "entry_type": "decision",
@@ -31,10 +29,8 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/index/entries.go",
-          "sql.ErrNoRows",
           "internal/core/index/entry_anchors.go",
           "internal/core/index/rebuild.go",
-          "dossiers.NewProjector(opsReader).Project(ctx)",
           "internal/core/index/v2_test.go"
         ],
         "entry_type": "decision",
@@ -51,10 +47,8 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/index/entries.go",
-          "sql.ErrNoRows",
           "internal/core/index/entry_anchors.go",
           "internal/core/index/rebuild.go",
-          "dossiers.NewProjector(opsReader).Project(ctx)",
           "internal/core/index/v2_test.go"
         ],
         "entry_type": "decision",
@@ -71,10 +65,8 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/index/entries.go",
-          "sql.ErrNoRows",
           "internal/core/index/entry_anchors.go",
           "internal/core/index/rebuild.go",
-          "dossiers.NewProjector(opsReader).Project(ctx)",
           "internal/core/index/v2_test.go"
         ],
         "entry_type": "decision",

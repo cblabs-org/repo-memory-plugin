@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-109fea35",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-06T16:07:10+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/parser.go",
+          "internal/core/seed/convert.go",
+          "internal/core/seed/scanner.go",
+          "cmd/repo-memory/cmd_seed.go",
+          "cmd/repo-memory/main.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used `ruled-out` type with prefix `rul-` as default mapping for Dead Ends."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-8ae39b13",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-06T16:07:10+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/parser.go",
+          "internal/core/seed/convert.go",
+          "internal/core/seed/scanner.go",
+          "cmd/repo-memory/cmd_seed.go",
+          "cmd/repo-memory/main.go",
+          "internal/core/seed/seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Used `ops.NewBatch` to properly emit batched ops from the seeded list."
+      }
+    }
+  ],
+  "created_at": "2026-10-06T15:07:10Z",
+  "batch_id": "01M48W269GAJE7541JS16FR3W9"
+}
