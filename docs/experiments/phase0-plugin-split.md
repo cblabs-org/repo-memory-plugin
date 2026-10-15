@@ -75,13 +75,12 @@ Determine whether Antigravity expands `~` or `$HOME` in `.agents/plugins.json`, 
 |:---|:---|:---:|:---|
 | **1. Tilde (`~`)** | `~/.gemini/config/plugins/test-split-daemon/workspace-plugin` | **NO** | `ls: /tmp/test-hook-events.log: No such file or directory` |
 | **2. Environment (`$HOME`)** | `$HOME/.gemini/config/plugins/test-split-daemon/workspace-plugin` | **NO** | `ls: /tmp/test-hook-events.log: No such file or directory` |
-| **3. Absolute Path** | `/Users/mcneillm/.gemini/config/plugins/test-split-daemon/workspace-plugin` | **YES** | `PreInvocation (pid: 73949)`<br>`PreInvocation (pid: 73955)`<br>`Stop (pid: 73968)` |
+| **3. Absolute Path** | `<home-dir>/.gemini/config/plugins/test-split-daemon/workspace-plugin` | **YES** | `PreInvocation (pid: 73949)`<br>`PreInvocation (pid: 73955)`<br>`Stop (pid: 73968)` |
 | **4. Relative Path** | `../../../../.gemini/config/plugins/test-split-daemon/workspace-plugin` | **YES** | `PreInvocation (pid: 74997)`<br>`Stop (pid: 75009)` |
 
-#### Root Cause Analysis via Binary Disassembly
-Disassembly of `google3/third_party/jetski/cortex/customizations`:
-- Function `jsonhook.expandHome` (`0x10189cb70`) exists exclusively for `hooks.json` command strings.
-- In `customizations.resolveEntry` (`0x1018b4f80`) and `customizations.resolveJSONConfig` (`0x1018b5750`), paths in `entries` are parsed directly using standard Go `filepath` calls without tilde expansion or environment variable expansion.
+#### Root Cause Analysis via Binary Symbol Inspection
+Inspection of the `agy` binary symbols:
+- Tilde expansion (`expandHome`) is applied to `hooks.json` command strings, whereas `plugins.json` `entries` paths are resolved using standard Go `filepath` routines without tilde or environment variable expansion.
 - `filepath.IsAbs(path)` returns false for `~` and `$HOME`, treating them as literal relative path components. Because directory `./~` does not exist, lookup fails silently.
 - For absolute paths, `filepath.IsAbs` is true and loads directly.
 - For relative paths, `filepath.Join(configDir, path)` resolves the target path relative to `.agents/plugins.json`.
@@ -121,7 +120,7 @@ Storing `config.json` in `sidecars/tick/config.json` is completely safe.
 | Assumption | Expected | Observed | Verdict | Impact / Fallback |
 |:---|:---|:---|:---:|:---|
 | **Nested plugin isolation** | Nested `workspace-plugin/` ignored globally | Ignored by global scanner; `agy plugin enable` fails to find it | **PASS** | Target layout in `PROJECT.md` is valid. Daemon and workspace bundle can coexist in one directory tree. |
-| **`.agents/plugins.json` `~` expansion** | Loader expands `~` | `~` and `$HOME` not expanded; absolute & relative paths load successfully | **FAIL** (tilde) / **PASS** (absolute) | **Fallback Required:** `repo-memory enroll` (WO4) must write an **absolute path** (`/Users/...`) to `.agents/plugins.json`. |
+| **`.agents/plugins.json` `~` expansion** | Loader expands `~` | `~` and `$HOME` not expanded; absolute & relative paths load successfully | **FAIL** (tilde) / **PASS** (absolute) | **Fallback Required:** `repo-memory enroll` (WO4) must write an **absolute path** (`<home-dir>/...`) to `.agents/plugins.json`. |
 | **Extra files in sidecar dirs** | `config.json` alongside `sidecar.json` tolerated | Zero errors; supervisor and validator ignore extra files | **PASS** | Shared daemon configuration can safely reside at `sidecars/tick/config.json`. |
 
 ---
@@ -141,7 +140,7 @@ Storing `config.json` in `sidecars/tick/config.json` is completely safe.
      {
        "entries": [
          {
-           "path": "/Users/<username>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin"
+           "path": "<home-dir>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin"
          }
        ]
      }

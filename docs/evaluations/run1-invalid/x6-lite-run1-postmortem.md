@@ -7,7 +7,7 @@
 
 ### Defect 1: Agents Ran in Main Checkout, Not Worktree ✅ CONFIRMED
 
-**Evidence:** [`x6_runner.sh` line 177](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/x6_runner.sh#L177) launches `agy` without `cd "${WORKTREE_DIR}"` first. The `--project` flag only names the agy project — it doesn't set CWD.
+**Evidence:** ``x6_runner.sh` line 177` launches `agy` without `cd "${WORKTREE_DIR}"` first. The `--project` flag only names the agy project — it doesn't set CWD.
 
 ```bash
 # What it does (WRONG):
@@ -20,16 +20,16 @@ REPO_MEMORY_HOUSEKEEPING=1 agy --agent "Execution-Worker" -p "${WO_TEXT}" ...
 
 **Consequence:** Every agent saw the finished main checkout (which contains all completed WO code, tests, and completion reports). Most agents just verified existing code rather than implementing from scratch.
 
-**Verification:** The pilot run's agent output references `/Users/mcneillm/Documents/Projects/repo-memory-plugin/` 7 times, the worktree only once.
+**Verification:** The pilot run's agent output references `<repo-root>/` 7 times, the worktree only once.
 
 **Collateral damage:** The main checkout now has 1,229 lines of uncommitted changes across 18 files left by eval agents editing concurrently.
 
 ### Defect 2: Memory Delivery Disabled in ALL Conditions ✅ CONFIRMED
 
 **Evidence:** `REPO_MEMORY_HOUSEKEEPING=1` causes early return in all three hooks:
-- [`preinvocation.go:55`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/internal/harness/antigravity/preinvocation.go#L55): `return []byte("{}"), nil`
-- [`pretooluse.go:89`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/internal/harness/antigravity/pretooluse.go#L89): `return []byte("{}"), nil`
-- [`posttooluse.go:61`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/internal/harness/antigravity/posttooluse.go#L61): `return []byte("{}"), nil`
+- ``preinvocation.go:55``: `return []byte("{}"), nil`
+- ``pretooluse.go:89``: `return []byte("{}"), nil`
+- ``posttooluse.go:61``: `return []byte("{}"), nil`
 
 **Consequence:** The dossier condition injected files into `.memory/dossiers/` in the worktree, but the hooks that would *deliver* that data to the agent were disabled. Even if the agent had been in the worktree, it would never have received the dossier content via the memory system.
 
@@ -37,7 +37,7 @@ REPO_MEMORY_HOUSEKEEPING=1 agy --agent "Execution-Worker" -p "${WO_TEXT}" ...
 
 ### Defect 3: Exit Tests Ran Against Untouched Worktree ✅ CONFIRMED
 
-**Evidence:** [`x6_runner.sh` line 201](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/x6_runner.sh#L201) does `cd "${WORKTREE_DIR}"` for exit tests. But since the agent worked in the main checkout, the worktree was never modified.
+**Evidence:** ``x6_runner.sh` line 201` does `cd "${WORKTREE_DIR}"` for exit tests. But since the agent worked in the main checkout, the worktree was never modified.
 
 **Per-WO impact (verified from exit test logs):**
 

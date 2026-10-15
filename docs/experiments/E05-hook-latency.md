@@ -45,7 +45,7 @@ All non-enrolled paths show consistent ~55-60ms latency regardless of directory 
 === Non-enrolled, with .git (/tmp/e5-test-git-repo) ===
   min:  55.50ms  p50:  56.90ms  p95:  59.08ms  max:  73.81ms
 
-=== Non-enrolled, deep path (/Users/mcneillm/Desktop) ===
+=== Non-enrolled, deep path (<home-dir>/Desktop) ===
   min:  55.02ms  p50:  57.31ms  p95:  59.99ms  max:  67.86ms
 ```
 

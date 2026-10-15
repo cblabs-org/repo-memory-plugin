@@ -1,9 +1,9 @@
 # repo-memory Programme
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
-> **Specification:** [SPEC.md](../../../SPEC.md) v0.10 (upgrading to v1.0 in PR-10a) + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3 (upgrading to rev 4 / v2.2 in PR-10a) + [Addendum A](../../../docs/addendum-a-provenance-and-hardening.md) rev 2 (upgrading to rev 3 in PR-10a)
-> **Status:** Executing — **v2.2 revision approved (2026-10-15)**. **14/22 complete** (PR-01 through PR-09b; PR-10-eval-v2 at WO3/7 Stage 1 complete). **PR-10a-v2-2-docs-and-specs active next**, followed by **PR-10b-delivery-and-storage-fixes** before resuming PR-10-eval-v2 Stage 2 (WO4–WO7).
-> **Base branch:** `pr-10-eval-v2/wo3-index-build` (`07fda90`, ahead of `main` `83edd25`)
+> **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
+> **Status:** Executing — **v2.2 revision approved (2026-10-15)**. **15/22 complete** (PR-01 through PR-09b, PR-10a-v2-2-docs-and-specs; PR-10-eval-v2 at WO3/7 Stage 1 complete). **PR-10b-delivery-and-storage-fixes active next**, before resuming PR-10-eval-v2 Stage 2 (WO4–WO7).
+> **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (ahead of `pr-10-eval-v2/wo3-index-build` `ec96755` and `main` `83edd25`)
 > **Revision:** v2.2 (2026-10-15). Synthesizes empirical findings from PR-09 (X6-lite + 231-transcript study) and PR-10 Stage 1 (77-session doc/skill audit), fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` persistence regression, and incorporates the 6 v2.2 architectural pillars.
 
 ## Programme Summary
@@ -92,8 +92,8 @@ Read side and empirical evaluation first, upgraded in v2.2 (`2026-10-15`) after 
 | 12 | `pr-08-v2-delivery` | Channels, moments, injection ledger, compaction re-injection, pull tools, latency budgets | ✅ **Complete** (PR #14, merged) | PR-07-v2-storage |
 | 13 | `pr-09-v2-x6-lite` | Pre-registered B1 replay + 231-session PA retrieval study (STOP verdict on spec-style tasks → pivoted to Eval v2 on esp32) | ✅ **Complete** (`45a68cd`) | PR-08-v2-delivery |
 | 13b | `pr-09b-product-fixes` | Stage 0 product fixes: canonical `IndexPath`, bm25 FTS scoring, relevance threshold, per-session `InjectedSet` dedup | ✅ **Complete** (`208b0e0`) | PR-09-v2-x6-lite |
-| 14a | `pr-10a-v2-2-docs-and-specs` | **v2.2 Spec & Design Upgrade:** Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and v2.2 Programme Plan | 🔄 **Next (Active)** | PR-10 Stage 1 (`07fda90`) |
-| 14b | `pr-10b-delivery-and-storage-fixes` | Fix `8d7ad7b`+`d3ab994` `EphemeralMessage`→`UserMessage` vanishing-memory bug, wire `DetectRewind`, fix open issues `#10`–`#13` & `#16`, rebuild binary & esp32 index | ☐ Planned | PR-10a-v2-2-docs-and-specs |
+| 14a | `pr-10a-v2-2-docs-and-specs` | **v2.2 Spec & Design Upgrade:** Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and v2.2 Programme Plan | ✅ **Complete** | PR-10 Stage 1 (`ec96755`) |
+| 14b | `pr-10b-delivery-and-storage-fixes` | Fix `8d7ad7b`+`d3ab994` `EphemeralMessage`→`UserMessage` vanishing-memory bug, wire `DetectRewind`, fix open issues `#10`–`#13` & `#16`, rebuild binary & esp32 index | 🔄 **Next (Active)** | PR-10a-v2-2-docs-and-specs |
 | 14 | `pr-10-eval-v2` | **Eval v2 (2×2 factorial on esp32):** WO1–WO3 (Stage 0b & Stage 1) complete; resume WO4 (dry-run) → WO5 (Stage 2a pilot) → WO6 (Stage 2b main) → WO7 (report) | ⏸️ **WO3/7 Done** (resumes after PR-10b) | PR-10b-delivery-and-storage-fixes |
 | 15 | `pr-11-v2-doc-seeding-and-lifecycles` | Doc-Seeded Dossiers (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming"), `semantic`/`procedural`/`episodic` lifecycles, and `{section?}` optional rendering | ☐ Planned | PR-10b-delivery-and-storage-fixes |
 | 16 | `pr-12-v2-distillation` | Automatic milestone-gated `Stop` (`NO_TOOL_CALL`) warm-cache turn notes, free harvest (`CHECKPOINT` + `brain/`), `memory_note` dedup, A8 managed block, §5.6 preparation layer, sidecar fallback | ☐ Planned | PR-10-eval-v2 & PR-11 |
@@ -158,7 +158,7 @@ Ran the v1 pipeline on this repo's own 71 PA-imported episodes. Produced 125 cla
 
 ### 2026-10-03 — v2 design and pivot (session 14)
 
-The v2 design ([design-v2-distillation-retrieval.md](../../../docs/design-v2-distillation-retrieval.md) rev 3) emerged from the dogfood evaluation, two rounds of review on issue #3, and platform answers on issue #2.
+The v2 design ([design-v2-distillation-retrieval.md](../../../../docs/design-v2-distillation-retrieval.md) rev 3) emerged from the dogfood evaluation, two rounds of review on issue #3, and platform answers on issue #2.
 
 **Key v2 decisions:**
 - Turn notes via `Stop` continue replace the post-hoc 4-stage pipeline
@@ -220,7 +220,7 @@ The v2 plan was reviewed before kick-off against the code, git topology, the liv
 ### 2026-10-11 — PR-09-v2-x6-lite & PR-09b-product-fixes complete (sessions 19–20)
 
 **Summary:**
-- **PR-09-v2-x6-lite:** Executed 92 agent runs across 4 work orders ([x6-lite-verdict.md](../../../docs/evaluations/x6-lite-verdict.md)). Verdict: **STOP (wrong instrument, not a product fail)** — 150-line spec-style work orders on an 18K-line repo scored 84% (42/50) with no memory, leaving no headroom. Also completed the 231-transcript retrieval study ([pa-memory-retrieval-effectiveness.md](../../../docs/evaluations/pa-memory-retrieval-effectiveness.md)), proving that **unprompted pull memory is unused** (0 MCP pull calls in X6-lite; only 1.3% of non-PA sessions read `MEMORY.md` and 0% read `PROJECT.md`).
+- **PR-09-v2-x6-lite:** Executed 92 agent runs across 4 work orders ([x6-lite-verdict.md](../../../../docs/evaluations/x6-lite-verdict.md)). Verdict: **STOP (wrong instrument, not a product fail)** — 150-line spec-style work orders on an 18K-line repo scored 84% (42/50) with no memory, leaving no headroom. Also completed the 231-transcript retrieval study ([pa-memory-retrieval-effectiveness.md](../../../../docs/evaluations/pa-memory-retrieval-effectiveness.md)), proving that **unprompted pull memory is unused** (0 MCP pull calls in X6-lite; only 1.3% of non-PA sessions read `MEMORY.md` and 0% read `PROJECT.md`).
 - **PR-09b-product-fixes:** Fixed Stage 0 defects identified in X6-lite ([PROJECT.md](../pr-09b-product-fixes/PROJECT.md)): unified `index.IndexPath(dataDir, repoID)` across all 4 code paths, added bm25 FTS relevance weight (`ftsScore * 100`), added `DefaultMinRelevanceScore = 50`, and implemented per-session `InjectedSet` deduplication in `Engine`/`Ledger`.
 
 ### 2026-10-15 — PR-10-eval-v2 Stage 1 & v2.2 Programme Revision (session 21)
@@ -236,4 +236,14 @@ The v2 plan was reviewed before kick-off against the code, git topology, the liv
   - `VD16`: Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSource`) + async git-diff doc freshness ("Dreaming") convert static repo guides/skills into push-delivered dossier entries.
   - `VD17`: The 8 entry types are governed by 3 distinct cognitive lifecycles (`semantic`, `procedural`, `episodic`) with optional `{section?}` dossier rendering.
   - `VD18`: Five-tier state scope hierarchy (`temp:`, `session:`, `user:`, `branch:`, `repo:`) + Pre-Consolidation Corroboration Gate block uncorroborated hypotheses from becoming active `do:` imperatives.
-  - `VD19`: Remove stale v1 `E02` root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/`; keep `GEMINI.md` strictly machine-managed by `repo-memory init` (Addendum A8).
+  - `VD19`: Remove stale v1 `E02` root `GEMINI.md` and `.memory/views/`; keep `GEMINI.md` strictly machine-managed by `repo-memory init` (Addendum A8).
+
+### 2026-10-15 — PR-10a-v2-2-docs-and-specs complete (session 22)
+
+**Summary:**
+- Completed all 5 work orders in [PR-10a-v2-2-docs-and-specs](../pr-10a-v2-2-docs-and-specs/PROJECT.md):
+  1. `wo1-design-v2-rev4`: Upgraded `docs/design-v2-distillation-retrieval.md` to Revision 4 (`v2.2`).
+  2. `wo2-addendum-a-rev3`: Upgraded `docs/addendum-a-provenance-and-hardening.md` to Revision 3 (`A7` procedural validation & `.agents/skills/rm-<slug>/SKILL.md` graduation, `A8` `v2` managed block, `A9` `DocSeedSource`).
+  3. `wo3-spec-v1-0`: Upgraded `SPEC.md` from `Draft v0.10` to **`v1.0`** (`v2.2` Architecture) and marked `docs/experiments/SPEC-CHANGES.md` applied.
+  4. `wo4-info-docs-and-cleanup`: Updated `docs/antigravity-hooks-reference.md`, created `README.md`, and removed stale v1 `GEMINI.md` and `.memory/views/`.
+  5. `wo5-verification-and-handover`: Verified cross-document links, external hygiene, and full Go test suite (`go test ./...` green).

@@ -130,7 +130,7 @@ All compile-fail in both conditions. The agent builds core types/structs but con
 
 ## Raw Data
 
-- **Results JSONL:** [`evaluation/results/x6-lite-results-v3.jsonl`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/results/x6-lite-results-v3.jsonl) (29 rows: 18 valid + 11 invalid/historical)
+- **Results JSONL:** ``evaluation/results/x6-lite-results-v3.jsonl`` (29 rows: 18 valid + 11 invalid/historical)
 - **Archives:** `evaluation/results/archive/{1..14}-*-rep1/`
 - **Run 1 archive:** `evaluation/archive/run1-invalid/` (invalidated 52-run batch)
 - **Pilot archive:** `evaluation/results/x6-lite-pilot-results.jsonl` (not created — pilot data is in the v3 JSONL)

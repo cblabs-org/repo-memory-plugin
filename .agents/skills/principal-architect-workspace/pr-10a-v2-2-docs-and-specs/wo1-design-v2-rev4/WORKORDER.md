@@ -17,7 +17,7 @@ Upgrade `docs/design-v2-distillation-retrieval.md` from Revision 3 to **Revision
 ## Strict Boundary Box
 - **In scope:** `docs/design-v2-distillation-retrieval.md` and this `WORKORDER.md` completion report.
 - **Out of scope:** Do NOT modify `docs/addendum-a-provenance-and-hardening.md` (WO2), `SPEC.md` (WO3), `docs/antigravity-hooks-reference.md` or `README.md` (WO4), or any Go source code (`PR-10b`).
-- **External GitHub Hygiene:** Never include any non-public internal paths, internal issue numbers, or internal codenames. Never use absolute OS paths (`file:///...` or `/Users/...`) in markdown links—always use relative links.
+- **External GitHub Hygiene:** Never include any non-public internal paths, internal issue numbers, or internal codenames. Never use absolute OS paths in markdown links—always use relative links.
 
 ## Tooling Constraints
 Use standard file editing tools (`read_file`, `edit_file`, `write_file`) and `run_command` for `git status` / `git diff` verification.
@@ -57,4 +57,4 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 - None encountered in WO1.
 
 ### Out-of-Scope Issues Surfaced
-- Pre-existing hygiene items noticed during read-only inspection of older docs (`docs/experiments/phase0-plugin-split.md` line 82 internal path and `/Users/mcneillm` references; `docs/evaluations/pa-memory-retrieval-effectiveness.md` `file:///Users/mcneillm/...` links) are queued for cleanup in WO5 (`wo5-verification-and-handover`).
+- Pre-existing hygiene items noticed during read-only inspection of older docs (`docs/experiments/phase0-plugin-split.md` line 82 internal path and home-directory references; `docs/evaluations/pa-memory-retrieval-effectiveness.md` local file URI links) are queued for cleanup in WO5 (`wo5-verification-and-handover`).

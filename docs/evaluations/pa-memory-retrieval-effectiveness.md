@@ -21,7 +21,7 @@ More concerning: 26% of conversations read PA workspace files from the **wrong r
 
 231 agent conversation transcripts were extracted from the Antigravity brain directory (`~/.gemini/antigravity/brain/`) on 2026-10-11. A conversation was included if its `transcript.jsonl` contained the string `esp32-app-foundation`, indicating the conversation's workspace was the esp32-app-foundation repository.
 
-- **Archive location:** [`evaluation/esp32-transcripts/`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/esp32-transcripts) (231 directories, 116 MB)
+- **Archive location:** `evaluation/esp32-transcripts/` (231 directories, 116 MB)
 - **Date range:** 2026-05-22 to 2026-10-09 (141 days)
 - **Total steps:** 35,751 across all conversations
 
@@ -37,9 +37,9 @@ Each transcript is a JSONL file where each line is a JSON object representing on
 
 Two scripts were used:
 
-1. **First-pass classifier** ([`analyze_esp32_transcripts.py`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/analyze_esp32_transcripts.py)): Scanned every step's `tool_calls` for `view_file` and `read_file` calls targeting paths containing `principal-architect`. Classified conversations by trajectory type (bugfixer, pa_driven, interactive, autonomous, multi_agent) based on content markers and PA workspace read counts.
+1. **First-pass classifier** (`evaluation/scripts/analyze_esp32_transcripts.py`): Scanned every step's `tool_calls` for `view_file` and `read_file` calls targeting paths containing `principal-architect`. Classified conversations by trajectory type (bugfixer, pa_driven, interactive, autonomous, multi_agent) based on content markers and PA workspace read counts.
 
-2. **Deep retrieval chain analysis** ([`analyze_pa_memory_chain.py`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/analyze_pa_memory_chain.py)): For every PA-related file read, classified the target by:
+2. **Deep retrieval chain analysis** (`evaluation/scripts/analyze_pa_memory_chain.py`): For every PA-related file read, classified the target by:
    - **Repository:** Which repo's PA workspace was read (esp32-local vs repo-memory-plugin vs other)
    - **File category:** SKILL.md/references (process), MEMORY.md (memory pager), MODULE_INDEX/PROJECT_INDEX (knowledge indexes), PROJECT.md (project knowledge), WORKORDER.md (task knowledge), PROGRAM.md/PROGRAM-PLAN.md (programme knowledge)
 
@@ -211,11 +211,11 @@ This aligns with the user's architectural direction: separate the PA skill (orch
 
 | Artifact | Location |
 |---|---|
-| Archived transcripts (231 conversations) | [`evaluation/esp32-transcripts/`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/esp32-transcripts) |
-| First-pass analysis script | [`evaluation/scripts/analyze_esp32_transcripts.py`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/analyze_esp32_transcripts.py) |
-| PA memory chain analysis script | [`evaluation/scripts/analyze_pa_memory_chain.py`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/scripts/analyze_pa_memory_chain.py) |
-| Per-conversation first-pass data | [`evaluation/esp32-transcript-analysis.jsonl`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/esp32-transcript-analysis.jsonl) |
-| Per-conversation PA detail data | [`evaluation/esp32-pa-memory-detail.jsonl`](file:///Users/mcneillm/Documents/Projects/repo-memory-plugin/evaluation/esp32-pa-memory-detail.jsonl) |
+| Archived transcripts (231 conversations) | `evaluation/esp32-transcripts/` |
+| First-pass analysis script | `evaluation/scripts/analyze_esp32_transcripts.py` |
+| PA memory chain analysis script | `evaluation/scripts/analyze_pa_memory_chain.py` |
+| Per-conversation first-pass data | `evaluation/esp32-transcript-analysis.jsonl` |
+| Per-conversation PA detail data | `evaluation/esp32-pa-memory-detail.jsonl` |
 | esp32 PA workspace (live) | `~/Documents/Projects/esp32-app-foundation/.agents/skills/principal-architect-workspace/` |
 | PA skill (global) | `~/.gemini/config/skills/principal-architect/` |
 
