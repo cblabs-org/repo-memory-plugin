@@ -25,7 +25,13 @@ func IsJunkText(text string) bool {
 	}
 	lower := strings.ToLower(t)
 	switch lower {
-	case "none.", "none", "(pending)", "n/a", "pending", "tbd", "todo":
+	case "none.", "none", "(none)", "(none).", "(pending)", "(pending).",
+		"n/a", "(n/a)", "pending", "tbd", "(tbd)", "todo", "(todo)", "-":
+		return true
+	}
+	stripped := strings.Trim(lower, "(). \t-")
+	switch stripped {
+	case "", "none", "n/a", "pending", "tbd", "todo":
 		return true
 	}
 	if strings.HasPrefix(lower, "none encountered") || strings.HasPrefix(lower, "none identified") ||

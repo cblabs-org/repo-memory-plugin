@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
@@ -118,6 +119,10 @@ func saveLedgerLocked(dataDir, repoID string, ledger *delivery.Ledger) error {
 		return fmt.Errorf("creating ledger directory: %w", err)
 	}
 
+	if ledger.InjectedSet == nil {
+		ledger.InjectedSet = make(map[string]bool)
+	}
+
 	data, err := json.MarshalIndent(ledger, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling ledger: %w", err)
@@ -169,7 +174,9 @@ func loadLedgerLocked(dataDir, repoID, conversationID string) (*delivery.Ledger,
 		return nil, err
 	}
 
-	var ledger delivery.Ledger
+	ledger := delivery.Ledger{
+		LastHandledCheckpointStep: -1,
+	}
 	if err := json.Unmarshal(data, &ledger); err != nil {
 		// Corrupted file (e.g. truncated) — start fresh rather than failing.
 		return delivery.NewLedger(conversationID), nil
@@ -190,9 +197,11 @@ func loadLedgerLocked(dataDir, repoID, conversationID string) (*delivery.Ledger,
 	}
 	if ledger.InjectedSet == nil {
 		ledger.InjectedSet = make(map[string]bool)
-	}
-	for _, inj := range ledger.Injections {
-		ledger.InjectedSet[inj.EntryID] = true
+		for _, inj := range ledger.Injections {
+			if inj.StepIndex > ledger.LastHandledCheckpointStep && !strings.HasPrefix(inj.EntryID, "about-to-edit:") {
+				ledger.InjectedSet[inj.EntryID] = true
+			}
+		}
 	}
 
 	return &ledger, nil

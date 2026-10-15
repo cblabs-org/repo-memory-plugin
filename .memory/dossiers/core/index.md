@@ -39,8 +39,3 @@
 
 ### [seed-f9a780a4] Used FTS5 external content table (`content=entries, content_rowid=rowid`) with SQLite triggers for automatic insert, update, and delete synchronization between `entries` and `entries_fts`.
 `decision · anchors: internal/core/index/index.go, internal/core/index/entries.go, internal/core/index/entry_anchors.go, internal/core/index/rebuild.go, internal/core/index/v2_test.go`
-
-## Open issues
-
-### [seed-1c3bab6e] (none)
-`open-issue · anchors: internal/core/index/index.go, internal/core/tick/tick.go, internal/core/tick/pipeline.go, internal/core/tick/pipeline_test.go`

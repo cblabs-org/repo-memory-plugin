@@ -41,7 +41,7 @@ func NewIndex(dbPath string) (*Index, error) {
 
 // NewReadOnlyIndex opens an Index backed by SQLite at dbPath in read-only mode.
 func NewReadOnlyIndex(dbPath string) (*Index, error) {
-	dsn := fmt.Sprintf("file:%s?mode=ro", dbPath)
+	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening read-only index database: %w", err)

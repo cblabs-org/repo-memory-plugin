@@ -26,9 +26,6 @@
 ### [seed-c473995a] PR-08/wo3 (ephemeral-and-errors) also has pending template — excluded.
 `ruled-out`
 
-### [seed-ce39aaca] (none)
-`ruled-out`
-
 ### [seed-dba1dab0] The `ep.Header.ID` doesn't exist, it is `EpisodeID`.
 `ruled-out`
 
@@ -108,14 +105,8 @@
 
 ## Open issues
 
-### [seed-270012fa] (none)
-`open-issue · anchors: go.mod, go.sum, internal/core/jobs/types.go, internal/core/jobs/schema.go, internal/core/jobs/state.go, internal/core/jobs/store.go, internal/core/jobs/state_test.go, internal/core/jobs/store_test.go`
-
 ### [seed-6823189b] There are pre-existing upstream test failures in `cmd/repo-memory/cmd_search_test.go`, `internal/core/jobs/store_test.go`, and `internal/harness/antigravity/attribution_test.go`. The PA should investigate these broken tests under a separate work order.
 `open-issue`
 
 ### [seed-8e40ba94] `cmd/repo-memory` seems to be ignored by `.gitignore` under the rule `repo-memory`, which could cause git to ignore source files in that directory.
-`open-issue`
-
-### [seed-95735b85] (none)
 `open-issue`

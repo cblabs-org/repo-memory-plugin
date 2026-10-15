@@ -48,9 +48,6 @@
 
 ## Open issues
 
-### [seed-270012fa] (none)
-`open-issue · anchors: go.mod, go.sum, internal/core/jobs/types.go, internal/core/jobs/schema.go, internal/core/jobs/state.go, internal/core/jobs/store.go, internal/core/jobs/state_test.go, internal/core/jobs/store_test.go`
-
 ### [seed-4ff705e0] `cmd/repo-memory/cmd_search_test.go` fails during full repository tests due to global directory manipulation (`os.Chdir(tempDir)`).
 `open-issue · anchors: internal/core/jobs/cost_test.go, internal/core/jobs/store_test.go, internal/core/tick/pipeline_test.go, gen_metadata.go, quota.go, cmd/repo-memory/cmd_usage.go, cmd/repo-memory/main.go, cmd/repo-memory/cmd_usage_test.go`
 
