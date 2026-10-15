@@ -210,25 +210,8 @@ func ParseDocToOps(
 			}
 		}
 
-		// Markdown table rows
+		// Skip markdown table rows
 		if strings.HasPrefix(trimLine, "|") && strings.HasSuffix(trimLine, "|") {
-			if isTableSeparatorRow(trimLine) {
-				continue
-			}
-			if i+1 < len(lines) && isTableSeparatorRow(strings.TrimSpace(lines[i+1])) {
-				// Header row immediately before |---|---|
-				continue
-			}
-			rowText, rowKey := parseTableRow(trimLine)
-			if rowText != "" && !isCommonTableHeader(rowText) {
-				candidates = append(candidates, docCandidate{
-					heading:        currentHeading,
-					text:           clampText(rowText),
-					keyHint:        rowKey,
-					sectionAnchors: append([]string(nil), sectionAnchors...),
-				})
-				lastCandIdx = len(candidates) - 1
-			}
 			continue
 		}
 
@@ -264,12 +247,6 @@ func ParseDocToOps(
 			lastCandIdx = len(candidates) - 1
 			continue
 		}
-
-		// Non-bullet paragraph line: harvest any backticked repo paths into sectionAnchors
-		lineAnchors := filterValidAnchors(extractBacktickPaths(trimLine), isValidRepoPath)
-		if len(lineAnchors) > 0 {
-			sectionAnchors = mergeUniqueStrings(sectionAnchors, lineAnchors, 6)
-		}
 	}
 
 	var (
@@ -280,7 +257,7 @@ func ParseDocToOps(
 
 	for _, cand := range candidates {
 		cleaned := strings.TrimSpace(cand.text)
-		if len(cleaned) < 25 || IsJunkText(cleaned) || tocLinkOnlyRe.MatchString(cleaned) {
+		if !isSelfContainedDocStatement(cleaned) || IsJunkText(cleaned) || tocLinkOnlyRe.MatchString(cleaned) {
 			continue
 		}
 
@@ -302,7 +279,10 @@ func ParseDocToOps(
 			}
 		}
 
-		// Require at least 1 valid repo anchor OR a matched declared scope in resolver
+		// For non-skill docs, strictly require at least 1 valid repo anchor.
+		if !isSkill && len(anchors) == 0 {
+			continue
+		}
 		if len(anchors) == 0 && !matchedDeclared {
 			continue
 		}
@@ -627,54 +607,41 @@ func isProceduralHeading(heading string) bool {
 	return false
 }
 
-func isTableSeparatorRow(trimLine string) bool {
-	if !strings.HasPrefix(trimLine, "|") || !strings.HasSuffix(trimLine, "|") {
+func isSelfContainedDocStatement(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 40 {
 		return false
 	}
-	inner := strings.Trim(trimLine, "|")
-	if strings.TrimSpace(inner) == "" {
+	if strings.HasSuffix(s, ";") {
+		return false
+	}
+	if strings.HasPrefix(s, "`") {
 		return true
 	}
-	for _, r := range inner {
-		if r != '-' && r != ':' && r != '|' && r != ' ' && r != '\t' {
-			return false
-		}
+	// Strip leading emphasis markers (* or _) to inspect first word character
+	trimmed := strings.TrimLeft(s, "*_ \t")
+	if len(trimmed) == 0 {
+		return false
 	}
-	return strings.Contains(inner, "-")
+	if strings.HasPrefix(trimmed, "`") {
+		return true
+	}
+	firstRune := []rune(trimmed)[0]
+	if firstRune >= 'a' && firstRune <= 'z' {
+		return false
+	}
+	return true
 }
 
-func parseTableRow(trimLine string) (text string, keyHint string) {
-	rawCells := strings.Split(strings.Trim(trimLine, "|"), "|")
-	var cells []string
-	for _, c := range rawCells {
-		trimmed := collapseWhitespace(strings.TrimSpace(c))
-		if trimmed != "" {
-			cells = append(cells, trimmed)
-		}
-	}
-	if len(cells) < 2 {
-		return "", ""
-	}
-	first := strings.Trim(cells[0], "*` ")
-	return strings.Join(cells, " — "), strings.ToLower(first)
-}
-
-func isCommonTableHeader(rowText string) bool {
-	lower := strings.ToLower(rowText)
-	for _, hdr := range []string{
-		"field — purpose",
-		"# — change",
-		"# — wo — scope",
-		"column — type",
-		"flag — description",
-		"option — description",
-		"method — description",
-	} {
-		if strings.HasPrefix(lower, hdr) {
-			return true
-		}
-	}
-	return false
+func isExcludedDocSeedTargetAnchor(anchor string) bool {
+	norm := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(anchor), "./"))
+	return strings.HasPrefix(norm, "docs/experiments/") ||
+		norm == "docs/experiments" ||
+		strings.HasPrefix(norm, "docs/evaluations/") ||
+		norm == "docs/evaluations" ||
+		strings.HasPrefix(norm, ".agents/skills/principal-architect-workspace/") ||
+		norm == ".agents/skills/principal-architect-workspace" ||
+		strings.Contains(norm, "/principal-architect-workspace/")
 }
 
 func isBulletStart(trimLine string) bool {
@@ -743,33 +710,15 @@ func filterValidAnchors(candidates []string, isValidRepoPath func(string) bool) 
 	var valid []string
 	seen := make(map[string]bool)
 	for _, c := range candidates {
+		if isExcludedDocSeedTargetAnchor(c) {
+			continue
+		}
 		if isValidRepoPath(c) && !seen[c] {
 			seen[c] = true
 			valid = append(valid, c)
 		}
 	}
 	return valid
-}
-
-func mergeUniqueStrings(base, extra []string, limit int) []string {
-	seen := make(map[string]bool, len(base))
-	out := make([]string, 0, len(base)+len(extra))
-	for _, s := range base {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	for _, s := range extra {
-		if len(out) >= limit {
-			break
-		}
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 func extractKeywords(heading, relPath string) []string {
