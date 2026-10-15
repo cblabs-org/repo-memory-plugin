@@ -474,7 +474,7 @@ Consolidation is a tick job. It runs when 10 or more notes are waiting, or once 
    | Scope Tier | Prefix | Storage Location | Git Tracked? | Lifespan & Visibility |
    |---|---|---|---|---|
    | **1. Ephemeral / Invocation** | `temp:` | In-memory during hook/tick execution | No | Single hook invocation (`ephemeralMessage` hints, scratch scores) |
-   | **2. Session / Conversation** | `session:` | `<data-dir>/<repo-id>/state/marks/<conv-id>.json` | No | Per-conversation mark, `ExposureList`, `InjectionLedger` (`InjectedSet`, `LastKnownStepCount`) |
+   | **2. Session / Conversation** | `session:` | `<data-dir>/repos/<repo-id>/state/marks/<conv-id>.json` | No | Per-conversation mark, `ExposureList`, `InjectionLedger` (`InjectedSet`, `LastKnownStepCount`) |
    | **3. Personal / Developer** | `user:` | `<data-dir>/repos/<repo-id>/user-dossiers/` | No (machine-local) | Developer-specific workflow preferences, local hardware ports, and personal notes across branches on this machine |
    | **4. Branch-Local (Unmerged)** | `branch:` | `.memory/local/ops/` & `.memory/local/dossiers/` (gitignored or branch-local lane) | Local lane until branch merge | Notes and ops collected on an unmerged feature branch. Usable immediately by delivery on that branch; promoted to `.memory/ops/` when the branch merges |
    | **5. Repository Shared** | `repo:` | `.memory/ops/<yyyy-mm>/<ulid>.json` & `.memory/dossiers/` | **Yes (Committed)** | Canonical team-wide truth reviewed via the memory PR |
