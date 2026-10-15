@@ -1,17 +1,28 @@
-# repo-memory — Programme Plan (v2.1)
+# repo-memory — Programme Plan (v2.2)
 
 > **Programme:** repo-memory
-> **Specification:** [SPEC.md](../../../SPEC.md) v0.10 + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3
+> **Specification:** [SPEC.md](../../../SPEC.md) v1.0 (in PR-10a) + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 (in PR-10a) + [Addendum A](../../../docs/addendum-a-provenance-and-hardening.md) rev 3 (in PR-10a)
 > **Release:** 1 (Antigravity)
-> **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review, session 15)
-> **Total PRs:** 19 (8 complete, 11 planned). Each planned PR has 4–7 work orders.
-> **Base branch:** `main`. v2 is built on `main`, which already contains PR-05a. PR-05b is closed onto `main` in PR-05-v2-foundation wo1.
-> **Dependency model:** Linear chain, with three gates:
-> - the X-gate (PR-06-v2-spike) must pass before PR-07;
-> - the **early kill gate** (X6-lite, PR-09) must pass before PR-10;
-> - the confirmatory X6 (PR-12) must pass before PR-13.
->
-> If X6-lite fails, the project stops or is redirected before distillation and consolidation are built.
+> **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review) · **v2.2:** 2026-10-15 (post-X6-lite & Stage 1 synthesis, session 21)
+> **Total PRs:** 22 (14 complete, 1 paused at WO3/7, 7 planned).
+> **Base branch:** `pr-10-eval-v2/wo3-index-build` (`07fda90`, ahead of `main` `83edd25`).
+> **Dependency model:**
+> - **PR-10a-v2-2-docs-and-specs** upgrades `SPEC.md` (v1.0), `docs/design-v2-distillation-retrieval.md` (Rev 4), `docs/addendum-a-provenance-and-hardening.md` (Rev 3), `docs/antigravity-hooks-reference.md`, and `README.md` first.
+> - **PR-10b-delivery-and-storage-fixes** fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` persistence regression, wires `DetectRewind`, and resolves open storage/seeder issues (`#10`–`#13`, `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
+
+---
+
+## Changes in v2.2 (post-X6-lite & Stage 1 synthesis, 2026-10-15)
+
+| # | Change | Why |
+|---|---|---|
+| 1 | **PR-10a: Upgrade Specs, Design Docs & Reference Docs first** | `SPEC.md` (v0.10) still describes the retired v1 4-stage pipeline and `.memory/claims/`. `design-v2-distillation-retrieval.md` (Rev 3) and `addendum-a-provenance-and-hardening.md` (Rev 2) predate the X6-lite STOP verdict, the Stage 1 77-session audit, and the 6 v2.2 architectural pillars. |
+| 2 | **PR-10b: Fix `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` regression + Open Issues `#10`–`#13`, `#16` before `PR-10` Stage 2** | Commit `8d7ad7b` switched `task-start`, `first-touch`, `first-entry`, and `re-injection` to `EphemeralMessage` while `d3ab994` added per-session `InjectedSet` deduplication, causing injected memories to vanish after 1 tool call. `DetectRewind` is also unwired in `preinvocation.go`. Fixing this before `PR-10` WO4/WO5 is required for a valid Stage 2 evaluation. |
+| 3 | **Doc-Seeded Dossiers (`repo-memory seed-docs`) & Async Doc Freshness ("Dreaming") (`VD16`, `PR-11`)** | The 77-session `esp32` audit proved agents read static repo skills/guides only 1–8% of the time (`framework-expert` 5%, `creating-a-module` 2%). `DocSeedSource` distills curated docs (`docs/developer/`, `.agents/skills/`) into anchored dossier entries pushed on `first-touch`, with async git-diff re-distillation in `tick`. |
+| 4 | **Typed Cognitive Memory Lifecycles (`semantic`, `procedural`, `episodic`) & `{section?}` Rendering (`VD17`, `PR-11`)** | Replaces uniform entry handling with type-driven invalidation, delivery, and skill graduation, and omits empty markdown sections (`{section?}`) until populated. |
+| 5 | **Two-Stage 5-Minute Warm-Cache Distillation (`VD14`, `VD15`, `PR-12`, `PR-13`)** | Stage 1 Primary is 100% automatic end-of-turn `Stop` (`NO_TOOL_CALL`, `executionNum == 0`) continuation on milestone turns + free `CHECKPOINT`/`brain/` harvest (preserving `G1`/`P1` zero cooperation), with `memory_note` as an optional mid-turn override that deduplicates against `Stop`. Stage 2 uses a multi-turn `stream-json` `repo-memory-distiller` session per tick to share the warm prefix cache. |
+| 6 | **State Scope Hierarchy (`temp:`/`session:`/`user:`/`branch:`/`repo:`) & Pre-Consolidation Corroboration Gate (`VD18`, `PR-13`)** | Isolates workstation-specific facts in gitignored `user-dossiers/`, keeps unmerged branch anchors in `.memory/local/`, and requires a corroborating tool/test pass, verified `HEAD` anchor, or human confirmation before promoting hypotheses to active `do:` rules. |
+| 7 | **Remove stale v1 `E02` `GEMINI.md` / `.memory/views/` stub (`VD19`, `PR-10a`)** | Root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) is a leftover v1 `E02` test fixture; per Addendum A8, `GEMINI.md` is strictly machine-managed by `repo-memory init` / `leave`. |
 
 ---
 
@@ -67,26 +78,76 @@ PR-07-v2   Storage (op log, dossiers, index, v1 removal, seeding)
 PR-08-v2   Delivery (channels, ledger, re-injection, pull tools)
   │
   ▼
-PR-09-v2   X6-lite: B1 replay with time-cut seeded dossiers
-  │
-  ▼  ═══════ Early kill gate: dossiers beat no-memory. If not, STOP or redirect. ═══════
-PR-10-v2   Distillation (turn notes, fallback, preparation; X2)
+PR-09-v2   X6-lite: B1 replay + 231-session PA retrieval study        ✅ (STOP on spec-style WOs → pivoted to Eval v2)
   │
   ▼
-PR-11-v2   Consolidation (echo filter, LLM ops, publish)
+PR-09b     Stage 0 Product Fixes (IndexPath, bm25, dedup)              ✅
   │
   ▼
-PR-12-v2   Pilot (esp32) & confirmatory X6
-  │
-  ▼  ═══════ Confirmatory gate ═══════
-PR-13-v2   Learning Loop
+PR-10-eval-v2 (WO1..WO3: Stage 0b templates/seeding + Stage 1 audit)   ✅ (Paused at WO3/7)
   │
   ▼
-PR-14-v2   PA Integration (cross-repo)
+PR-10a     v2.2 Specs, Design (Rev 4), Addendum A (Rev 3) & Info Docs  🔄 ACTIVE NEXT
   │
   ▼
-PR-15-v2   Full Backfill & Re-projection
+PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#13 ☐
+  ├───► PR-10-eval-v2 (Resume WO4..WO7: Dry-Run, Stage 2a/2b, Report)  ☐
+  └───► PR-11-v2      Doc-Seeded Dossiers, Lifecycles & {section?}     ☐
+          │
+          ▼  (joins PR-10 + PR-11)
+        PR-12-v2      Two-Stage Warm-Cache Distillation                ☐
+          │
+          ▼
+        PR-13-v2      Warm Batch Consolidation & Scope Hierarchy       ☐
+          │
+          ▼
+        PR-14-v2      End-to-End Distillation & Consolidation Eval     ☐
+          │
+          ▼
+        PR-15-v2      Procedural Validation, Skill Graduation & Learn  ☐
+          │
+          ▼
+        PR-16-v2      PA Integration & Full Repository Rollout         ☐
 ```
+
+---
+
+## PR-10a-v2-2-docs-and-specs: v2.2 Specifications, Design & Reference Docs
+
+**Base:** `pr-10-eval-v2/wo3-index-build` (`07fda90`).
+**Objective:** Align all canonical specification, design, reference, and programme documents with the `v2.2` (Revision 4) architecture and empirical findings before mutating Go code in `PR-10b`.
+
+### Work Orders
+
+| # | WO | Scope | Complexity |
+|---|---|---|---|
+| 1 | `wo1-design-v2-rev4` | Upgrade `docs/design-v2-distillation-retrieval.md` from Revision 3 to **Revision 4 (`v2.2`)**: empirical grounding from `PR-09` & `PR-10` Stage 1; 3 cognitive lifecycles (`semantic`, `procedural`, `episodic`) & `{section?}` optional section rendering; Two-Stage 5-minute warm-cache distillation (automatic milestone-gated `Stop` `NO_TOOL_CALL` continuation primary + free `CHECKPOINT`/`brain/` harvest + optional `memory_note` mid-turn dedup + multi-turn `stream-json` consolidation); 5-tier state scope hierarchy & Pre-Consolidation Corroboration Gate; Doc-Seeded Dossiers (`repo-memory seed-docs`) & Async Doc Freshness ("Dreaming"); persistent `userMessage` vs transient `ephemeralMessage` delivery contract & `DetectRewind` wiring. | architect |
+| 2 | `wo2-addendum-a-rev3` | Upgrade `docs/addendum-a-provenance-and-hardening.md` from Revision 2 to **Revision 3**: A7 `procedural` execution-outcome validation (`PostToolUse` exit-code tracking, `success_count`/`failure_count`, deterministic `.agents/skills/rm-<slug>/SKILL.md` graduation); A8 managed instruction block refinement; A9 `DocSeedSource` (`source: doc-seed` + git-diff freshness). | standard |
+| 3 | `wo3-spec-v1-0` | Upgrade `SPEC.md` from `Draft v0.10` to **`v1.0`**, retiring v1 4-stage pipeline & `.memory/claims/` sections, incorporating all items from `docs/experiments/SPEC-CHANGES.md` and `design-v2-distillation-retrieval.md` Rev 4 while preserving `G1`/`P1` zero-cooperation capture and delivery. | architect |
+| 4 | `wo4-info-docs-and-cleanup` | Update `docs/antigravity-hooks-reference.md` with verified `agy 1.3.3` `userMessage` vs `ephemeralMessage` lifetime, `Stop` `NO_TOOL_CALL`, `invoke_subagent` hook ordering, and plugin split; update `README.md` to match `SPEC.md v1.0`; remove the stale v1 `E02` root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/` artifacts. | standard |
+| 5 | `wo5-verification-and-handover` | Cross-check all internal markdown links, section references, and external GitHub hygiene across `SPEC.md`, `docs/`, and `.agents/skills/principal-architect-workspace/`; finalize `PR-10a` Session Log. | mechanical |
+
+### Exit Criteria
+- `docs/design-v2-distillation-retrieval.md` is at Revision 4 (`v2.2`), `docs/addendum-a-provenance-and-hardening.md` is at Revision 3, and `SPEC.md` is at `v1.0` with zero contradictions between them.
+- `docs/experiments/SPEC-CHANGES.md` items are marked applied in `SPEC.md v1.0`.
+- Stale v1 `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/` are removed.
+
+---
+
+## PR-10b-delivery-and-storage-fixes: Delivery Persistence & Storage/Seeder Fixes
+
+**Base:** `PR-10a-v2-2-docs-and-specs`.
+**Objective:** Fix the `8d7ad7b`+`d3ab994` "One-Invocation Vanishing Memory" bug, wire `DetectRewind`, and resolve open storage/seeder defects (`#10`–`#13`, `#16`) before resuming `PR-10-eval-v2` Stage 2 (`wo4-dry-run` / `wo5-pilot`).
+
+### Work Orders
+
+| # | WO | Scope | Complexity |
+|---|---|---|---|
+| 1 | `wo1-persistent-usermessage-and-rewind` | In `internal/harness/antigravity/preinvocation.go` and `compaction.go`: switch `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` from `EphemeralMessage` to `UserMessage` (keeping `EphemeralMessage` strictly for 1-step `about-to-edit`, `error-match`, and search warnings). Wire `DetectRewind(steps, ledger.LastKnownStepCount)` into `HandlePreInvocation` before moment evaluation. Add regression tests verifying persistent vs ephemeral channel assignment and rewind re-arming. | standard |
+| 2 | `wo2-index-and-projector-fixes` | Fix GitHub Issue **#13** (`internal/core/index/entries.go`: delete existing child rows in `entries_fts`, `entry_anchors`, and `error_patterns` before `INSERT OR REPLACE` on `entries`) and Issue **#11** (`internal/core/dossiers`: deduplicate entries by `ID` across scopes in the projector when an entry is re-added or moved to a new scope). | standard |
+| 3 | `wo3-seeder-fixes` | Fix GitHub Issue **#10** (`internal/core/seed/convert.go`: validate extracted backtick anchor candidates as real repository file paths / symbols rather than arbitrary code tokens) and Issue **#12** (`internal/core/seed`: stamp `--before` seeded ops with the workorder/cutoff commit's timestamp and SHA rather than `HEAD`). | standard |
+| 4 | `wo4-ops-cleanup-and-rebuild` | Fix GitHub Issue **#16** (clean junk placeholder ops from `.memory/ops/`, re-render `.memory/dossiers/`), rebuild `~/.local/bin/repo-memory`, and re-seed/rebuild the `esp32-app-foundation` evaluation template index (`tpl-c`, `tpl-d`) so `PR-10` WO4/WO5 runs against clean anchors and persistent `UserMessage` delivery. | standard |
+| 5 | `wo5-dry-run-verification` | Run a live multi-invocation verification confirming that `task-start`, `first-touch`, and `first-entry` injections emitted as `UserMessage` remain in the conversation context across subsequent tool calls while `InjectedSet` suppresses duplicates. | standard |
 
 ### v2 Experiments and the Work They Inform
 
@@ -495,3 +556,15 @@ Motivated by X1 finding (plugin enablement bug) and X9 finding (bimodal hook con
 | PD24 | Hook latency budgets are exit criteria for delivery | Delivery adds work to every `PreInvocation` |
 | PD25 | Turn-note settings, defined milestone signals, opt-out by role | Safety in PA-driven repositories |
 | PD26 | v1 events store retired in favour of `.memory/ops/` | VD3 said "adapts" without a work order |
+
+### v2.2 Decisions (post-X6-lite & Stage 1 synthesis, 2026-10-15)
+
+| # | Decision | Date | Rationale |
+|---|---|---|---|
+| VD13 | Persistent push moments (`task-start`, `first-touch`, `first-entry`, `re-injection`) use `UserMessage` where `systemMessage` is rejected; `EphemeralMessage` is strictly for 1-step hints; `DetectRewind` is wired into `PreInvocation` | 2026-10-15 | Commit `8d7ad7b` + `d3ab994` (`EphemeralMessage` + `InjectedSet` dedup) evicted memories after 1 invocation. `UserMessage` is a plain string that persists across invocations until `CHECKPOINT` compaction. |
+| VD14 | Stage 1 Primary is 100% automatic end-of-turn `Stop` (`NO_TOOL_CALL`, `executionNum == 0`) continuation on milestone turns + free `CHECKPOINT`/`brain/` harvest; `memory_note` is an optional mid-turn override that deduplicates against `Stop` | 2026-10-15 | Preserves `G1`/`P1` (zero user/agent cooperation required). Empirical studies (`PR-09`, `PR-10` Stage 1) proved agents do not reliably invoke optional memory tools unprompted. |
+| VD15 | Stage 2 batch consolidation runs a single multi-turn `stream-json` `repo-memory-distiller` session per tick | 2026-10-15 | Allows dossiers $2..N$ in a tick batch to share the warm 5-minute prefix cache (`ATLAS.md` + consolidator instructions). |
+| VD16 | Add `DocSeedSource` (`repo-memory seed-docs`) and async doc-diff freshness ("Dreaming") in `tick` | 2026-10-15 | `PR-10` Stage 1 77-session audit showed static repo guides/skills (`framework-expert` 5%, dev guides 8%, `creating-a-module` 2%) are almost never pulled by coding agents unless converted to anchored dossier entries and pushed. |
+| VD17 | Govern the 8 entry types by 3 cognitive lifecycles (`semantic`, `procedural`, `episodic`) and use optional `{section?}` dossier rendering | 2026-10-15 | `semantic` validates via code anchors; `procedural` validates via `PostToolUse` exit codes and graduates to `.agents/skills/rm-<slug>/SKILL.md` (Addendum A7); `episodic` is append-only rationale. `{section?}` eliminates empty heading bloat. |
+| VD18 | Enforce 5-tier state scopes (`temp:`, `session:`, `user:`, `branch:`, `repo:`) and the Pre-Consolidation Corroboration Gate | 2026-10-15 | Isolates workstation facts (`user-dossiers/`) and unmerged branch anchors (`.memory/local/`); prevents uncorroborated intermediate hypotheses (`verified: null`) from becoming active `do:` imperatives. |
+| VD19 | Remove stale v1 `E02` root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/`; keep `GEMINI.md` strictly machine-managed by `repo-memory init` (Addendum A8) | 2026-10-15 | Static session-start map includes were retired in v2 (§15). |

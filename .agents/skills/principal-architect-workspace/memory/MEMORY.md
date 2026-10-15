@@ -1,15 +1,16 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-11T19:34:00+01:00 -->
+<!-- Last updated: 2026-10-15T16:36:00Z -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.1 plan.** SPEC v0.10 + v2 design rev 3. 19 PRs total. **14/19 complete** (PR-01 through PR-09b). Stage 0 done. **PR-10-eval-v2 active** (evaluation v2, Stage 0b). Original PR-10 distillation renumbered, gated on eval results. |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan approved (2026-10-15).** Upgrading SPEC to v1.0 + v2 design rev 4 + Addendum A rev 3 in **PR-10a-v2-2-docs-and-specs** (active next), followed by **PR-10b-delivery-and-storage-fixes** (`UserMessage` persistence fix, `DetectRewind`, issues `#10`–`#13`, `#16`) before resuming **PR-10-eval-v2** Stage 2 (`WO4`–`WO7`). |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10-eval-v2 | WO3/7 — **Stage 0b complete.** WO4 (Stage 1, offline retrieval) blocked on human task prompts | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
+| pr-10a-v2-2-docs-and-specs | **Active (0/5 WOs)** — Approved in v2.2 Programme Plan | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
+| pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Resumes at WO4 (`wo4-dry-run`) after `pr-10a` and `pr-10b` land | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |

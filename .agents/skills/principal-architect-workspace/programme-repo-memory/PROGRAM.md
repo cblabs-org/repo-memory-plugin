@@ -1,10 +1,10 @@
 # repo-memory Programme
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
-> **Specification:** [SPEC.md](../../../SPEC.md) v0.10 + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3
-> **Status:** Executing — v2 pivot at PR-05. **12/19 complete** (PR-01 through PR-08). X-gate **PASSED** (2026-10-06). PR-08 merged (2026-10-07). PR-09-v2-x6-lite next.
-> **Base branch:** `main`
-> **Revision:** v2.1 (2026-10-04). Supersedes the v1 plan for PRs 05a onward. v2.1 applies the plan review (session 15).
+> **Specification:** [SPEC.md](../../../SPEC.md) v0.10 (upgrading to v1.0 in PR-10a) + [v2 Design](../../../docs/design-v2-distillation-retrieval.md) rev 3 (upgrading to rev 4 / v2.2 in PR-10a) + [Addendum A](../../../docs/addendum-a-provenance-and-hardening.md) rev 2 (upgrading to rev 3 in PR-10a)
+> **Status:** Executing — **v2.2 revision approved (2026-10-15)**. **14/22 complete** (PR-01 through PR-09b; PR-10-eval-v2 at WO3/7 Stage 1 complete). **PR-10a-v2-2-docs-and-specs active next**, followed by **PR-10b-delivery-and-storage-fixes** before resuming PR-10-eval-v2 Stage 2 (WO4–WO7).
+> **Base branch:** `pr-10-eval-v2/wo3-index-build` (`07fda90`, ahead of `main` `83edd25`)
+> **Revision:** v2.2 (2026-10-15). Synthesizes empirical findings from PR-09 (X6-lite + 231-transcript study) and PR-10 Stage 1 (77-session doc/skill audit), fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` persistence regression, and incorporates the 6 v2.2 architectural pillars.
 
 ## Programme Summary
 
@@ -79,24 +79,28 @@ See [PROGRAM-PLAN.md](PROGRAM-PLAN.md) for the full dependency graph, experiment
 | 7 | `pr-05a-pipeline-code` | ✅ Merged to `main` | v1 stages superseded; the executor, job chaining and local publish are reused. Stages removed in PR-07-v2-storage. |
 | 8 | `pr-05b-dogfood-pilot` | ✅ Complete; **close-out pending** | Its branch holds the executor fixes and all v2 documents (evaluation, Appendix C, design rev 1–3). Merged to `main` in PR-05-v2-foundation wo1. |
 
-### Phase 3: v2 Distillation & Retrieval
+### Phase 3: v2.2 Distillation, Retrieval & Evaluation
 
-Read side first: the early kill gate (X6-lite) tests whether delivered dossiers help before turn notes and consolidation are built.
+Read side and empirical evaluation first, upgraded in v2.2 (`2026-10-15`) after PR-09 X6-lite and PR-10 Stage 1:
 
 | # | PR | Objective | Status | Depends On |
 |---|---|---|---|---|
-| 9 | `pr-05-v2-foundation` | Close PR-05b onto `main`; fix capture→episode, re-enable hooks safely, cost telemetry, artifact capture, probe-log cleanup, non-enrolled fast path | ☐ Planned | `main` + PR-05b branch |
-| 10 | `pr-06-v2-spike` | Prototype-validate platform mechanics: X1, X3, X5, X8, X9 (prototype on a spike branch, not merged) | ✅ **Complete** (PR #6, merged) | PR-05-v2-foundation |
+| 9 | `pr-05-v2-foundation` | Close PR-05b onto `main`; fix capture→episode, re-enable hooks safely, cost telemetry, artifact capture, probe-log cleanup, non-enrolled fast path | ✅ **Complete** (PR #4, merged) | `main` + PR-05b branch |
+| 10 | `pr-06-v2-spike` | Prototype-validate platform mechanics: X1, X3, X5, X8, X9 | ✅ **Complete** (PR #6, merged) | PR-05-v2-foundation |
 | 10b | `pr-06b-v2-plugin-split` | Daemon + workspace bundle architecture | ✅ **Complete** (PR #5, merged) | PR-06-v2-spike |
-| 11 | `pr-07-v2-storage` | Op log, dossiers, atlas, scopes, index migration, v1 removal, dossier seeding (PA reports + time-cut lean-agent pass) | ✅ **Complete** (PR #9, merged) | PR-06-v2-spike (X-gate) |
+| 11 | `pr-07-v2-storage` | Op log, dossiers, atlas, scopes, index migration, v1 removal, dossier seeding | ✅ **Complete** (PR #9, merged) | PR-06-v2-spike (X-gate) |
 | 12 | `pr-08-v2-delivery` | Channels, moments, injection ledger, compaction re-injection, pull tools, latency budgets | ✅ **Complete** (PR #14, merged) | PR-07-v2-storage |
-| 13 | `pr-09-v2-x6-lite` | **Early kill gate:** pre-registered B1 replay with time-cut seeded dossiers | ☐ Planned | PR-08-v2-delivery |
-| 14 | `pr-10-v2-distillation` | Turn notes, marks, exposure lists, subagent registry, preparation layer, fallback; X2 on real work orders | ☐ Planned | PR-09-v2-x6-lite (gate) |
-| 15 | `pr-11-v2-consolidation` | Echo filter, routing, lean-agent ops, validate/record, two-lane publish | ☐ Planned | PR-10-v2-distillation |
-| 16 | `pr-12-v2-pilot` | esp32 pilot, full X6 with distilled dossiers, cost report | ☐ Planned | PR-11-v2-consolidation |
-| 17 | `pr-13-v2-learning` | Close conditions, gardening, coverage, elicitation, metrics, replay tuning | ☐ Planned | PR-12-v2-pilot |
-| 18 | `pr-14-v2-pa-integration` (cross-repo) | Episode summaries, workorder briefs, PA compatibility mode | ☐ Planned | PR-13-v2-learning |
-| 19 | `pr-15-v2-backfill` | Full import, re-projection via op-log replay | ☐ Planned | PR-14-v2-pa-integration |
+| 13 | `pr-09-v2-x6-lite` | Pre-registered B1 replay + 231-session PA retrieval study (STOP verdict on spec-style tasks → pivoted to Eval v2 on esp32) | ✅ **Complete** (`45a68cd`) | PR-08-v2-delivery |
+| 13b | `pr-09b-product-fixes` | Stage 0 product fixes: canonical `IndexPath`, bm25 FTS scoring, relevance threshold, per-session `InjectedSet` dedup | ✅ **Complete** (`208b0e0`) | PR-09-v2-x6-lite |
+| 14a | `pr-10a-v2-2-docs-and-specs` | **v2.2 Spec & Design Upgrade:** Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and v2.2 Programme Plan | 🔄 **Next (Active)** | PR-10 Stage 1 (`07fda90`) |
+| 14b | `pr-10b-delivery-and-storage-fixes` | Fix `8d7ad7b`+`d3ab994` `EphemeralMessage`→`UserMessage` vanishing-memory bug, wire `DetectRewind`, fix open issues `#10`–`#13` & `#16`, rebuild binary & esp32 index | ☐ Planned | PR-10a-v2-2-docs-and-specs |
+| 14 | `pr-10-eval-v2` | **Eval v2 (2×2 factorial on esp32):** WO1–WO3 (Stage 0b & Stage 1) complete; resume WO4 (dry-run) → WO5 (Stage 2a pilot) → WO6 (Stage 2b main) → WO7 (report) | ⏸️ **WO3/7 Done** (resumes after PR-10b) | PR-10b-delivery-and-storage-fixes |
+| 15 | `pr-11-v2-doc-seeding-and-lifecycles` | Doc-Seeded Dossiers (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming"), `semantic`/`procedural`/`episodic` lifecycles, and `{section?}` optional rendering | ☐ Planned | PR-10b-delivery-and-storage-fixes |
+| 16 | `pr-12-v2-distillation` | Automatic milestone-gated `Stop` (`NO_TOOL_CALL`) warm-cache turn notes, free harvest (`CHECKPOINT` + `brain/`), `memory_note` dedup, A8 managed block, §5.6 preparation layer, sidecar fallback | ☐ Planned | PR-10-eval-v2 & PR-11 |
+| 17 | `pr-13-v2-consolidation` | Warm batch consolidation (`stream-json` `repo-memory-distiller`), Pre-Consolidation Corroboration Gate, P13 echo filter, `user:`/`branch:`/`repo:` scope isolation, two-lane publish | ☐ Planned | PR-12-v2-distillation |
+| 18 | `pr-14-v2-pilot` | End-to-end live distillation & consolidation paired evaluation (Addendum A10) & cost report | ☐ Planned | PR-13-v2-consolidation |
+| 19 | `pr-15-v2-learning` | Procedural execution validation (`PostToolUse` exit-code tracking), deterministic skill graduation (`.agents/skills/rm-<slug>/SKILL.md`, Addendum A7), `closes_when` & gardening | ☐ Planned | PR-14-v2-pilot |
+| 20 | `pr-16-v2-pa-and-rollout` | PA compatibility-mode integration, full repository enrolment (`seed` + `seed-docs`), and issue close-out | ☐ Planned | PR-15-v2-learning |
 
 ## Gates
 
@@ -114,6 +118,7 @@ Read side first: the early kill gate (X6-lite) tests whether delivered dossiers 
 - [x] **v2.1 programme plan reviewed and approved** (2026-10-04, with full autonomous implementation authority)
 - [x] v2.1 PR sequence confirmed (read side first; early kill gate)
 - [x] PD17 decided: two-phase capture — stabilize in repo-memory-plugin first, then enrol esp32 or another active repo after PR-05-v2-foundation (2026-10-04)
+- [x] **v2.2 programme plan reviewed and approved** (2026-10-15: upgrade specs/design docs first in `PR-10a`, fix `UserMessage` persistence & storage bugs in `PR-10b` before `PR-10` Stage 2, and adopt the 6 v2.2 architectural pillars)
 
 ## Session Log
 
@@ -211,3 +216,24 @@ The v2 plan was reviewed before kick-off against the code, git topology, the liv
 - **Incremental transcript scanning:** `LastProcessedStepIndex` high-water mark.
 - **MCP server always starts** (even unenrolled) to guide models.
 - **Tool names use underscores** (`memory_brief`, etc.) instead of dots for portability.
+
+### 2026-10-11 — PR-09-v2-x6-lite & PR-09b-product-fixes complete (sessions 19–20)
+
+**Summary:**
+- **PR-09-v2-x6-lite:** Executed 92 agent runs across 4 work orders ([x6-lite-verdict.md](../../../docs/evaluations/x6-lite-verdict.md)). Verdict: **STOP (wrong instrument, not a product fail)** — 150-line spec-style work orders on an 18K-line repo scored 84% (42/50) with no memory, leaving no headroom. Also completed the 231-transcript retrieval study ([pa-memory-retrieval-effectiveness.md](../../../docs/evaluations/pa-memory-retrieval-effectiveness.md)), proving that **unprompted pull memory is unused** (0 MCP pull calls in X6-lite; only 1.3% of non-PA sessions read `MEMORY.md` and 0% read `PROJECT.md`).
+- **PR-09b-product-fixes:** Fixed Stage 0 defects identified in X6-lite ([PROJECT.md](../pr-09b-product-fixes/PROJECT.md)): unified `index.IndexPath(dataDir, repoID)` across all 4 code paths, added bm25 FTS relevance weight (`ftsScore * 100`), added `DefaultMinRelevanceScore = 50`, and implemented per-session `InjectedSet` deduplication in `Engine`/`Ledger`.
+
+### 2026-10-15 — PR-10-eval-v2 Stage 1 & v2.2 Programme Revision (session 21)
+
+**Summary:**
+- **PR-10-eval-v2 Stage 0b & Stage 1 (`WO1`–`WO3`):** Built the `esp32-app-foundation` 4-condition evaluation templates (`tpl-a/b/c/d`, 989/989 native tests passing), local remote-protection harness (`eval_run.sh`), seeded **260 entries** (157 decisions, 58 ruled-out, 45 open-issues; 2,206 anchors) from 79 PA workorders, froze 2 forward tasks (DS18B20 temperature module & Bitcoin price module), and verified 70–90% offline precision@10. A 77-session transcript audit revealed that curated repo skills and developer guides (`framework-expert` 5%, dev guides 8%, `creating-a-module` 2%) are almost never pulled by coding agents.
+- **Critical Regression Found Before Stage 2 (`8d7ad7b` + `d3ab994`):** Commit `8d7ad7b` switched `task-start`, `first-touch`, `first-entry`, and post-`CHECKPOINT` `re-injection` from `systemMessage` to `EphemeralMessage`, while `PR-09b` (`d3ab994`) added per-session `InjectedSet` deduplication. Together, injected memories vanish after 1 tool call and are blocked from re-injection for the rest of the session. Also found `DetectRewind` (`compaction.go:54`) is never called in `HandlePreInvocation`.
+- **v2.2 Architecture Synthesis & Programme Revision Approved:** User approved the `v2.2` revision sequencing `PR-10a-v2-2-docs-and-specs` (Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and Programme v2.2) and `PR-10b-delivery-and-storage-fixes` (`EphemeralMessage` $\to$ `UserMessage` fix, `DetectRewind` wiring, and open issues `#10`–`#13` & `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
+- **Key v2.2 Decisions (`VD13`–`VD19`):**
+  - `VD13`: Persistent push moments (`task-start`, `first-touch`, `first-entry`, `re-injection`) use `UserMessage` (plain string, persistent until `CHECKPOINT`) where `systemMessage` is rejected; `EphemeralMessage` is strictly for 1-step hints.
+  - `VD14`: Automatic milestone-gated `Stop` (`NO_TOOL_CALL`, `executionNum == 0`) end-of-turn continuation + free `CHECKPOINT`/`brain/` harvest is the primary Stage 1 capture mechanism (preserving `G1`/`P1` zero-cooperation); `memory_note` is an optional mid-turn override that deduplicates against the `Stop` gate.
+  - `VD15`: Stage 2 batch consolidation uses a multi-turn `stream-json` `repo-memory-distiller` session per tick to share the warm 5-minute prefix cache across dossiers.
+  - `VD16`: Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSource`) + async git-diff doc freshness ("Dreaming") convert static repo guides/skills into push-delivered dossier entries.
+  - `VD17`: The 8 entry types are governed by 3 distinct cognitive lifecycles (`semantic`, `procedural`, `episodic`) with optional `{section?}` dossier rendering.
+  - `VD18`: Five-tier state scope hierarchy (`temp:`, `session:`, `user:`, `branch:`, `repo:`) + Pre-Consolidation Corroboration Gate block uncorroborated hypotheses from becoming active `do:` imperatives.
+  - `VD19`: Remove stale v1 `E02` root `GEMINI.md` (`@[memory map](.memory/views/MAP.md)`) and `.memory/views/`; keep `GEMINI.md` strictly machine-managed by `repo-memory init` (Addendum A8).
