@@ -414,3 +414,195 @@ func TestCognitiveKindAndEntryFields(t *testing.T) {
 	}
 }
 
+func TestRenderDossier_OptionalSectionsAndMetadata(t *testing.T) {
+	d := &Dossier{
+		Scope:   "core/v2-rendering",
+		Purpose: "Verify v2.2 optional section resolution and metadata",
+		Entries: []Entry{
+			{
+				ID:            "inv-001",
+				Type:          EntryTypeInvariant,
+				Text:          "Invariant title\nInvariant body",
+				Anchors:       []string{"internal/core/dossiers/renderer.go"},
+				SourceDocPath: "docs/guide.md",
+				Verified:      "2026-10-15",
+				Evidence:      []string{"commit-123"},
+			},
+			{
+				ID:   "con-001",
+				Type: EntryTypeContract,
+				Text: "Contract title",
+			},
+			{
+				ID:   "con-002",
+				Type: EntryTypeConvention,
+				Text: "Convention title",
+			},
+			{
+				ID:   "dec-001",
+				Type: EntryTypeDecision,
+				Text: "Decision title",
+			},
+			{
+				ID:            "proc-001",
+				Type:          EntryTypeProcedure,
+				Text:          "Procedure title\nStep 1: test",
+				SourceDocPath: "docs/guide.md",
+			},
+			{
+				ID:   "rec-001",
+				Type: EntryTypeRecipe,
+				Text: "Recipe title\nStep 1: build",
+			},
+		},
+	}
+
+	rendered := RenderDossier(d)
+
+	// 1. Non-empty sections are rendered with canonical v2.2 titles
+	for _, wantSection := range []string{
+		"## Invariants & contracts",
+		"## Decisions",
+		"## Procedures / Recipes",
+	} {
+		if !strings.Contains(rendered, wantSection) {
+			t.Errorf("expected rendered dossier to contain section %q, got:\n%s", wantSection, rendered)
+		}
+	}
+
+	// 2. Empty optional {section?} headings are completely omitted
+	for _, omittedSection := range []string{
+		"## Ruled out, failure signatures and gotchas",
+		"## Interfaces and dependencies",
+		"## Open issues",
+	} {
+		if strings.Contains(rendered, omittedSection) {
+			t.Errorf("expected empty optional section %q to be omitted, got:\n%s", omittedSection, rendered)
+		}
+	}
+
+	// 3. Backtick metadata line includes kind (semantic/procedural/episodic) and source_doc when set
+	wantMetaLines := []string{
+		"`invariant · kind: semantic · anchors: internal/core/dossiers/renderer.go · source_doc: docs/guide.md · verified 2026-10-15 · evidence: commit-123`",
+		"`contract · kind: semantic`",
+		"`convention · kind: semantic`",
+		"`decision · kind: episodic`",
+		"`procedure · kind: procedural · source_doc: docs/guide.md`",
+		"`recipe · kind: procedural`",
+	}
+	for _, wantMeta := range wantMetaLines {
+		if !strings.Contains(rendered, wantMeta) {
+			t.Errorf("expected rendered dossier to contain metadata line %s, got:\n%s", wantMeta, rendered)
+		}
+	}
+}
+
+func TestDetectHandEdits_RoundTripAndDeterministicPrefixes(t *testing.T) {
+	d := &Dossier{
+		Scope: "core/handedit-test",
+		Entries: []Entry{
+			{
+				ID:            "inv-existing",
+				Type:          EntryTypeInvariant,
+				Text:          "Existing title\nExisting body line",
+				Anchors:       []string{"file.go"},
+				SourceDocPath: "docs/guide.md",
+			},
+		},
+	}
+
+	rendered := RenderDossier(d)
+
+	// 1. Unmodified round-trip produces 0 ops
+	opsUnmodified, err := DetectHandEdits(rendered, rendered, d.Scope)
+	if err != nil {
+		t.Fatalf("DetectHandEdits unmodified failed: %v", err)
+	}
+	if len(opsUnmodified) != 0 {
+		t.Fatalf("expected 0 ops when unmodified, got %d: %+v", len(opsUnmodified), opsUnmodified)
+	}
+
+	// 2. Amending body text and adding new entries with v2.2 prefixes
+	edited := strings.Replace(rendered, "Existing body line", "Amended body line", 1) + `
+### [con-new01] Contract added by hand
+` + "`contract · kind: semantic`" + `
+Contract body
+
+### [rec-new02] Recipe added by hand
+Recipe body
+
+### [err-new03] Error signature added by hand
+
+### [iss-new04] Open issue added by hand
+
+### [got-new05] Gotcha added by hand
+`
+
+	// Run multiple iterations to prove deterministic prefix resolution (no map iteration randomness)
+	for iter := 0; iter < 20; iter++ {
+		detected, err := DetectHandEdits(rendered, edited, d.Scope)
+		if err != nil {
+			t.Fatalf("DetectHandEdits failed on iter %d: %v", iter, err)
+		}
+		if len(detected) != 6 {
+			t.Fatalf("expected 6 ops (1 amend + 5 add), got %d: %+v", len(detected), detected)
+		}
+
+		byID := make(map[string]ops.Op, len(detected))
+		for _, op := range detected {
+			byID[op.EntryID] = op
+		}
+
+		amendOp, ok := byID["inv-existing"]
+		if !ok || amendOp.Type != ops.OpAmend {
+			t.Fatalf("expected amend op for inv-existing, got %+v", amendOp)
+		}
+		if amendOp.Fields["text"] != "Existing title\nAmended body line" {
+			t.Errorf("unexpected amended text: %q", amendOp.Fields["text"])
+		}
+
+		expectedAdds := map[string]EntryType{
+			"con-new01": EntryTypeContract,
+			"rec-new02": EntryTypeRecipe,
+			"err-new03": EntryTypeFailureSignature,
+			"iss-new04": EntryTypeOpenIssue,
+			"got-new05": EntryTypeGotcha,
+		}
+		for id, wantType := range expectedAdds {
+			addOp, ok := byID[id]
+			if !ok || addOp.Type != ops.OpAdd {
+				t.Fatalf("iter %d: expected add op for %s, got %+v", iter, id, addOp)
+			}
+			if gotType := addOp.Fields["entry_type"]; gotType != string(wantType) {
+				t.Errorf("iter %d: %s entry_type = %q, want %q", iter, id, gotType, wantType)
+			}
+		}
+	}
+
+	// 3. Direct unit check on InferEntryTypeFromID across all supported prefixes
+	prefixCases := []struct {
+		id   string
+		want EntryType
+	}{
+		{"inv-1", EntryTypeInvariant},
+		{"con-1", EntryTypeContract},
+		{"rul-1", EntryTypeRuledOut},
+		{"fail-1", EntryTypeFailureSignature},
+		{"err-1", EntryTypeFailureSignature},
+		{"got-1", EntryTypeGotcha},
+		{"dec-1", EntryTypeDecision},
+		{"rec-1", EntryTypeRecipe},
+		{"proc-1", EntryTypeProcedure},
+		{"iface-1", EntryTypeInterface},
+		{"issue-1", EntryTypeOpenIssue},
+		{"iss-1", EntryTypeOpenIssue},
+		{"docseed-1", EntryTypeInvariant},
+		{"unknown-1", EntryTypeInvariant},
+	}
+	for _, tc := range prefixCases {
+		if got := InferEntryTypeFromID(tc.id); got != tc.want {
+			t.Errorf("InferEntryTypeFromID(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+

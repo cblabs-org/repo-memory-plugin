@@ -33,10 +33,10 @@ func renderDossierInternal(d *Dossier, entries []Entry, isHistory bool) string {
 		title string
 		types []EntryType
 	}{
-		{"Invariants", []EntryType{EntryTypeInvariant}},
-		{"Ruled out, failure signatures and gotchas", []EntryType{EntryTypeRuledOut, EntryTypeFailureSignature, EntryTypeGotcha}},
+		{"Invariants & contracts", []EntryType{EntryTypeInvariant, EntryTypeContract, EntryTypeConvention}},
+		{"Ruled out, failure signatures and gotchas", []EntryType{EntryTypeRuledOut, EntryTypeFailureSignature, EntryTypeGotcha, EntryTypeExternalBehaviour}},
 		{"Decisions", []EntryType{EntryTypeDecision}},
-		{"Procedures", []EntryType{EntryTypeProcedure}},
+		{"Procedures / Recipes", []EntryType{EntryTypeProcedure, EntryTypeRecipe}},
 		{"Interfaces and dependencies", []EntryType{EntryTypeInterface}},
 		{"Open issues", []EntryType{EntryTypeOpenIssue}},
 	}
@@ -54,11 +54,9 @@ func renderDossierInternal(d *Dossier, entries []Entry, isHistory bool) string {
 
 		if len(groupEntries) > 0 {
 			b.WriteString(fmt.Sprintf("## %s\n\n", g.title))
-			for i, e := range groupEntries {
+			for _, e := range groupEntries {
 				renderEntry(&b, e)
-				if i < len(groupEntries)-1 || g.title != "Open issues" {
-					b.WriteString("\n")
-				}
+				b.WriteString("\n")
 			}
 		}
 	}
@@ -81,8 +79,12 @@ func renderEntry(b *strings.Builder, e Entry) {
 
 	var meta []string
 	meta = append(meta, string(e.Type))
+	meta = append(meta, "kind: "+string(e.EffectiveKind()))
 	if len(e.Anchors) > 0 {
 		meta = append(meta, "anchors: "+strings.Join(e.Anchors, ", "))
+	}
+	if e.SourceDocPath != "" {
+		meta = append(meta, "source_doc: "+e.SourceDocPath)
 	}
 	if e.Verified != "" {
 		meta = append(meta, "verified "+e.Verified)
@@ -90,7 +92,7 @@ func renderEntry(b *strings.Builder, e Entry) {
 	if len(e.Evidence) > 0 {
 		meta = append(meta, "evidence: "+strings.Join(e.Evidence, ", "))
 	}
-	
+
 	b.WriteString(fmt.Sprintf("`%s`\n", strings.Join(meta, " · ")))
 	if restLines != "" {
 		b.WriteString(restLines + "\n")
