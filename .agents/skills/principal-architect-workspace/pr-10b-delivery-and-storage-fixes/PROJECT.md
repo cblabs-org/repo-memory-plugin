@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-10b-delivery-and-storage-fixes
 > **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (`69a4cba`)
-> **Status:** ✅ Complete (5/5 WOs complete — pending Chief Architect PR audit)
+> **Status:** ✅ Complete (6/6 WOs complete — pending Chief Architect PR #18 re-verification)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`).
 
 ## Objective
@@ -19,6 +19,7 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" bug (`EphemeralM
 | 3 | [wo3-seeder-fixes](wo3-seeder-fixes/WORKORDER.md) | Fix GitHub Issue **#10** (`internal/core/seed/convert.go`: validate extracted backtick anchor candidates as real repository file paths / symbols rather than arbitrary code tokens) and Issue **#12** (`internal/core/seed`: stamp `--before` seeded ops with the workorder/cutoff commit's timestamp and SHA rather than `HEAD`). Add unit tests for both fixes. | standard | ✅ Complete (`bed436e`) |
 | 4 | [wo4-ops-cleanup-and-rebuild](wo4-ops-cleanup-and-rebuild/WORKORDER.md) | Fix GitHub Issue **#16** (clean junk placeholder ops from `.memory/ops/`, re-render `.memory/dossiers/` and `ATLAS.md`), rebuild and install `~/.local/bin/repo-memory`, and re-seed/rebuild the `esp32-app-foundation` evaluation template index (`tpl-c`, `tpl-d`) so `PR-10` WO4/WO5 runs against clean anchors and persistent `UserMessage` delivery. | standard | ✅ Complete (`2b97c02`) |
 | 5 | [wo5-dry-run-verification](wo5-dry-run-verification/WORKORDER.md) | Run multi-invocation verification confirming that `task-start`, `first-touch`, and `first-entry` injections emitted as `UserMessage` remain in the conversation context across subsequent tool calls while `InjectedSet` suppresses duplicates, verify full Go test suite (`go test ./...`), and finalize `PROJECT.md`, `PROGRAM.md`, and `MEMORY.md`. | standard | ✅ Complete (`60fd200`) |
+| 6 | [wo6-review-remediation](wo6-review-remediation/WORKORDER.md) | Remediate PR #18 Cold-Firewall Audit findings (`[MAJOR-1]` parenthesized `(none)` placeholder filtering + GC re-run, `[MAJOR-2]` `InjectedSet` JSON persistence across `RearmDedup()` and process invocations, `[MINOR-1]` orphan empty dossier removal on cross-scope `moveEntry`, `[MINOR-2]` `path#symbol` / `path:symbol` anchor syntax support, `[MINOR-3]` `_pragma=foreign_keys(1)` on `NewReadOnlyIndex`). | standard | ✅ Complete (`bcdfae0`) |
 
 ## Dependencies
 
@@ -64,3 +65,10 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" bug (`EphemeralM
 - Added `TestPreInvocation_MultiInvocationLifecycle` in `internal/harness/antigravity/preinvocation_test.go` verifying the full 5-phase lifecycle (`MomentTaskStart` -> `UserMessage`, `MomentFirstTouch` + `MomentFirstEntry` -> `UserMessage` while `InjectedSet` suppresses `task-start` duplicates, `MomentAboutToEdit` -> `EphemeralMessage`, mid-turn full deduplication, `CHECKPOINT` compaction re-injection via `UserMessage`, and transcript rewind re-arming via `DetectRewind`).
 - Fixed `preinvocation.go` to relativize `touchedFiles` against `workspaceRoot` and include direct module scopes before `DeriveModuleScopes`, and updated `BuildReinjection` in `compaction.go` to pass `minScore: 0` to `SelectWithinBudget`.
 - Verified all 25 Go packages pass (`go test ./cmd/... ./internal/...` and `go vet ./cmd/... ./internal/... ./evaluation/cmd/build-index/...`) and updated `~/.local/bin/repo-memory`.
+
+### 2026-10-15 — WO6 (`wo6-review-remediation`) Complete (`bcdfae0`)
+- Extended `IsJunkText` (`internal/core/seed/convert.go`) to match parenthesized placeholders (`(none)`, `(n/a)`, `(tbd)`, `(todo)`, `-`), rebuilt `~/.local/bin/repo-memory`, and re-ran `repo-memory ops gc` across `.memory/` and all 8 `evaluation/data/<wo>` snapshots to remove all remaining `(none)` entries (`[MAJOR-1]`).
+- Removed `,omitempty` from `InjectedSet` and `LastHandledCheckpointStep` on `delivery.Ledger`, updated `loadLedgerLocked` (`internal/harness/antigravity/ledger_store.go`) so `InjectedSet` is preserved across process boundaries after `RearmDedup()`, and fixed `DetectCompaction` and `HandlePreInvocation` checkpoint/rewind persistence (`[MAJOR-2]`).
+- Updated `moveEntry` (`internal/core/dossiers/projector.go`) and `Writer.WriteAll` (`writer.go`) to drop empty source dossiers when the last entry moves out (`[MINOR-1]`).
+- Added `stripAnchorSymbol` and `isValidAnchorSymbol` in `internal/core/seed/parser.go` and `scanner.go` to preserve `path#symbol` and `path:symbol` anchors (`[MINOR-2]`).
+- Added `_pragma=foreign_keys(1)` to `NewReadOnlyIndex` DSN in `internal/core/index/index.go` (`[MINOR-3]`).
