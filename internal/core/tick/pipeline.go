@@ -139,6 +139,10 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
+	if err := p.checkDocFreshness(ctx); err != nil {
+		return err
+	}
+
 	if p.idx != nil && p.repoRoot != "" {
 		opsDir := filepath.Join(p.repoRoot, ".memory", "ops")
 		if fi, err := os.Stat(opsDir); err == nil && fi.IsDir() {
