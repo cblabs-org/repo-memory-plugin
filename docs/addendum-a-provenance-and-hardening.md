@@ -1,8 +1,8 @@
 # repo-memory Addendum A: Provenance, Sharing and Hardening
 
-**Status:** Draft for review, revision 2
-**Date:** 2026-10-06
-**Applies to:** SPEC v0.10 together with the [v2 design](design-v2-distillation-retrieval.md), revision 3.
+**Status:** Approved — Revision 3 (`v2.2`)
+**Date:** 2026-10-15
+**Applies to:** [SPEC v1.0](../SPEC.md) together with the [v2.2 design (Revision 4)](design-v2-distillation-retrieval.md).
 
 This addendum **adds** to those documents and replaces nothing in them. Where it changes an existing section, §16 lists the change.
 
@@ -14,24 +14,25 @@ This addendum **adds** to those documents and replaces nothing in them. Where it
 |---|---|
 | 1 | First draft |
 | 2 | Reorganised into three phases by how much each item couples memory to git (§4): **A** no new git coupling, **B** reads git history, **C** writes state to git. Commit links are split into derived local links (A1, phase B) and shared links (A11, phase C). Phase B handles rebases by `patch-id` remapping, so it needs no git writes. Phase C has a data-driven entry criterion. |
+| 3 | **v2.2 alignment (`2026-10-15`):** (1) **A8 (`§8`)** upgrades the managed instruction block to `v2`, adding anti-echo framing, MCP pull tool pointers (`memory_brief`, `memory_why`, `memory_history`, `memory_search`), and optional mid-turn `memory_note` guidance alongside automatic `Stop` end-of-turn capture, and enforces `VD19` (`GEMINI.md` strictly machine-managed by `enroll`/`unenroll`). (2) **A7 (`§10`)** integrates `procedural` lifecycle execution-outcome validation (`PostToolUse` exit-code tracking, `success_count`/`failure_count`, build-manifest `stale_suspect` flagging, and graduation into `.agents/skills/rm-<slug>/SKILL.md` with `generated_by: repo-memory` once `success_count >= 2` across sessions). (3) **A9 (`§11`)** adds **`DocSeedSource` (`source: doc-seed`)** as Priority 0 built-in source (`repo-memory seed-docs` + async "Dreaming" git-diff freshness). |
 
 ---
 
 ## 1. Summary
 
-A review of a comparable product (§2) found several techniques we don't have. The ones worth having are below. Each is designed here from scratch to fit our principles: P5 (truth from outcomes), P11 (never slow the loop), P12 (review gates sharing) and P13 (evidence independence).
+A review of a comparable product (§2) and our `PR-06`–`PR-10` empirical studies found several techniques that strengthen provenance, procedural reliability, and repository doc coverage. Each is designed here from scratch to fit our principles: P1 (zero cooperation required), P5 (truth from outcomes), P11 (never slow the loop), P12 (review gates sharing), P13 (evidence independence), and P14 (push-first delivery, pull for depth).
 
 | Phase | # | Item | What it gives us |
 |---|---|---|---|
-| **A** No new git coupling | A4 | **Layered scrubber** | Replaces today's four-regex stub. Shared rules can't be weakened locally. Any scanner failure blocks the write. |
+| **A** No new git coupling | A4 | **Layered scrubber** | Replaces the four-regex stub. Shared rules can't be weakened locally. Any scanner failure blocks the write. |
 | | A5 | **Spend guards and dry runs** | Cost estimates before any token-spending job. Frequency and volume limits are separate knobs. |
 | | A6 | **Freshness, gaps and short-term recall** | Pull answers say how current memory is and where it has nothing. Unconsolidated notes are searchable at once. |
-| | A7 | **Procedures become skills** | Repeatedly verified procedures are rendered as on-demand skills |
-| | A8 | **Managed instruction blocks** | Safe, reversible edits to `GEMINI.md` and **[R2]** `CLAUDE.md` |
-| | A9 | **External capture sources** | Sessions captured by other tools can be imported as events |
-| | A10 | **Evaluation discipline** | Paired, pre-registered comparisons for X6 and the B-series benchmarks |
+| | A7 | **Procedures become skills (`procedural` lifecycle)** | `PostToolUse` tracks `recipe`/`procedure` command exit codes (`success_count`/`failure_count`); recipes verified across ≥ 2 sessions (`success_count >= 2`) or marked `render_as_skill` graduate deterministically to `.agents/skills/rm-<slug>/SKILL.md` |
+| | A8 | **Managed instruction blocks (`v2`)** | Safe, reversible `<!-- repo-memory:begin v2 -->` block in `GEMINI.md` and **[R2]** `CLAUDE.md` managed strictly by `enroll`/`unenroll` (`init`/`leave`) |
+| | A9 | **Repository (`DocSeedSource`) & external capture sources** | Priority 0 `DocSeedSource` (`repo-memory seed-docs`, `source: doc-seed`) distills curated repo docs into anchored entries and refreshes them on `git diff`; external sessions can also be imported as events |
+| | A10 | **Evaluation discipline** | Paired, pre-registered comparisons for X6, Eval v2 (2×2 forward-task design), and the B-series benchmarks |
 | **B** Reads git history | A1 | **Commit links (derived, local)** | Every commit an agent session contributed to is linked to that conversation and its notes. Merges and reverts become outcomes we can attribute. |
-| | A2 | **Line-level `why`** | `memory.why path:line` follows git blame to the commit, then the conversation, the notes and the entries |
+| | A2 | **Line-level `why`** | `memory_why path:line` follows git blame to the commit, then the conversation, the notes and the entries |
 | **C** Writes state to git | A11 | **Shared commit links** | A1's links travel with the repository, in git notes |
 | | A3 | **Shared evidence** | Evidence IDs cited by entries resolve on every machine, not only the author's |
 
@@ -267,27 +268,33 @@ This keeps P11: hooks only spool, and the tick indexes within a minute.
 
 ---
 
-## 8. A8: Managed instruction blocks
+## 8. A8: Managed instruction blocks (`v2`)
 
-This replaces SPEC §4.6 step 2 ("adds the map include line"). `init` writes a delimited block into the harness's instruction file: `GEMINI.md`, and **[R2]** `CLAUDE.md`.
+This replaces SPEC §4.6 step 2 ("adds the map include line"). `repo-memory enroll` (alias `init`) writes a delimited `v2` block into the harness's instruction file: `GEMINI.md`, and **[R2]** `CLAUDE.md`.
 
 ```markdown
-<!-- repo-memory:begin v1 — managed by repo-memory; edits inside are overwritten -->
+<!-- repo-memory:begin v2 — managed by repo-memory; edits inside are overwritten -->
 @[memory atlas](.memory/ATLAS.md)
+
+## Repository Memory (`repo-memory`)
+- **Pushed context (`[repo-memory ...]`):** Hooks automatically inject verified invariants, gotchas, failure signatures, and ruled-out approaches when you start a task or touch anchored files. Treat them as repository notes verified against the code; do not repeat or echo them as new discoveries.
+- **Pull for depth (MCP):** Use `memory_brief` (module dossier), `memory_why` (entry/file/line rationale), `memory_history` (evolution), and `memory_search` (FTS5 search) when exploring unfamiliar subsystems.
+- **Distillation:** End-of-turn capture happens automatically via the `Stop` hook on milestone turns (no action required). Use `memory_note` mid-turn only when you want to record a critical discovery or dead end immediately.
 <!-- repo-memory:end -->
 ```
 
-- **Creating:** if the file doesn't exist, `init` creates it and records that in the registry. Otherwise the block is appended.
-- **Updating:** only the text between the markers is ever rewritten. The version tag allows upgrades, such as v2's move from `views/MAP.md` to `ATLAS.md`.
-- **Leaving:** `leave` removes the block. It deletes the file only if we created it and it is now empty.
-- **Duplicate or unbalanced markers:** `init` refuses, and `doctor` reports them.
-- **`AGENTS.md`** is still never touched (SPEC §12.2).
+- **Strictly machine-managed (`VD19`):** Root `GEMINI.md` (or the delimited block inside an existing `GEMINI.md`) is managed exclusively by `repo-memory enroll` (`init`) and `repo-memory unenroll` (`leave`), never hand-populated with static v1 `@[memory map](.memory/views/MAP.md)` pointers.
+- **Creating:** if the file doesn't exist, `enroll` (`init`) creates it and records that in the registry. Otherwise the block is appended.
+- **Updating:** only the text between the markers is ever rewritten. The version tag (`v1` $\to$ `v2`) allows automatic in-place upgrades from `views/MAP.md` to `.memory/ATLAS.md`.
+- **Leaving:** `unenroll` (`leave`) removes the block. It deletes the file only if we created it and it is now empty.
+- **Duplicate or unbalanced markers:** `enroll` refuses, and `doctor` reports them.
+- **`AGENTS.md`** is still never touched by default (SPEC §12.2).
 
 ---
 
 ## 9. A10: Evaluation discipline
 
-This applies to X2, X6 and B1–B5. It should land before X6 runs.
+This applies to X2, X6, Eval v2 (2×2 forward-task design), and B1–B5. It should land before X6 runs.
 
 - **Paired design.** Every task runs under every arm (no memory, PA documents, dossiers) from the same commit, with the same model. Each arm runs at least 3 times, because agent runs vary. Per-task differences are the unit of analysis.
 - **Pre-registration.** The dataset file declares the arms, metrics, minimum effect sizes and the kill criterion **before** the first run. `repo-memory eval` refuses to compare runs whose dataset changed after the runs started.
@@ -303,37 +310,54 @@ X6's kill criterion ("if dossiers don't beat no memory, stop") is evaluated this
 
 ---
 
-## 10. A7: Procedures become skills
+## 10. A7: Procedures become skills (`procedural` lifecycle)
 
-This has no git coupling, but it is **gated on X6 and Y6**. There's no point rendering skills from memory that hasn't been shown to help.
+In `v2.2` (design Revision 4 §5.2), `recipe` (alias `procedure`) and `failure-signature` entries belong to the **`procedural` cognitive lifecycle**, which is coupled to **execution outcomes** rather than static code anchors alone.
 
-### 10.1 When
+### 10.1 Execution-Outcome Tracking (`PostToolUse`) & Build-Manifest Freshness
 
-The weekly gardening job (v2 §6) proposes a skill for a `procedure` entry when **all** of these hold:
-- it has 3 or more steps;
-- it has 3 or more successful outcomes across 2 or more conversations, where the procedure's own commands passed. Under P13, running the procedure counts as a test, so exposed conversations count when the commands ran;
-- it hasn't been superseded or amended in its meaning for 30 days.
+1. **Command outcome tracking (`success_count` / `failure_count`):** Whenever `PostToolUse` observes a shell command execution (`run_command` / `bash`) whose normalized command prefix matches an active `recipe` / `procedure` entry's `commands` list:
+   - exit code `0` increments the entry's `success_count` and records `last_succeeded_at` and the conversation ID;
+   - a non-zero exit code increments `failure_count` and flags the entry `stale_suspect: true` if two consecutive sessions fail on the recipe's command.
+2. **Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`).
 
-### 10.2 How
+### 10.2 Graduation to `.agents/skills/rm-<slug>/SKILL.md`
 
-- **The proposal is an `amend` op** setting `render_as_skill: rm-<slug>` on the entry. It is **always reviewed** in the memory PR, under every review profile.
-- **Rendering is deterministic, with no LLM.** It's a view of the entry, like a dossier:
-  - **frontmatter:** `name` and `description` (the entry's title plus its `relevant_when` line). Both are required, because Antigravity silently drops files without them (X8);
-  - **body:** the steps, why, evidence links, and a footer: "Generated from `[proc-XXXX]` by repo-memory. Edit the entry, not this file."
-- **Location** is chosen by harness capability: `.agents/skills/rm-<slug>/SKILL.md` on Antigravity, and **[R2]** `.claude/skills/` on Claude Code.
-- **CI lint** (SPEC §11.4) checks that each skill matches what regeneration produces.
-- **Lifecycle:** when the entry is superseded or retired, the next memory PR removes the skill.
-- **Delivery:** while a skill exists, pushes for that entry shrink to a pointer: "skill `rm-release` covers this".
+A `recipe` / `procedure` entry graduates to an on-demand harness skill when **either**:
+- it carries an explicit `render_as_skill: rm-<slug>` attribute approved in a memory PR; **or**
+- it has **2 or more steps**, **`success_count >= 2` across 2 or more distinct conversations**, `failure_count == 0` since its last amendment, and is not `stale_suspect`.
+
+**How graduation renders:**
+- **Deterministic rendering (no LLM):** It is a pure projection of the op log, like a dossier:
+  - **Frontmatter:** `name: rm-<slug>`, `description: <entry title + relevant_when>`, and `generated_by: repo-memory` (`source_entry_id: <id>`). Both `name` and `description` are required so Antigravity indexes the skill (X8).
+  - **Body:** the verified steps/commands, `Why`, anchor paths, evidence links, and a footer: `"Generated from [<id>] by repo-memory. Edit the dossier entry or op log, not this file."`
+- **Location:** `.agents/skills/rm-<slug>/SKILL.md` on Antigravity, and **[R2]** `.claude/skills/rm-<slug>/SKILL.md` on Claude Code.
+- **CI lint** (SPEC §11.4) checks that every file with `generated_by: repo-memory` under `.agents/skills/rm-*/SKILL.md` matches what deterministic regeneration produces.
+- **Lifecycle:** when the underlying `recipe` entry is superseded, retired, or flagged `stale_suspect`, the renderer updates or removes `.agents/skills/rm-<slug>/SKILL.md` on the next render pass.
+- **Delivery:** while a graduated skill exists, `first-touch` pushes for that recipe shrink to a 1-line pointer (`"skill rm-<slug> covers this procedure"`), saving context tokens while keeping discovery push-first.
 
 ### 10.3 Caution
 
-Generated always-on instruction files have been measured to hurt (v2 §2.2). Skills load on demand by description, which should be lower risk, but that is unproven. Y6 gates this item.
+Generated always-on instruction files have been measured to hurt (v2 §2.2), and passive unprompted skills have a 1–8% read rate when agents do not know they exist (v2 §2.4). Pairing on-demand `.agents/skills/rm-<slug>/SKILL.md` files with a 1-line `first-touch` pointer gives agents push-first awareness without loading the full multi-step recipe until needed. Y6 gates this item.
 
 ---
 
-## 11. A9: External capture sources
+## 11. A9: Repository (`DocSeedSource`) and external capture sources
 
-Some users already run another tool that captures agent sessions. Importing those sessions as events extends coverage (SPEC G9) and gives the fallback more input.
+### 11.1 Priority 0 Built-in Source: `DocSeedSource` (`repo-memory seed-docs` / `source: doc-seed`)
+
+Our 77-session `esp32` audit (v2 §2.4) showed that curated human-authored markdown guides (`docs/developer/`, `.agents/skills/`, architecture docs) go 92–99% unread unless pushed via hooks. Revision 3 promotes in-repo documentation to **Priority 0 (`DocSeedSource`)**, ahead of external session importers:
+
+1. **Ingestion (`repo-memory seed-docs`):** Discovers curated markdown files configured under `doc_seeds` in `.memory/config.yaml` (defaulting to `docs/developer/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files that do not have `generated_by: repo-memory`). Each file is passed through the preparation layer and `repo-memory-distiller` to extract concrete `invariant`, `contract`, `gotcha`, `recipe`, and `failure-signature` notes anchored to the source files and symbols they govern.
+2. **Provenance metadata (`source: doc-seed`):** Every note and resulting op-log entry carries:
+   - `source: "doc-seed"`
+   - `source_doc_path`: repo-relative path to the markdown file (e.g., `docs/developer/build-and-flash.md`)
+   - `source_doc_blob_sha`: git blob SHA (`git hash-object <path>`) of the markdown file at distillation time
+3. **Async Doc Freshness ("Dreaming" in `tick`):** On each background `tick`, the daemon checks whether any `source_doc_path`'s current git blob SHA differs from `source_doc_blob_sha` (or if the file was deleted). When a seeded doc changes in `git diff`, `tick` queues a background re-distillation job ("dreaming") that reconciles the updated markdown against the existing `source: doc-seed` entries for that file and emits `amend`, `supersede`, or `retire` ops.
+
+### 11.2 External session capture sources (`CaptureSource`)
+
+Some users also run another tool that captures agent sessions. Importing those sessions as events extends coverage (SPEC G9) and gives the fallback more input.
 
 ```go
 // internal/harness — beside Harness, not part of it
@@ -344,13 +368,13 @@ type CaptureSource interface {
 }
 ```
 
-- **Phase split.** The interface and file-based sources are phase A. Sources that store sessions in git refs or branches are read-only git reads, so they wait for phase B (`git.read_history`).
+- **Phase split.** The interface, `DocSeedSource`, PA work-order reports (`source: pa`), and file-based sources are phase A. Sources that store sessions in git refs or branches are read-only git reads, so they wait for phase B (`git.read_history`).
 - **Treated as import events** (SPEC §14) with `provenance: capture:<source>`. They are processed by the fallback (v2 §5.4) and the scrubber like everything else.
 - **De-duplicated:** if our own capture already holds the same harness conversation ID, our copy wins.
 - **Echo safety:** our injection ledger covers any conversation we delivered to, whoever captured it. A session with no ledger is marked `exposure: unknown`. Consolidation treats an item that repeats an existing entry from such a session as an echo (a no-op), which errs on the safe side.
 - **Read-only:** importers never write to another tool's storage.
 - **Clean-room:** each importer is written from that tool's published format documentation, pinned to a format version, with a fixture test (§2).
-- **Existing sources** already fit this interface: harness transcripts, and PA files (`import-pa`).
+- **Existing sources** already fit this interface: harness transcripts, PA files (`import-pa` / `seed`), and curated repo docs (`seed-docs`).
 
 ---
 
@@ -597,23 +621,24 @@ Sync is set per machine, in `<data-dir>/config.yaml`. The same settings cover co
 ```
 Phase A
   .memory/scrub.yaml                            shared scrub rules (A4)
-  <data-dir>/<repo-id>/scrub.local.yaml         local additions only (A4)
-  <data-dir>/<repo-id>/quarantine/              notes that failed scrubbing (A4)
-  <data-dir>/<repo-id>/state/freshness.json     (A6)
-  index.sqlite: + inbox FTS                     (A6)
+  .agents/skills/rm-<slug>/SKILL.md             graduated procedural recipes (A7)
+  <data-dir>/repos/<repo-id>/scrub.local.yaml   local additions only (A4)
+  <data-dir>/repos/<repo-id>/quarantine/        notes that failed scrubbing (A4)
+  <data-dir>/repos/<repo-id>/state/freshness.json (A6)
+  index.db (via index.IndexPath): + inbox FTS   (A6)
 Phase B
-  index.sqlite: + commit_links, patch-id cache  (A1)
+  index.db: + commit_links, patch-id cache      (A1)
 Phase C
   refs/notes/repo-memory                        commit → conversation links (A11)
   refs/repo-memory/evidence/<xx>/<ULID>         shared evidence objects (A3)
-  index.sqlite: + evidence_objects              (A3)
+  index.db: + evidence_objects                  (A3)
 ```
 
 **New config keys:**
 
 | Phase | Shared (`.memory/config.yaml`) | Machine (`<data-dir>/config.yaml`) |
 |---|---|---|
-| A | `scrub.*`, `gaps.threshold`, `gaps.push`, `skills.enabled` | `spend.*` |
+| A | `scrub.*`, `gaps.threshold`, `gaps.push`, `skills.enabled`, `doc_seeds` | `spend.*` |
 | B | `links.window` | `git.read_history` |
 | C | `links.trailer`, `evidence.share` | `git.write_state`, `evidence.sync`, `evidence.remote` |
 
@@ -625,11 +650,10 @@ Phase C
 
 | Phase | PR | Items | Why then |
 |---|---|---|---|
-| A | PR-07 (with the v2 foundation) | A4, A5, A8, A10, plus the A9 interface | The scrubber must exist before any new write path. A10 must be in place before X6 runs. A8 and A5 are small. |
-| A | With v2 delivery | A6 | Changes the hooks' push decision |
-| A | After X6 passes | A7 | Only worth building if memory is shown to help |
-| B | PR-08 | A1, A2, git-backed A9 sources | Needs the harvest path from PR-07 |
-| C | When §4.3's criteria are met | A11, A3 | Only needed for more than one machine or developer |
+| A | PR-06 / PR-07 / PR-08 | A4, A5, A6, A8, A10 | Layered scrubber (A4), spend guards (A5), managed instruction blocks (A8), freshness/gaps (A6), and paired eval harness (A10) landed with the v2 foundation and delivery engine. |
+| A | PR-10a / PR-10b / PR-11 | A7 (`procedural` lifecycle & skill graduation), A8 (`v2` block), A9 (`DocSeedSource` / `seed-docs` + async "dreaming") | Codified in `PR-10a`, core delivery/storage fixes in `PR-10b`, and `seed-docs` + `procedural` lifecycle validation in `PR-11` ahead of the full 2×2 forward-task evaluation (`PR-10-eval-v2` WO4–WO7). |
+| B | Post-Eval v2 | A1, A2, git-backed A9 sources | Extends `memory_why` to line-level git blame once v2.2 forward-task evaluation completes. |
+| C | When §4.3's criteria are met | A11, A3 | Only needed for more than one machine or developer. |
 
 ### 17.2 Experiments
 
