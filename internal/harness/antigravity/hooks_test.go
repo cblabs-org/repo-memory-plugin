@@ -16,7 +16,8 @@ import (
 
 func runGitInDir(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	fullArgs := append([]string{"-c", "user.name=test", "-c", "user.email=test@example.com"}, args...)
+	cmd := exec.Command("git", fullArgs...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_AUTHOR_NAME=Test User",

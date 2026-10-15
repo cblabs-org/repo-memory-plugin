@@ -4,6 +4,7 @@ type Channel string
 
 const (
 	ChannelSystem    Channel = "system"
+	ChannelUser      Channel = "userMessage"
 	ChannelEphemeral Channel = "ephemeral"
 	ChannelDeny      Channel = "deny"
 )
