@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "docseed-f9386d51",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Updating:** only the text between the markers is ever rewritten. The version tag (`v1` $\\to$ `v2`) allows automatic in-place upgrades from `views/MAP.md` to `.memory/ATLAS.md`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-c7299f01",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/eval"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Tooling.** `repo-memory eval compare \u003ca.json\u003e \u003cb.json\u003e` in `internal/eval` does the pairing, tests and correction."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-b52782ec",
+      "dossier_scope": "Makefile",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "Makefile",
+          "go.mod"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-72185a3f",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Ingestion (`repo-memory seed-docs`):** Discovers curated markdown files configured under `doc_seeds` in `.memory/config.yaml` (defaulting to `docs/developer/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files that do not have `generated_by: repo-memory`). Each file is passed through the preparation layer and `repo-memory-distiller` to extract concrete `invariant`, `contract`, `gotcha..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-70521f15",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and newly entered scope entries that are tracked in a per-session `InjectedSet`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-dfdc29da",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/t..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-11db9bc8",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Five-Tier State Scope Hierarchy \u0026 Pre-Consolidation Corroboration Gate (`VD18`, §6, §7.1):** Formalizes `temp:`, `session:`, `user:` (gitignored `\u003cdata-dir\u003e/repos/\u003crepo-id\u003e/user-dossiers/`), `branch:` (`.memory/local/`), and `repo:` (`.memory/ops/` \u0026 `.memory/dossiers/`), and enforces a deterministic Pre-Consolidation Corroboration Gate requiring a passing `PostToolUse` build/test step, ver..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-bdc24763",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Doc-Seeded Dossiers \u0026 Async Doc Freshness (\"Dreaming\") (`VD16`, §7.6):** `repo-memory seed-docs` (`source: doc-seed`) distills curated repository documentation (`docs/developer/`, `.agents/skills/`) into code-anchored dossier entries delivered via `PreInvocation` push, paired with an async git-diff watcher in `tick` (`source_doc_path`, `source_doc_blob_sha`) that re-distills affected entries..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-3d67af0d",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "gotcha",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Optional Section Resolution (`{section?}`) \u0026 Five-Tier Scope Hierarchy:** Dossiers omit empty sections and separate ephemeral scratch (`temp:`), conversation state (`session:`), personal gitignored preferences (`user:`), branch-local unmerged work (`branch:` in `.memory/local/`), and git-tracked shared truth (`repo:` in `.memory/ops/` and `.memory/dossiers/`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-bb4fb8dd",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Doc-Seeded Dossiers (`repo-memory seed-docs`) \u0026 Async Freshness (\"Dreaming\"):** Curated in-repo documentation (`docs/developer/`, `.agents/skills/`) is distilled into anchored dossier entries (`source: doc-seed`) and kept fresh asynchronously on `git diff` changes (§7.6)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-54e73d93",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Bootstrap (`repo-memory seed-docs`):** Scans configured markdown paths (`docs/developer/**/*.md`, `.agents/skills/**/SKILL.md`, or paths listed under `doc_seeds` in `.memory/config.yaml`) and runs `repo-memory-distiller` to extract concrete `invariant`, `gotcha`, `recipe`, and `failure-signature` entries anchored to the actual source files, build manifests, and symbols they govern."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-9d9196ea",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "The 125 v1 claims and `.memory/views/`. They are replaced by `.memory/ops/` and `.memory/dossiers/`."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T20:33:38.381142837Z",
+  "batch_id": "01M50MAEJDR5SPBR8M771BEMF0"
+}

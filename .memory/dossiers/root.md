@@ -1,10 +1,5 @@
 # root
 
-## Invariants & contracts
-
-### [docseed-146631f6] `testdata/scrub/benign/` — Look-alikes that must survive: SHAs, conversation UUIDs, ULIDs, `go.sum` lines, ESP-IDF hex dumps, MAC addresses, partition tables and flash offsets
-`invariant · kind: semantic · anchors: go.sum · source_doc: docs/addendum-a-provenance-and-hardening.md · evidence: doc:docs/addendum-a-provenance-and-hardening.md`
-
 ## Ruled out, failure signatures and gotchas
 
 ### [seed-309e02f1] PR-06b/wo2 and wo3 have unfilled completion report templates despite code being completed — excluded from selection.
