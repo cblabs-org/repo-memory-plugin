@@ -30,7 +30,7 @@ Update `internal/core/dossiers/renderer.go` and `internal/core/dossiers/handedit
 
 ## Line-Item Instructions
 
-- [ ] `internal/core/dossiers/renderer.go` — Update section groupings, `{section?}` resolution, and entry metadata rendering:
+- [x] `internal/core/dossiers/renderer.go` — Update section groupings, `{section?}` resolution, and entry metadata rendering:
   1. Update the section `groups` in `renderDossierInternal`:
      - `{"Invariants & contracts", []EntryType{EntryTypeInvariant, EntryTypeContract, EntryTypeConvention}}`
      - `{"Ruled out, failure signatures and gotchas", []EntryType{EntryTypeRuledOut, EntryTypeFailureSignature, EntryTypeGotcha, EntryTypeExternalBehaviour}}`
@@ -44,7 +44,7 @@ Update `internal/core/dossiers/renderer.go` and `internal/core/dossiers/handedit
      - After `anchors` (if `len(e.Anchors) > 0`), if `e.SourceDocPath != ""` append `"source_doc: " + e.SourceDocPath`.
      - Keep `verified` and `evidence` in `meta` as before.
 
-- [ ] `internal/core/dossiers/handedit.go` — Make prefix-to-EntryType inference deterministic and support all `v2.2` prefixes:
+- [x] `internal/core/dossiers/handedit.go` — Make prefix-to-EntryType inference deterministic and support all `v2.2` prefixes:
   1. Add a deterministic helper `InferEntryTypeFromID(id string) EntryType` using an ordered slice/switch (never iterating over `EntryTypePrefixes` map, which has non-deterministic iteration order when aliases share prefixes like `con-` or `got-`):
      - `"inv-"` -> `EntryTypeInvariant`
      - `"con-"` -> `EntryTypeContract`
@@ -61,7 +61,7 @@ Update `internal/core/dossiers/renderer.go` and `internal/core/dossiers/handedit
   2. Use `InferEntryTypeFromID(id)` in `DetectHandEdits`.
   3. Ensure `parseMarkdownEntries` cleanly skips the backtick metadata line (which always starts and ends with `` ` `` and contains `" · "`).
 
-- [ ] `internal/core/dossiers/dossiers_test.go` — Add comprehensive unit tests for WO2:
+- [x] `internal/core/dossiers/dossiers_test.go` — Add comprehensive unit tests for WO2:
   1. Verify `RenderDossier` renders `## Invariants & contracts` for `invariant`, `contract`, and `convention` entries, and `## Procedures / Recipes` for `procedure` and `recipe` entries, while omitting any empty `{section?}` headings.
   2. Verify `RenderDossier` includes `kind: semantic`, `kind: procedural`, and `kind: episodic` in the backtick metadata line of rendered entries, and includes `source_doc: docs/guide.md` when `SourceDocPath` is set.
   3. Verify `DetectHandEdits` round-trips cleanly (`0` ops when unmodified, `amend` op when body text is edited, and deterministic `add` op with the expected `entry_type` for `con-`, `rec-`, `err-`, `iss-`, `got-` prefixes).
@@ -78,4 +78,10 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ---
 ## Completion Report
-<!-- Written by the worker at task completion -->
+- **Status:** Complete
+- **Implementation Commit:** `16d0be3`
+- **Summary:**
+  - Updated `internal/core/dossiers/renderer.go` to group `invariant`/`contract`/`convention` under `## Invariants & contracts`, `ruled-out`/`failure-signature`/`gotcha`/`external-behaviour` under `## Ruled out, failure signatures and gotchas`, and `procedure`/`recipe` under `## Procedures / Recipes`, omitting empty `{section?}` headings and rendering `kind: <semantic|procedural|episodic>` and `source_doc: <path>` in entry metadata lines.
+  - Added deterministic `InferEntryTypeFromID(id string) EntryType` in `internal/core/dossiers/handedit.go` and wired it into `DetectHandEdits`.
+  - Added unit tests `TestRenderDossier_OptionalSectionsAndMetadata` and `TestDetectHandEdits_RoundTripAndDeterministicPrefixes` in `internal/core/dossiers/dossiers_test.go` and verified `go test -race ./internal/core/dossiers/...` passes with 0 race warnings.
+- **Out-of-Boundary Issues Discovered:** None.
