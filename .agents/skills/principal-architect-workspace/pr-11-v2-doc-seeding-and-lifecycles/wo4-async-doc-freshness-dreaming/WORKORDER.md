@@ -20,7 +20,7 @@ Implement Async Doc Freshness ("Dreaming", `SPEC.md` §6.3.5, `docs/design-v2-di
 
 ## Checklist of Changes
 
-- [ ] **1. Implement `CheckDocFreshness` in `internal/core/tick/dream_freshness.go`**:
+- [x] **1. Implement `CheckDocFreshness` in `internal/core/tick/dream_freshness.go`**:
   - Create `internal/core/tick/dream_freshness.go` in package `tick`.
   - Add exported method `func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeedResult, error)` and internal helper `func (p *PipelineExecutor) checkDocFreshness(ctx context.Context) error`.
   - Drain any queued `jobs.KindDreamFreshness` and `jobs.KindSeedDocs` jobs from `p.store` (if `p.store != nil`), completing them once the freshness check succeeds (or failing them if it returns an error).
@@ -32,9 +32,9 @@ Implement Async Doc Freshness ("Dreaming", `SPEC.md` §6.3.5, `docs/design-v2-di
   - When `res.EntriesAdded + res.EntriesAmend + res.EntriesRetire > 0`:
     - Re-project `.memory/dossiers/` and `.memory/ATLAS.md` via `dossiers.NewProjector(opsReader)` and `dossiers.NewWriter(filepath.Join(p.repoRoot, ".memory")).WriteAll(dossiersMap)`.
     - If `p.idx != nil`, call `p.idx.RebuildFromOpLog(ctx, opsReader)`; if `p.idx == nil` and `p.dataDir != ""` and `p.repoID != ""`, open `index.NewIndex(index.IndexPath(p.dataDir, p.repoID))` (closing via `defer`), and call `idx.RebuildFromOpLog(ctx, opsReader)`.
-- [ ] **2. Wire `checkDocFreshness` into `PipelineExecutor.Run` (`internal/core/tick/pipeline.go`)**:
+- [x] **2. Wire `checkDocFreshness` into `PipelineExecutor.Run` (`internal/core/tick/pipeline.go`)**:
   - In `PipelineExecutor.Run(ctx context.Context) error`, call `if err := p.checkDocFreshness(ctx); err != nil { return err }` right after `convertCapturesToEvidence(ctx)` and before the index rebuild step.
-- [ ] **3. Add Unit Tests in `internal/core/tick/dream_freshness_test.go`**:
+- [x] **3. Add Unit Tests in `internal/core/tick/dream_freshness_test.go`**:
   - `TestCheckDocFreshness_NoOpWhenUnseeded`: Verify that running `exec.Run(ctx)` on a workspace without `doc-seed` entries or `doc_seeds` config succeeds as a fast no-op.
   - `TestCheckDocFreshness_DetectsModifiedAndDeletedDocs`:
     - Set up a temp repo with a valid anchor file (`internal/foo/bar.go`), `.memory/config.yaml` with `doc_seeds: ["docs/arch.md"]`, and `docs/arch.md` containing 2 anchored bullets.
@@ -57,9 +57,11 @@ All tests must pass with zero race warnings.
 
 ## Completion Report
 
-*(To be filled in by the Execution Worker upon approval)*
-
-- **Status:** Pending
-- **Commits:**
+- **Status:** Complete
+- **Commits:** `f54c27f`
 - **Summary of Changes:**
+  - Implemented `PipelineExecutor.CheckDocFreshness` and `checkDocFreshness` in `internal/core/tick/dream_freshness.go` to drain queued `KindDreamFreshness` and `KindSeedDocs` jobs, perform a fast no-op on unseeded workspaces, reconcile modified/deleted markdown docs via `seed.SeedDocs`, re-project `.memory/dossiers/` and `.memory/ATLAS.md`, and rebuild `index.db`.
+  - Wired `p.checkDocFreshness(ctx)` into `PipelineExecutor.Run` in `internal/core/tick/pipeline.go`.
+  - Added unit tests in `internal/core/tick/dream_freshness_test.go` covering unseeded no-op, modified/deleted doc detection (`source_doc_updated` / `source_doc_deleted`), and `KindDreamFreshness` job completion.
 - **Verification Output:**
+  - `go test -race -v ./internal/core/tick/... ./internal/core/seed/... ./cmd/repo-memory/...` — PASS (0 race warnings).
