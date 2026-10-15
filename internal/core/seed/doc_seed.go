@@ -269,11 +269,18 @@ func ParseDocToOps(
 			anchors = append([]string(nil), docAnchors...)
 		}
 
+		var scopeAnchors []string
+		for _, a := range anchors {
+			if strings.Contains(a, "/") && !strings.HasPrefix(a, ".") {
+				scopeAnchors = append(scopeAnchors, a)
+			}
+		}
+
 		keywords := extractKeywords(cand.heading, relPath)
 		var dossierScope string
 		var matchedDeclared bool
 		if resolver != nil {
-			dossierScope = resolver.ResolveScope(anchors, keywords)
+			dossierScope = resolver.ResolveScope(scopeAnchors, keywords)
 			if dossierScope != "" && len(anchors) == 0 {
 				matchedDeclared = true
 			}
@@ -287,14 +294,25 @@ func ParseDocToOps(
 			continue
 		}
 
-		if dossierScope == "" && len(anchors) > 0 {
-			mods := config.DeriveModuleScopes(anchors)
-			if len(mods) > 0 && mods[0].Name != "" {
-				dossierScope = mods[0].Name
+		if dossierScope == "" && len(scopeAnchors) > 0 {
+			mods := config.DeriveModuleScopes(scopeAnchors)
+			for _, m := range mods {
+				if m.Name != "" && !isPollutedScope(m.Name) {
+					dossierScope = m.Name
+					break
+				}
 			}
 		}
-		if dossierScope == "" {
-			dossierScope = deriveDocDefaultScope(relPath)
+		if dossierScope == "" || isPollutedScope(dossierScope) {
+			if isSkill {
+				if defScope := deriveDocDefaultScope(relPath); !isPollutedScope(defScope) {
+					dossierScope = defScope
+				} else {
+					dossierScope = "root"
+				}
+			} else {
+				dossierScope = "root"
+			}
 		}
 
 		entryType := classifyDocEntryType(relPath, cand.heading, cleaned, cand.isRecipe)
@@ -405,7 +423,13 @@ func SeedDocs(
 
 	isValidRepoPath := buildRepoPathValidator(SeedOptions{RepoRoot: opts.RepoRoot})
 	repoFiles := collectRepoFileAnchors(opts.RepoRoot)
-	moduleScopes := config.DeriveModuleScopes(repoFiles)
+	rawModuleScopes := config.DeriveModuleScopes(repoFiles)
+	var moduleScopes []config.ModuleScope
+	for _, m := range rawModuleScopes {
+		if !isPollutedScope(m.Name) {
+			moduleScopes = append(moduleScopes, m)
+		}
+	}
 	aliasMap, err := config.BuildAliasMap(opsReader, ctx)
 	if err != nil {
 		aliasMap = config.NewAliasMap()
@@ -532,6 +556,9 @@ func SeedDocs(
 
 		if stat.Added > 0 || stat.Amended > 0 || stat.Retired > 0 {
 			res.FilesSeeded++
+		} else {
+			stat.Skipped = true
+			res.FilesSkipped++
 		}
 		res.Files = append(res.Files, stat)
 	}
@@ -819,14 +846,15 @@ func collectRepoFileAnchors(repoRoot string) []string {
 		}
 		if d.IsDir() {
 			base := d.Name()
-			if base == ".git" || base == ".memory" || base == "node_modules" || base == "vendor" ||
+			if (strings.HasPrefix(base, ".") && base != ".") ||
+				base == "node_modules" || base == "vendor" ||
 				relSlash == ".agents/skills/principal-architect-workspace" ||
 				strings.HasSuffix(relSlash, "/principal-architect-workspace") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.Type().IsRegular() {
+		if d.Type().IsRegular() && strings.Contains(relSlash, "/") && !strings.HasPrefix(relSlash, ".") {
 			files = append(files, relSlash)
 		}
 		return nil

@@ -140,6 +140,42 @@ func TestProjectorOperations(t *testing.T) {
 	if len(d2.Entries) != 1 || d2.Entries[0].ID != id3 {
 		t.Errorf("mod2 should have id3 entry")
 	}
+
+	// Verify Writer.WriteAll with retired-only scope (mod1) and orphaned file cleanup
+	orphanPath := filepath.Join(tempDir, "dossiers", "core", "orphan.md")
+	if err := os.MkdirAll(filepath.Dir(orphanPath), 0755); err != nil {
+		t.Fatalf("mkdir orphan dir: %v", err)
+	}
+	if err := os.WriteFile(orphanPath, []byte("# core/orphan\n"), 0644); err != nil {
+		t.Fatalf("write orphan file: %v", err)
+	}
+	staleMod1Path := filepath.Join(tempDir, "dossiers", "core", "mod1.md")
+	if err := os.WriteFile(staleMod1Path, []byte("# core/mod1\n"), 0644); err != nil {
+		t.Fatalf("write stale mod1 file: %v", err)
+	}
+
+	writer := NewWriter(tempDir)
+	if err := writer.WriteAll(dossiersMap); err != nil {
+		t.Fatalf("WriteAll failed: %v", err)
+	}
+
+	if _, err := os.Stat(staleMod1Path); !os.IsNotExist(err) {
+		t.Errorf("expected retired-only core/mod1.md to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "dossiers", "core", "mod1.history.md")); err != nil {
+		t.Errorf("expected core/mod1.history.md to exist on disk: %v", err)
+	}
+	if _, err := os.Stat(orphanPath); !os.IsNotExist(err) {
+		t.Errorf("expected orphaned core/orphan.md to be removed, stat err = %v", err)
+	}
+	atlasBytes, err := os.ReadFile(filepath.Join(tempDir, "ATLAS.md"))
+	if err != nil {
+		t.Fatalf("reading ATLAS.md: %v", err)
+	}
+	atlasStr := string(atlasBytes)
+	if strings.Contains(atlasStr, "core/mod1") || strings.Contains(atlasStr, "0001-01-01") || strings.Contains(atlasStr, "| 0 |") {
+		t.Errorf("expected ATLAS.md not to contain retired-only core/mod1 or 0-entry row, got:\n%s", atlasStr)
+	}
 }
 
 func TestDossiersEmptySections(t *testing.T) {
