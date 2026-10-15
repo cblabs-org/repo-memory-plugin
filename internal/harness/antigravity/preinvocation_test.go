@@ -665,3 +665,317 @@ func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
 	}
 }
 
+func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
+	ctx := context.Background()
+	workspace, idxPath := setupEnrolledWorkspace(t)
+	convID := "conv-multi-invocation-lifecycle"
+
+	tokenRelPath := filepath.Join("internal", "core", "auth", "token.go")
+	tokenAbsPath := filepath.Join(workspace, tokenRelPath)
+	if err := os.MkdirAll(filepath.Dir(tokenAbsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tokenAbsPath, []byte("package auth\n\nfunc SignToken() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	taskEntry := dossiers.Entry{
+		ID:           "task-entry-1",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core/auth",
+		Text:         "Use HMAC-SHA256 for session tokens in auth module",
+	}
+	touchEntry := dossiers.Entry{
+		ID:           "touch-entry-1",
+		Type:         dossiers.EntryTypeGotcha,
+		DossierScope: "core/auth",
+		Text:         "Never mutate claims map in place inside internal/core/auth/token.go",
+		Anchors:      []string{"internal/core/auth/token.go"},
+	}
+	dossierEntry := dossiers.Entry{
+		ID:           "dossier-entry-1",
+		Type:         dossiers.EntryTypeRuledOut,
+		DossierScope: "core/auth",
+		Text:         "Always validate token expiry before signature verification in core/auth",
+	}
+
+	for _, ent := range []dossiers.Entry{taskEntry, touchEntry, dossierEntry} {
+		if err := idx.UpsertEntry(ctx, ent); err != nil {
+			t.Fatal(err)
+		}
+		if len(ent.Anchors) > 0 {
+			if err := idx.UpsertEntryAnchors(ctx, ent.ID, ent.Anchors); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	idx.Close()
+
+	transcriptDir := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+
+	marshalStep := func(m map[string]any) string {
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	writeTranscript := func(lines ...string) {
+		content := strings.Join(lines, "\n") + "\n"
+		if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Phase 1 (Turn 1, invocationNum: 0, initialNumSteps: 1 — MomentTaskStart)
+	step0 := marshalStep(map[string]any{
+		"step_index": 0,
+		"type":       "USER_INPUT",
+		"content":    "Update HMAC-SHA256 session tokens",
+	})
+	writeTranscript(step0)
+
+	payload1 := fmt.Sprintf(`{
+		"conversationId": %q,
+		"invocationNum": 0,
+		"initialNumSteps": 1,
+		"userPrompt": "Update HMAC-SHA256 session tokens",
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
+
+	out1, err := HandlePreInvocation(ctx, []byte(payload1))
+	if err != nil {
+		t.Fatalf("Phase 1 HandlePreInvocation error: %v", err)
+	}
+	var resp1 InjectStepsResponse
+	if err := json.Unmarshal(out1, &resp1); err != nil {
+		t.Fatalf("Phase 1 unmarshal: %v (raw: %s)", err, string(out1))
+	}
+	if len(resp1.InjectSteps) != 1 {
+		t.Fatalf("Phase 1 expected 1 injectStep, got %d: %+v", len(resp1.InjectSteps), resp1.InjectSteps)
+	}
+	if resp1.InjectSteps[0].EphemeralMessage != "" {
+		t.Errorf("Phase 1 expected empty EphemeralMessage, got %q", resp1.InjectSteps[0].EphemeralMessage)
+	}
+	if !strings.Contains(resp1.InjectSteps[0].UserMessage, "[repo-memory task-entry-1]") {
+		t.Errorf("Phase 1 expected UserMessage containing [repo-memory task-entry-1], got %q", resp1.InjectSteps[0].UserMessage)
+	}
+
+	// Append injected UserMessage as persistent USER_INPUT step (step_index: 1),
+	// followed by view_file on internal/core/auth/token.go (step_index: 2),
+	// TOOL_RESPONSE (step_index: 3), and PLANNER_RESPONSE (step_index: 4) with edit intent.
+	step1 := marshalStep(map[string]any{
+		"step_index": 1,
+		"type":       "USER_INPUT",
+		"content":    resp1.InjectSteps[0].UserMessage,
+	})
+	step2 := marshalStep(map[string]any{
+		"step_index": 2,
+		"type":       "PLANNER_RESPONSE",
+		"tool_calls": []map[string]any{
+			{
+				"name": "view_file",
+				"args": map[string]any{
+					"AbsolutePath": tokenAbsPath,
+				},
+			},
+		},
+	})
+	step3 := marshalStep(map[string]any{
+		"step_index": 3,
+		"type":       "TOOL_RESPONSE",
+		"content":    "package auth\n\nfunc SignToken() {}\n",
+	})
+	step4 := marshalStep(map[string]any{
+		"step_index": 4,
+		"type":       "PLANNER_RESPONSE",
+		"thinking":   "Now I will edit internal/core/auth/token.go to update token signing.",
+		"content":    "Editing token.go.",
+	})
+	writeTranscript(step0, step1, step2, step3, step4)
+
+	// Phase 2 (Turn 1, invocationNum: 1, initialNumSteps: 5 — MomentFirstTouch + MomentFirstEntry + MomentAboutToEdit)
+	payload2 := fmt.Sprintf(`{
+		"conversationId": %q,
+		"invocationNum": 1,
+		"initialNumSteps": 5,
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
+
+	out2, err := HandlePreInvocation(ctx, []byte(payload2))
+	if err != nil {
+		t.Fatalf("Phase 2 HandlePreInvocation error: %v", err)
+	}
+	var resp2 InjectStepsResponse
+	if err := json.Unmarshal(out2, &resp2); err != nil {
+		t.Fatalf("Phase 2 unmarshal: %v (raw: %s)", err, string(out2))
+	}
+
+	var phase2UserMsgs []string
+	var phase2EphemeralMsgs []string
+	for _, st := range resp2.InjectSteps {
+		if st.UserMessage != "" {
+			if st.EphemeralMessage != "" {
+				t.Errorf("Phase 2 expected UserMessage step to have empty EphemeralMessage, got %q", st.EphemeralMessage)
+			}
+			phase2UserMsgs = append(phase2UserMsgs, st.UserMessage)
+		}
+		if st.EphemeralMessage != "" {
+			if st.UserMessage != "" {
+				t.Errorf("Phase 2 expected EphemeralMessage step to have empty UserMessage, got %q", st.UserMessage)
+			}
+			phase2EphemeralMsgs = append(phase2EphemeralMsgs, st.EphemeralMessage)
+		}
+	}
+
+	combinedPhase2User := strings.Join(phase2UserMsgs, "\n")
+	if strings.Contains(combinedPhase2User, "task-entry-1") {
+		t.Errorf("Phase 2 expected task-entry-1 to be suppressed by InjectedSet, got: %s", combinedPhase2User)
+	}
+	if !strings.Contains(combinedPhase2User, "[repo-memory touch-entry-1]") {
+		t.Errorf("Phase 2 expected touch-entry-1 in UserMessage, got: %s", combinedPhase2User)
+	}
+	if !strings.Contains(combinedPhase2User, "[repo-memory dossier-entry-1]") {
+		t.Errorf("Phase 2 expected dossier-entry-1 in UserMessage, got: %s", combinedPhase2User)
+	}
+
+	transcriptBytesPhase2, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(transcriptBytesPhase2), "[repo-memory task-entry-1]") {
+		t.Errorf("Phase 2 expected task-entry-1 USER_INPUT step to remain present in transcript_full.jsonl")
+	}
+
+	wantAboutToEdit := "[repo-memory] Check injected entries above before editing token.go"
+	if len(phase2EphemeralMsgs) != 1 || phase2EphemeralMsgs[0] != wantAboutToEdit {
+		t.Errorf("Phase 2 got EphemeralMessages %v, want [%q]", phase2EphemeralMsgs, wantAboutToEdit)
+	}
+
+	// Phase 3 (Turn 1, invocationNum: 2, initialNumSteps: 7 — Mid-turn Deduplication)
+	step5 := marshalStep(map[string]any{
+		"step_index": 5,
+		"type":       "USER_INPUT",
+		"content":    combinedPhase2User,
+	})
+	step6 := marshalStep(map[string]any{
+		"step_index": 6,
+		"type":       "PLANNER_RESPONSE",
+		"thinking":   "Finished reviewing.",
+		"content":    "Done.",
+	})
+	writeTranscript(step0, step1, step2, step3, step4, step5, step6)
+
+	payload3 := fmt.Sprintf(`{
+		"conversationId": %q,
+		"invocationNum": 2,
+		"initialNumSteps": 7,
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
+
+	out3, err := HandlePreInvocation(ctx, []byte(payload3))
+	if err != nil {
+		t.Fatalf("Phase 3 HandlePreInvocation error: %v", err)
+	}
+	if string(out3) != "{}" {
+		t.Errorf("Phase 3 expected deduplicated \"{}\", got %s", string(out3))
+	}
+
+	transcriptBytesPhase3, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wantTag := range []string{"[repo-memory task-entry-1]", "[repo-memory touch-entry-1]", "[repo-memory dossier-entry-1]"} {
+		if !strings.Contains(string(transcriptBytesPhase3), wantTag) {
+			t.Errorf("Phase 3 expected %s to remain in transcript_full.jsonl", wantTag)
+		}
+	}
+
+	// Phase 4 (Turn 2, invocationNum: 0, initialNumSteps: 9 after CHECKPOINT — Compaction Re-injection)
+	step8 := marshalStep(map[string]any{
+		"step_index": 8,
+		"type":       "SYSTEM",
+		"content":    "Compacted conversation summary",
+	})
+	writeTranscript(step0, step1, step2, step3, step4, step5, step6, "CHECKPOINT", step8)
+
+	payload4 := fmt.Sprintf(`{
+		"conversationId": %q,
+		"invocationNum": 0,
+		"initialNumSteps": 9,
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
+
+	out4, err := HandlePreInvocation(ctx, []byte(payload4))
+	if err != nil {
+		t.Fatalf("Phase 4 HandlePreInvocation error: %v", err)
+	}
+	var resp4 InjectStepsResponse
+	if err := json.Unmarshal(out4, &resp4); err != nil {
+		t.Fatalf("Phase 4 unmarshal: %v (raw: %s)", err, string(out4))
+	}
+	if len(resp4.InjectSteps) == 0 {
+		t.Fatalf("Phase 4 expected compaction re-injection step, got empty")
+	}
+	reinjStep := resp4.InjectSteps[0]
+	if reinjStep.EphemeralMessage != "" {
+		t.Errorf("Phase 4 expected empty EphemeralMessage on compaction re-injection, got %q", reinjStep.EphemeralMessage)
+	}
+	for _, wantID := range []string{"task-entry-1", "touch-entry-1", "dossier-entry-1"} {
+		if !strings.Contains(reinjStep.UserMessage, wantID) {
+			t.Errorf("Phase 4 expected re-injected UserMessage to contain %q, got: %s", wantID, reinjStep.UserMessage)
+		}
+	}
+	if strings.Contains(reinjStep.UserMessage, "about-to-edit") || strings.Contains(reinjStep.UserMessage, "before editing") {
+		t.Errorf("Phase 4 expected about-to-edit not to be re-injected, got: %s", reinjStep.UserMessage)
+	}
+
+	// Phase 5 (Turn 3, Transcript Rewind to 3 steps — DetectRewind Re-arms Dedup)
+	writeTranscript(step0, step1, step2)
+
+	payload5 := fmt.Sprintf(`{
+		"conversationId": %q,
+		"invocationNum": 1,
+		"initialNumSteps": 3,
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
+
+	out5, err := HandlePreInvocation(ctx, []byte(payload5))
+	if err != nil {
+		t.Fatalf("Phase 5 HandlePreInvocation error: %v", err)
+	}
+	var resp5 InjectStepsResponse
+	if err := json.Unmarshal(out5, &resp5); err != nil {
+		t.Fatalf("Phase 5 unmarshal: %v (raw: %s)", err, string(out5))
+	}
+	var phase5UserMsgs []string
+	for _, st := range resp5.InjectSteps {
+		if st.EphemeralMessage != "" {
+			t.Errorf("Phase 5 expected empty EphemeralMessage after rewind, got %q", st.EphemeralMessage)
+		}
+		if st.UserMessage != "" {
+			phase5UserMsgs = append(phase5UserMsgs, st.UserMessage)
+		}
+	}
+	combinedPhase5User := strings.Join(phase5UserMsgs, "\n")
+	for _, wantID := range []string{"touch-entry-1", "dossier-entry-1"} {
+		if !strings.Contains(combinedPhase5User, wantID) {
+			t.Errorf("Phase 5 expected rewind re-injection of %q in UserMessage, got: %s", wantID, combinedPhase5User)
+		}
+	}
+}
+
