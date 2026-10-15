@@ -4,6 +4,7 @@
 
 | Project | Completed | Scope | Session | Context |
 |---|---|---|---|---|
+| pr-08-v2-delivery | 2026-10-07 | Delivery engine (`systemMessage`/`ephemeralMessage` channels, deny-once gates, cross-process ledger with flock, compaction re-injection, MCP pull tools, PR #14) | - | [PROJECT.md](../pr-08-v2-delivery/PROJECT.md) |
 | pr-07-v2-storage | 2026-10-06 | Ops, Dossiers, Index, Scopes, Seeding (v2 storage layer, 174 seeded entries, v1 pipeline removed, PR #9) | - | [PROJECT.md](../pr-07-v2-storage/PROJECT.md) |
 | pr-06b-v2-plugin-split | 2026-10-06 | Daemon + Workspace Bundle Packaging (`repo-memory-daemon` + `repo-memory`), `enroll`/`unenroll` | - | [PROJECT.md](../pr-06b-v2-plugin-split/PROJECT.md) |
 | pr-06-v2-spike | 2026-10-06 | Experiments X1, X9, X5, X8, X3; X-gate validation | - | [PROJECT.md](../pr-06-v2-spike/PROJECT.md) |
