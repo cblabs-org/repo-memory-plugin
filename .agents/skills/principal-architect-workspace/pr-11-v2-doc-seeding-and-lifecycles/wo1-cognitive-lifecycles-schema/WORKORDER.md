@@ -39,7 +39,7 @@ Add the `v2.2` Three Cognitive Memory Lifecycles (`semantic`, `procedural`, `epi
 
 ## Line-Item Instructions
 
-- [ ] `internal/core/dossiers/entry.go` — Add `CognitiveKind`, new `EntryType` constants/prefixes, `DeriveCognitiveKind`, and `Entry` fields:
+- [x] `internal/core/dossiers/entry.go` — Add `CognitiveKind`, new `EntryType` constants/prefixes, `DeriveCognitiveKind`, and `Entry` fields:
   1. Define `type CognitiveKind string` with constants:
      - `CognitiveKindSemantic CognitiveKind = "semantic"`
      - `CognitiveKindProcedural CognitiveKind = "procedural"`
@@ -78,9 +78,9 @@ Add the `v2.2` Three Cognitive Memory Lifecycles (`semantic`, `procedural`, `epi
      - `RenderAsSkill string` (`json:"render_as_skill,omitempty"`)
   7. Add method `(e Entry) EffectiveKind() CognitiveKind`: if `e.Kind.Valid()` return `e.Kind`; otherwise return `DeriveCognitiveKind(e.Type)`.
 
-- [ ] `internal/core/ops/op.go` — Add `SourceDocSeed = "doc-seed"` to the provenance source constants block.
+- [x] `internal/core/ops/op.go` — Add `SourceDocSeed = "doc-seed"` to the provenance source constants block.
 
-- [ ] `internal/core/dossiers/projector.go` — Populate and preserve the new `Entry` fields across `applyAdd`, `applyAmend`, `applySupersede`, and `typeOrder`:
+- [x] `internal/core/dossiers/projector.go` — Populate and preserve the new `Entry` fields across `applyAdd`, `applyAmend`, `applySupersede`, and `typeOrder`:
   1. **Careful disambiguation of `op.Fields["kind"]`**: Existing ops (such as `TestDossiersRoundTrip`) pass `"kind": "module"` (or `"topic"`, `"external"`, `"procedure"`) in `op.Fields` to set the *dossier's* `d.Kind`, whereas entry cognitive kind is `"semantic"`, `"procedural"`, or `"episodic"`.
      - If `op.Fields["kind"]` is `"semantic"`, `"procedural"`, or `"episodic"`, set `entry.Kind = CognitiveKind(k)`. Otherwise, if it is `"module"`, `"topic"`, `"external"`, or `"procedure"`, set `d.Kind = DossierKind(k)`.
      - Also check `op.Fields["cognitive_kind"].(string)` (if valid `CognitiveKind`, set `entry.Kind`) and `op.Fields["dossier_kind"].(string)` (if non-empty, set `d.Kind`).
@@ -104,13 +104,13 @@ Add the `v2.2` Three Cognitive Memory Lifecycles (`semantic`, `procedural`, `epi
      - `EntryTypeInterface: 7`
      - `EntryTypeOpenIssue: 8`
 
-- [ ] `internal/core/delivery/ranker.go` — Update `typeOrderRanking` to include the new `EntryType` constants:
+- [x] `internal/core/delivery/ranker.go` — Update `typeOrderRanking` to include the new `EntryType` constants:
   - `dossiers.EntryTypeContract: 80`
   - `dossiers.EntryTypeConvention: 80`
   - `dossiers.EntryTypeExternalBehaviour: 40`
   - `dossiers.EntryTypeRecipe: 20`
 
-- [ ] `internal/core/index/index.go`, `internal/core/index/entries.go`, and `internal/core/index/rebuild.go` — Add the new columns to `entries` with idempotent migration and wire them into all entry queries:
+- [x] `internal/core/index/index.go`, `internal/core/index/entries.go`, and `internal/core/index/rebuild.go` — Add the new columns to `entries` with idempotent migration and wire them into all entry queries:
   1. In `index.go` `initSchema()`:
      - Include `kind TEXT DEFAULT ''`, `source_doc_path TEXT DEFAULT ''`, `source_doc_blob_sha TEXT DEFAULT ''`, `success_count INTEGER DEFAULT 0`, `failure_count INTEGER DEFAULT 0`, `last_succeeded_at TEXT DEFAULT ''`, `stale_suspect INTEGER DEFAULT 0`, `render_as_skill TEXT DEFAULT ''` in `CREATE TABLE IF NOT EXISTS entries (...)`.
      - Also run an idempotent migration step in `initSchema()` (e.g. querying `PRAGMA table_info(entries)` to check existing columns, and executing `ALTER TABLE entries ADD COLUMN <col> <type> DEFAULT <default>` for any missing column) so pre-existing `index.db` files on disk upgrade seamlessly when opened by `NewIndex`!
@@ -121,10 +121,10 @@ Add the `v2.2` Three Cognitive Memory Lifecycles (`semantic`, `procedural`, `epi
   3. In `rebuild.go`:
      - Update `insertEntryQuery` and `tx.ExecContext` in `RebuildFromOpLog` to insert and `ON CONFLICT(id) DO UPDATE` all 8 new columns (`kind`, `source_doc_path`, `source_doc_blob_sha`, `success_count`, `failure_count`, `last_succeeded_at`, `stale_suspect`, `render_as_skill`).
 
-- [ ] `internal/core/jobs/types.go` — Add `KindSeedDocs` and `KindDreamFreshness`:
+- [x] `internal/core/jobs/types.go` — Add `KindSeedDocs` and `KindDreamFreshness`:
   - Add `KindSeedDocs Kind = "seed-docs"` and `KindDreamFreshness Kind = "dream-freshness"` to the `Kind` constants and include both in `Kind.Valid()`.
 
-- [ ] Unit Tests (`internal/core/dossiers/dossiers_test.go`, `internal/core/index/v2_test.go`, `internal/core/jobs/state_test.go`):
+- [x] Unit Tests (`internal/core/dossiers/dossiers_test.go`, `internal/core/index/v2_test.go`, `internal/core/jobs/state_test.go`):
   - In `dossiers_test.go`: add tests for `DeriveCognitiveKind`, `EffectiveKind`, and projecting `add`/`amend`/`supersede` ops with `contract`, `recipe`, `source_doc_path`, `source_doc_blob_sha`, `success_count`, `failure_count`, `last_succeeded_at`, `stale_suspect`, and `render_as_skill`.
   - In `v2_test.go`: add tests verifying (a) `UpsertEntry` / `InsertEntry` / `GetEntry` / `ListEntriesByScope` / `ListEntriesBySource` / `SearchEntriesWithScore` / `RebuildFromOpLog` preserve all new `v2.2` fields, and (b) opening an older `entries` table without the new columns via `NewIndex` auto-migrates the table via `ALTER TABLE` without error.
   - In `state_test.go`: verify `jobs.KindSeedDocs.Valid()` and `jobs.KindDreamFreshness.Valid()` return `true`.
@@ -141,4 +141,15 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ---
 ## Completion Report
-<!-- Written by the worker at task completion -->
+- **Status:** Complete
+- **Implementation Commit:** `c9640fc`
+- **Summary:**
+  - Added `CognitiveKind` (`semantic`, `procedural`, `episodic`), `DeriveCognitiveKind`, `EffectiveKind`, `v2.2` `EntryType` constants (`contract`, `convention`, `external-behaviour`, `recipe`), and `v2.2` `Entry` provenance/procedural tracking fields (`Kind`, `SourceDocPath`, `SourceDocBlobSHA`, `SuccessCount`, `FailureCount`, `LastSucceededAt`, `StaleSuspect`, `RenderAsSkill`) in `internal/core/dossiers/entry.go`.
+  - Added `SourceDocSeed = "doc-seed"` in `internal/core/ops/op.go`.
+  - Updated `internal/core/dossiers/projector.go` to disambiguate `kind`/`cognitive_kind`/`dossier_kind`, populate/inherit/reset all new `v2.2` fields across `applyAdd`/`applyAmend`/`applySupersede`, and rank the new `EntryType` constants in `typeOrder`.
+  - Updated `typeOrderRanking` in `internal/core/delivery/ranker.go`.
+  - Added the 8 new `entries` table columns, idempotent `migrateEntriesColumns()` (`PRAGMA table_info(entries)` + `ALTER TABLE`), `ListEntriesBySource`, and full read/write/rebuild wiring across `internal/core/index/{index,entries,rebuild}.go`.
+  - Added `KindSeedDocs` and `KindDreamFreshness` in `internal/core/jobs/types.go`.
+  - Added unit tests in `dossiers_test.go`, `v2_test.go`, and `state_test.go` and verified `go test -race ./internal/core/dossiers/... ./internal/core/ops/... ./internal/core/index/... ./internal/core/delivery/... ./internal/core/jobs/...` passes with 0 race warnings.
+- **Out-of-Boundary Issues Discovered:** None.
+
