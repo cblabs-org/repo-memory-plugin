@@ -34,6 +34,13 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // UpsertEntry inserts or updates an entry in the entries table.
 func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 	createdAt := formatTime(entry.CreatedAt)
@@ -44,13 +51,26 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 
 	return idx.WriteTx(ctx, func(tx *sql.Tx) error {
 		query := `
-		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO entries (
+			id, type, kind, dossier_scope, text, source,
+			source_doc_path, source_doc_blob_sha, success_count, failure_count,
+			last_succeeded_at, stale_suspect, render_as_skill,
+			verified, closes_when, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			type = excluded.type,
+			kind = excluded.kind,
 			dossier_scope = excluded.dossier_scope,
 			text = excluded.text,
 			source = excluded.source,
+			source_doc_path = excluded.source_doc_path,
+			source_doc_blob_sha = excluded.source_doc_blob_sha,
+			success_count = excluded.success_count,
+			failure_count = excluded.failure_count,
+			last_succeeded_at = excluded.last_succeeded_at,
+			stale_suspect = excluded.stale_suspect,
+			render_as_skill = excluded.render_as_skill,
 			verified = excluded.verified,
 			closes_when = excluded.closes_when,
 			created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END,
@@ -59,9 +79,17 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 		_, err := tx.ExecContext(ctx, query,
 			entry.ID,
 			string(entry.Type),
+			string(entry.EffectiveKind()),
 			entry.DossierScope,
 			entry.Text,
 			entry.Source,
+			entry.SourceDocPath,
+			entry.SourceDocBlobSHA,
+			entry.SuccessCount,
+			entry.FailureCount,
+			entry.LastSucceededAt,
+			boolToInt(entry.StaleSuspect),
+			entry.RenderAsSkill,
 			entry.Verified,
 			entry.ClosesWhen,
 			createdAt,
@@ -125,13 +153,26 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 		}
 
 		query := `
-		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO entries (
+			id, type, kind, dossier_scope, text, source,
+			source_doc_path, source_doc_blob_sha, success_count, failure_count,
+			last_succeeded_at, stale_suspect, render_as_skill,
+			verified, closes_when, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			type = excluded.type,
+			kind = excluded.kind,
 			dossier_scope = excluded.dossier_scope,
 			text = excluded.text,
 			source = excluded.source,
+			source_doc_path = excluded.source_doc_path,
+			source_doc_blob_sha = excluded.source_doc_blob_sha,
+			success_count = excluded.success_count,
+			failure_count = excluded.failure_count,
+			last_succeeded_at = excluded.last_succeeded_at,
+			stale_suspect = excluded.stale_suspect,
+			render_as_skill = excluded.render_as_skill,
 			verified = excluded.verified,
 			closes_when = excluded.closes_when,
 			created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END,
@@ -140,9 +181,17 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 		_, err := tx.ExecContext(ctx, query,
 			entry.ID,
 			string(entry.Type),
+			string(entry.EffectiveKind()),
 			entry.DossierScope,
 			entry.Text,
 			entry.Source,
+			entry.SourceDocPath,
+			entry.SourceDocBlobSHA,
+			entry.SuccessCount,
+			entry.FailureCount,
+			entry.LastSucceededAt,
+			boolToInt(entry.StaleSuspect),
+			entry.RenderAsSkill,
 			entry.Verified,
 			entry.ClosesWhen,
 			createdAt,
@@ -188,20 +237,34 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 // GetEntry retrieves an entry by its ID.
 func (idx *Index) GetEntry(ctx context.Context, id string) (*dossiers.Entry, error) {
 	query := `
-	SELECT id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at
+	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
+	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
+	       COALESCE(success_count, 0), COALESCE(failure_count, 0),
+	       COALESCE(last_succeeded_at, ''), COALESCE(stale_suspect, 0),
+	       COALESCE(render_as_skill, ''),
+	       verified, closes_when, created_at, updated_at
 	FROM entries
 	WHERE id = ?
 	`
 	var e dossiers.Entry
-	var typeStr string
+	var typeStr, kindStr string
 	var source, verified, closesWhen, createdAtStr, updatedAtStr sql.NullString
+	var staleSuspectInt int
 
 	err := idx.db.QueryRowContext(ctx, query, id).Scan(
 		&e.ID,
 		&typeStr,
+		&kindStr,
 		&e.DossierScope,
 		&e.Text,
 		&source,
+		&e.SourceDocPath,
+		&e.SourceDocBlobSHA,
+		&e.SuccessCount,
+		&e.FailureCount,
+		&e.LastSucceededAt,
+		&staleSuspectInt,
+		&e.RenderAsSkill,
 		&verified,
 		&closesWhen,
 		&createdAtStr,
@@ -215,7 +278,12 @@ func (idx *Index) GetEntry(ctx context.Context, id string) (*dossiers.Entry, err
 	}
 
 	e.Type = dossiers.EntryType(typeStr)
+	e.Kind = dossiers.CognitiveKind(kindStr)
+	if !e.Kind.Valid() {
+		e.Kind = dossiers.DeriveCognitiveKind(e.Type)
+	}
 	e.Source = source.String
+	e.StaleSuspect = staleSuspectInt != 0
 	e.Verified = verified.String
 	e.ClosesWhen = closesWhen.String
 	e.CreatedAt = parseTime(createdAtStr.String)
@@ -246,10 +314,62 @@ func (idx *Index) DeleteEntry(ctx context.Context, id string) error {
 	})
 }
 
+func scanEntryRows(rows *sql.Rows) ([]dossiers.Entry, error) {
+	var results []dossiers.Entry
+	for rows.Next() {
+		var e dossiers.Entry
+		var typeStr, kindStr string
+		var source, verified, closesWhen, createdAtStr, updatedAtStr sql.NullString
+		var staleSuspectInt int
+		if err := rows.Scan(
+			&e.ID,
+			&typeStr,
+			&kindStr,
+			&e.DossierScope,
+			&e.Text,
+			&source,
+			&e.SourceDocPath,
+			&e.SourceDocBlobSHA,
+			&e.SuccessCount,
+			&e.FailureCount,
+			&e.LastSucceededAt,
+			&staleSuspectInt,
+			&e.RenderAsSkill,
+			&verified,
+			&closesWhen,
+			&createdAtStr,
+			&updatedAtStr,
+		); err != nil {
+			return nil, fmt.Errorf("scanning entry row: %w", err)
+		}
+		e.Type = dossiers.EntryType(typeStr)
+		e.Kind = dossiers.CognitiveKind(kindStr)
+		if !e.Kind.Valid() {
+			e.Kind = dossiers.DeriveCognitiveKind(e.Type)
+		}
+		e.Source = source.String
+		e.StaleSuspect = staleSuspectInt != 0
+		e.Verified = verified.String
+		e.ClosesWhen = closesWhen.String
+		e.CreatedAt = parseTime(createdAtStr.String)
+		e.UpdatedAt = parseTime(updatedAtStr.String)
+		results = append(results, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // ListEntriesByScope returns all entries belonging to the specified dossier scope.
 func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossiers.Entry, error) {
 	query := `
-	SELECT id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at
+	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
+	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
+	       COALESCE(success_count, 0), COALESCE(failure_count, 0),
+	       COALESCE(last_succeeded_at, ''), COALESCE(stale_suspect, 0),
+	       COALESCE(render_as_skill, ''),
+	       verified, closes_when, created_at, updated_at
 	FROM entries
 	WHERE dossier_scope = ?
 	ORDER BY id
@@ -260,33 +380,46 @@ func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossi
 	}
 	defer rows.Close()
 
-	var results []dossiers.Entry
-	for rows.Next() {
-		var e dossiers.Entry
-		var typeStr string
-		var source, verified, closesWhen, createdAtStr, updatedAtStr sql.NullString
-		if err := rows.Scan(
-			&e.ID,
-			&typeStr,
-			&e.DossierScope,
-			&e.Text,
-			&source,
-			&verified,
-			&closesWhen,
-			&createdAtStr,
-			&updatedAtStr,
-		); err != nil {
-			return nil, fmt.Errorf("scanning entry row: %w", err)
-		}
-		e.Type = dossiers.EntryType(typeStr)
-		e.Source = source.String
-		e.Verified = verified.String
-		e.ClosesWhen = closesWhen.String
-		e.CreatedAt = parseTime(createdAtStr.String)
-		e.UpdatedAt = parseTime(updatedAtStr.String)
-		results = append(results, e)
+	results, err := scanEntryRows(rows)
+	if err != nil {
+		return nil, err
 	}
-	if err := rows.Err(); err != nil {
+
+	for i := range results {
+		anchors, err := idx.getEntryAnchors(ctx, results[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		results[i].Anchors = anchors
+	}
+
+	if results == nil {
+		results = []dossiers.Entry{}
+	}
+	return results, nil
+}
+
+// ListEntriesBySource returns all entries matching the specified provenance source.
+func (idx *Index) ListEntriesBySource(ctx context.Context, source string) ([]dossiers.Entry, error) {
+	query := `
+	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
+	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
+	       COALESCE(success_count, 0), COALESCE(failure_count, 0),
+	       COALESCE(last_succeeded_at, ''), COALESCE(stale_suspect, 0),
+	       COALESCE(render_as_skill, ''),
+	       verified, closes_when, created_at, updated_at
+	FROM entries
+	WHERE source = ?
+	ORDER BY id
+	`
+	rows, err := idx.db.QueryContext(ctx, query, source)
+	if err != nil {
+		return nil, fmt.Errorf("listing entries for source %s: %w", source, err)
+	}
+	defer rows.Close()
+
+	results, err := scanEntryRows(rows)
+	if err != nil {
 		return nil, err
 	}
 
@@ -320,7 +453,12 @@ func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]S
 	}
 
 	sqlQuery := `
-	SELECT e.id, e.type, e.dossier_scope, e.text, e.source, e.verified, e.closes_when, e.created_at, e.updated_at, bm25(entries_fts)
+	SELECT e.id, e.type, COALESCE(e.kind, ''), e.dossier_scope, e.text, e.source,
+	       COALESCE(e.source_doc_path, ''), COALESCE(e.source_doc_blob_sha, ''),
+	       COALESCE(e.success_count, 0), COALESCE(e.failure_count, 0),
+	       COALESCE(e.last_succeeded_at, ''), COALESCE(e.stale_suspect, 0),
+	       COALESCE(e.render_as_skill, ''),
+	       e.verified, e.closes_when, e.created_at, e.updated_at, bm25(entries_fts)
 	FROM entries_fts
 	JOIN entries e ON entries_fts.rowid = e.rowid
 	WHERE entries_fts MATCH ?
@@ -335,15 +473,24 @@ func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]S
 	var results []ScoredEntry
 	for rows.Next() {
 		var e dossiers.Entry
-		var typeStr string
+		var typeStr, kindStr string
 		var source, verified, closesWhen, createdAtStr, updatedAtStr sql.NullString
+		var staleSuspectInt int
 		var rawBM25 float64
 		if err := rows.Scan(
 			&e.ID,
 			&typeStr,
+			&kindStr,
 			&e.DossierScope,
 			&e.Text,
 			&source,
+			&e.SourceDocPath,
+			&e.SourceDocBlobSHA,
+			&e.SuccessCount,
+			&e.FailureCount,
+			&e.LastSucceededAt,
+			&staleSuspectInt,
+			&e.RenderAsSkill,
 			&verified,
 			&closesWhen,
 			&createdAtStr,
@@ -353,7 +500,12 @@ func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]S
 			return nil, fmt.Errorf("scanning search result: %w", err)
 		}
 		e.Type = dossiers.EntryType(typeStr)
+		e.Kind = dossiers.CognitiveKind(kindStr)
+		if !e.Kind.Valid() {
+			e.Kind = dossiers.DeriveCognitiveKind(e.Type)
+		}
 		e.Source = source.String
+		e.StaleSuspect = staleSuspectInt != 0
 		e.Verified = verified.String
 		e.ClosesWhen = closesWhen.String
 		e.CreatedAt = parseTime(createdAtStr.String)

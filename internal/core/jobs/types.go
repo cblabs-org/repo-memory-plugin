@@ -14,18 +14,20 @@ import (
 type Kind string
 
 const (
-	KindCompact   Kind = "compact"
-	KindTriage    Kind = "triage"
-	KindExtract   Kind = "extract"
-	KindReconcile Kind = "reconcile"
-	KindVerify    Kind = "verify"
-	KindPublish   Kind = "publish"
-	KindBrief     Kind = "brief"
-	KindDejavu    Kind = "dejavu"
-	KindRecheck   Kind = "recheck"
-	KindReport    Kind = "report"
-	KindCapture   Kind = "capture"
-	KindSweep     Kind = "sweep"
+	KindCompact        Kind = "compact"
+	KindTriage         Kind = "triage"
+	KindExtract        Kind = "extract"
+	KindReconcile      Kind = "reconcile"
+	KindVerify         Kind = "verify"
+	KindPublish        Kind = "publish"
+	KindBrief          Kind = "brief"
+	KindDejavu         Kind = "dejavu"
+	KindRecheck        Kind = "recheck"
+	KindReport         Kind = "report"
+	KindCapture        Kind = "capture"
+	KindSweep          Kind = "sweep"
+	KindSeedDocs       Kind = "seed-docs"
+	KindDreamFreshness Kind = "dream-freshness"
 )
 
 // Valid returns true if the Kind is recognized.
@@ -33,7 +35,7 @@ func (k Kind) Valid() bool {
 	switch k {
 	case KindCompact, KindTriage, KindExtract, KindReconcile, KindVerify,
 		KindPublish, KindBrief, KindDejavu, KindRecheck, KindReport,
-		KindCapture, KindSweep:
+		KindCapture, KindSweep, KindSeedDocs, KindDreamFreshness:
 		return true
 	default:
 		return false

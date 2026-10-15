@@ -109,6 +109,13 @@ func TestStateHelpers(t *testing.T) {
 	if jobs.StateRunning.IsTerminal() {
 		t.Error("expected StateRunning not to be terminal")
 	}
+
+	if !jobs.KindSeedDocs.Valid() {
+		t.Error("expected KindSeedDocs to be valid")
+	}
+	if !jobs.KindDreamFreshness.Valid() {
+		t.Error("expected KindDreamFreshness to be valid")
+	}
 }
 
 func TestDefaultBackoff(t *testing.T) {

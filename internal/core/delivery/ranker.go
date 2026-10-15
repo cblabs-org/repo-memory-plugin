@@ -18,14 +18,18 @@ type RankedEntry struct {
 const DefaultMinRelevanceScore = 50
 
 var typeOrderRanking = map[dossiers.EntryType]int{
-	dossiers.EntryTypeInvariant:        80,
-	dossiers.EntryTypeFailureSignature: 60,
-	dossiers.EntryTypeRuledOut:         50,
-	dossiers.EntryTypeGotcha:           40,
-	dossiers.EntryTypeDecision:         30,
-	dossiers.EntryTypeProcedure:        20,
-	dossiers.EntryTypeInterface:        10,
-	dossiers.EntryTypeOpenIssue:        5,
+	dossiers.EntryTypeInvariant:         80,
+	dossiers.EntryTypeContract:          80,
+	dossiers.EntryTypeConvention:        80,
+	dossiers.EntryTypeFailureSignature:  60,
+	dossiers.EntryTypeRuledOut:          50,
+	dossiers.EntryTypeGotcha:            40,
+	dossiers.EntryTypeExternalBehaviour: 40,
+	dossiers.EntryTypeDecision:          30,
+	dossiers.EntryTypeProcedure:         20,
+	dossiers.EntryTypeRecipe:            20,
+	dossiers.EntryTypeInterface:         10,
+	dossiers.EntryTypeOpenIssue:         5,
 }
 
 func RankEntries(entries []dossiers.Entry, targetAnchors []string, ftsScores ...map[string]float64) []RankedEntry {

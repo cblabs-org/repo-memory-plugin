@@ -2,6 +2,7 @@ package index_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -782,3 +783,216 @@ func TestUpsertAndReplaceEntry_NoOrphanFTSOrDuplicateChildren(t *testing.T) {
 		t.Errorf("expected 1 error pattern for 'go vet', got %v", vetPatterns)
 	}
 }
+
+func TestV2_2_CognitiveLifecyclesAndProvenance(t *testing.T) {
+	idx, cleanup := setupTestIndex(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	recEntry := dossiers.Entry{
+		ID:               "rec-v22-001",
+		Type:             dossiers.EntryTypeRecipe,
+		Kind:             dossiers.CognitiveKindProcedural,
+		DossierScope:     "core/index",
+		Text:             "Rebuild SQLite index safely with migration checks",
+		Anchors:          []string{"internal/core/index/index.go"},
+		Source:           ops.SourceDocSeed,
+		SourceDocPath:    "docs/index-guide.md",
+		SourceDocBlobSHA: "deadbeef12345678",
+		SuccessCount:     7,
+		FailureCount:     2,
+		LastSucceededAt:  "2026-10-15T15:00:00Z",
+		StaleSuspect:     true,
+		RenderAsSkill:    "rm-rebuild-index",
+		Verified:         "2026-10-15",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+
+	// 1. UpsertEntry & GetEntry
+	if err := idx.UpsertEntry(ctx, recEntry); err != nil {
+		t.Fatalf("UpsertEntry: %v", err)
+	}
+	got, err := idx.GetEntry(ctx, recEntry.ID)
+	if err != nil {
+		t.Fatalf("GetEntry: %v", err)
+	}
+	if got.Kind != dossiers.CognitiveKindProcedural ||
+		got.SourceDocPath != "docs/index-guide.md" ||
+		got.SourceDocBlobSHA != "deadbeef12345678" ||
+		got.SuccessCount != 7 ||
+		got.FailureCount != 2 ||
+		got.LastSucceededAt != "2026-10-15T15:00:00Z" ||
+		!got.StaleSuspect ||
+		got.RenderAsSkill != "rm-rebuild-index" {
+		t.Errorf("GetEntry mismatch on v2.2 fields: %+v", got)
+	}
+
+	// 2. InsertEntry & ListEntriesByScope & ListEntriesBySource
+	conEntry := dossiers.Entry{
+		ID:               "con-v22-002",
+		Type:             dossiers.EntryTypeContract,
+		DossierScope:     "core/index",
+		Text:             "All index migrations must be idempotent",
+		Anchors:          []string{"internal/core/index/index.go"},
+		Source:           ops.SourceDocSeed,
+		SourceDocPath:    "docs/contracts.md",
+		SourceDocBlobSHA: "cafebabe87654321",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := idx.InsertEntry(ctx, conEntry); err != nil {
+		t.Fatalf("InsertEntry: %v", err)
+	}
+
+	byScope, err := idx.ListEntriesByScope(ctx, "core/index")
+	if err != nil {
+		t.Fatalf("ListEntriesByScope: %v", err)
+	}
+	if len(byScope) != 2 {
+		t.Fatalf("expected 2 entries by scope, got %d", len(byScope))
+	}
+	if byScope[0].ID != "con-v22-002" || byScope[0].Kind != dossiers.CognitiveKindSemantic || byScope[0].SourceDocBlobSHA != "cafebabe87654321" {
+		t.Errorf("unexpected conEntry in ListEntriesByScope: %+v", byScope[0])
+	}
+
+	bySource, err := idx.ListEntriesBySource(ctx, ops.SourceDocSeed)
+	if err != nil {
+		t.Fatalf("ListEntriesBySource: %v", err)
+	}
+	if len(bySource) != 2 {
+		t.Fatalf("expected 2 entries by source doc-seed, got %d", len(bySource))
+	}
+	if len(bySource[1].Anchors) != 1 || bySource[1].Anchors[0] != "internal/core/index/index.go" || !bySource[1].StaleSuspect {
+		t.Errorf("unexpected recEntry in ListEntriesBySource: %+v", bySource[1])
+	}
+
+	emptyBySource, err := idx.ListEntriesBySource(ctx, "nonexistent-source")
+	if err != nil {
+		t.Fatalf("ListEntriesBySource empty: %v", err)
+	}
+	if emptyBySource == nil || len(emptyBySource) != 0 {
+		t.Errorf("expected non-nil empty slice, got %v", emptyBySource)
+	}
+
+	// 3. SearchEntriesWithScore preserves v2.2 fields
+	scored, err := idx.SearchEntriesWithScore(ctx, "migration")
+	if err != nil {
+		t.Fatalf("SearchEntriesWithScore: %v", err)
+	}
+	if len(scored) != 1 || scored[0].Entry.ID != "rec-v22-001" || scored[0].Entry.RenderAsSkill != "rm-rebuild-index" || scored[0].Entry.SuccessCount != 7 {
+		t.Errorf("unexpected SearchEntriesWithScore result: %+v", scored)
+	}
+
+	// 4. RebuildFromOpLog preserves v2.2 fields
+	opsDir := t.TempDir()
+	writer := ops.NewWriter(opsDir)
+	batch := ops.OpBatch{
+		Version:   1,
+		BatchID:   ops.NewBatchID(),
+		CreatedAt: now,
+		Ops: []ops.Op{
+			{
+				Type:         ops.OpAdd,
+				EntryID:      "rec-rebuild-001",
+				DossierScope: "core/index",
+				Timestamp:    now,
+				Source:       ops.SourceDocSeed,
+				Fields: map[string]any{
+					"entry_type":          "recipe",
+					"text":                "Run go test -race before committing",
+					"anchors":             []any{"internal/core/index/entries.go"},
+					"source_doc_path":     "docs/testing.md",
+					"source_doc_blob_sha": "feedface9999",
+					"success_count":       4,
+					"failure_count":       1,
+					"last_succeeded_at":   "2026-10-15T16:00:00Z",
+					"stale_suspect":       true,
+					"render_as_skill":     "rm-test-race",
+				},
+			},
+		},
+	}
+	if err := writer.Write(batch); err != nil {
+		t.Fatalf("Write batch: %v", err)
+	}
+	if err := idx.RebuildFromOpLog(ctx, ops.NewReader(opsDir)); err != nil {
+		t.Fatalf("RebuildFromOpLog: %v", err)
+	}
+	rebuilt, err := idx.GetEntry(ctx, "rec-rebuild-001")
+	if err != nil {
+		t.Fatalf("GetEntry after rebuild: %v", err)
+	}
+	if rebuilt.Kind != dossiers.CognitiveKindProcedural ||
+		rebuilt.SourceDocPath != "docs/testing.md" ||
+		rebuilt.SourceDocBlobSHA != "feedface9999" ||
+		rebuilt.SuccessCount != 4 ||
+		rebuilt.FailureCount != 1 ||
+		rebuilt.LastSucceededAt != "2026-10-15T16:00:00Z" ||
+		!rebuilt.StaleSuspect ||
+		rebuilt.RenderAsSkill != "rm-test-race" {
+		t.Errorf("RebuildFromOpLog did not preserve v2.2 fields: %+v", rebuilt)
+	}
+}
+
+func TestNewIndex_AutoMigratesLegacyEntriesTable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	// Create a pre-v2.2 entries table without the 8 new columns
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open legacy: %v", err)
+	}
+	_, err = rawDB.Exec(`
+		CREATE TABLE entries (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			dossier_scope TEXT NOT NULL,
+			text TEXT NOT NULL,
+			source TEXT,
+			verified TEXT,
+			closes_when TEXT,
+			created_at TEXT,
+			updated_at TEXT
+		);
+		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
+		VALUES ('inv-legacy-1', 'invariant', 'core/legacy', 'Legacy invariant entry', 'seed', '', '', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z');
+	`)
+	if err != nil {
+		rawDB.Close()
+		t.Fatalf("creating legacy schema: %v", err)
+	}
+	rawDB.Close()
+
+	// Open via NewIndex — must auto-migrate via ALTER TABLE without error
+	idx, err := index.NewIndex(dbPath)
+	if err != nil {
+		t.Fatalf("NewIndex on legacy db failed: %v", err)
+	}
+	defer idx.Close()
+
+	ctx := context.Background()
+	got, err := idx.GetEntry(ctx, "inv-legacy-1")
+	if err != nil {
+		t.Fatalf("GetEntry on migrated legacy row: %v", err)
+	}
+	if got.Kind != dossiers.CognitiveKindSemantic {
+		t.Errorf("expected derived Kind %q for legacy row with empty kind column, got %q", dossiers.CognitiveKindSemantic, got.Kind)
+	}
+
+	// Verify writing a new v2.2 entry succeeds on the migrated table
+	if err := idx.UpsertEntry(ctx, dossiers.Entry{
+		ID:               "con-migrated-2",
+		Type:             dossiers.EntryTypeContract,
+		DossierScope:     "core/legacy",
+		Text:             "New contract after migration",
+		Source:           ops.SourceDocSeed,
+		SourceDocPath:    "docs/README.md",
+		SourceDocBlobSHA: "abcdef012345",
+	}); err != nil {
+		t.Fatalf("UpsertEntry after migration failed: %v", err)
+	}
+}
+

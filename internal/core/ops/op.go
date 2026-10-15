@@ -24,6 +24,7 @@ const (
 	SourceTurnNote      = "turn-note"
 	SourceSidecar       = "sidecar"
 	SourceSeed          = "seed"
+	SourceDocSeed       = "doc-seed"
 	SourcePA            = "pa"
 	SourceHuman         = "human"
 	SourceConsolidation = "consolidation"
