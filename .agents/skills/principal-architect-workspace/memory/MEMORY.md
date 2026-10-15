@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-11-v2-doc-seeding-and-lifecycles | **Active (WO0/5)** — Executing stacked on `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (`14c449c`) | Dossiers (`CognitiveKind`, `{section?}`), Ops (`doc-seed`), Index, Seeder (`DocSeedSource`, `seed-docs`), Tick (`dream-freshness`) | [PROJECT.md](../pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md) |
+| pr-11-v2-doc-seeding-and-lifecycles | **Active (WO1/5)** — WO1 complete (`c9640fc`), WO2 in progress | Dossiers (`CognitiveKind`, `{section?}`), Ops (`doc-seed`), Index, Seeder (`DocSeedSource`, `seed-docs`), Tick (`dream-freshness`) | [PROJECT.md](../pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Ready to resume at WO4 (`wo4-dry-run`) now that `pr-10b` (PR #18) is complete | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
