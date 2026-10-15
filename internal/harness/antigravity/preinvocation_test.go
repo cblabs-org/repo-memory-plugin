@@ -165,14 +165,17 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	}
 	
 	step := resp.InjectSteps[0]
-	ephMsg := step.EphemeralMessage
-	if ephMsg == "" {
-		t.Fatalf("expected ephemeralMessage entry, got empty")
+	userMsg := step.UserMessage
+	if userMsg == "" {
+		t.Fatalf("expected userMessage entry, got empty")
+	}
+	if step.EphemeralMessage != "" {
+		t.Errorf("expected empty ephemeralMessage on task-start, got %q", step.EphemeralMessage)
 	}
 	
 	// Check tag
-	if !strings.Contains(ephMsg, "[repo-memory test-1]") {
-		t.Errorf("ephemeralMessage missing tag, got: %s", ephMsg)
+	if !strings.Contains(userMsg, "[repo-memory test-1]") {
+		t.Errorf("userMessage missing tag, got: %s", userMsg)
 	}
 }
 
@@ -263,18 +266,24 @@ func TestPreInvocation_AboutToEdit(t *testing.T) {
 	}
 
 	var ephemeralMsg string
-	var hasSystemMsg bool
+	var hasUserMsg bool
 	for _, step := range resp.InjectSteps {
 		if step.EphemeralMessage != "" {
+			if step.UserMessage != "" {
+				t.Errorf("expected about-to-edit step to have empty userMessage, got %q", step.UserMessage)
+			}
 			ephemeralMsg = step.EphemeralMessage
 		}
-		if step.EphemeralMessage != "" && !strings.Contains(step.EphemeralMessage, "[repo-memory]") {
-			hasSystemMsg = true
+		if step.UserMessage != "" {
+			if step.EphemeralMessage != "" {
+				t.Errorf("expected first-touch step to have empty ephemeralMessage, got %q", step.EphemeralMessage)
+			}
+			hasUserMsg = true
 		}
 	}
 
-	if !hasSystemMsg {
-		t.Errorf("expected first-touch ephemeralMessage to be present")
+	if !hasUserMsg {
+		t.Errorf("expected first-touch userMessage to be present")
 	}
 
 	wantEphemeral := "[repo-memory] Check injected entries above before editing file.go"
@@ -332,7 +341,7 @@ func TestPreInvocation_CompactionAndReinjection(t *testing.T) {
 	ledger := delivery.NewLedger(convID)
 	ledger.RecordInjection(delivery.InjectionRecord{
 		EntryID:   "reinj-1",
-		Channel:   "systemMessage",
+		Channel:   delivery.ChannelUser,
 		Moment:    delivery.MomentTaskStart,
 		StepIndex: 2,
 	})
@@ -380,9 +389,12 @@ CHECKPOINT
 		t.Fatalf("expected inject steps, got none")
 	}
 
-	ephMsg := resp.InjectSteps[0].EphemeralMessage
-	if !strings.Contains(ephMsg, "Must preserve state after compaction") {
-		t.Errorf("expected reinjection text in ephemeral message, got: %s", ephMsg)
+	userMsg := resp.InjectSteps[0].UserMessage
+	if !strings.Contains(userMsg, "Must preserve state after compaction") {
+		t.Errorf("expected reinjection text in userMessage, got: %s", userMsg)
+	}
+	if resp.InjectSteps[0].EphemeralMessage != "" {
+		t.Errorf("expected empty ephemeralMessage on reinjection, got: %s", resp.InjectSteps[0].EphemeralMessage)
 	}
 
 	// verify dedup is cleared
@@ -480,10 +492,16 @@ func TestPreInvocation_AntigravityNativeToolCalls(t *testing.T) {
 
 	var hasContext, hasWarning bool
 	for _, step := range resp.InjectSteps {
-		if strings.Contains(step.EphemeralMessage, "Must preserve service.go invariants") {
+		if strings.Contains(step.UserMessage, "Must preserve service.go invariants") {
+			if step.EphemeralMessage != "" {
+				t.Errorf("expected empty ephemeralMessage on context step, got %q", step.EphemeralMessage)
+			}
 			hasContext = true
 		}
 		if strings.Contains(step.EphemeralMessage, "before editing service.go") {
+			if step.UserMessage != "" {
+				t.Errorf("expected empty userMessage on about-to-edit step, got %q", step.UserMessage)
+			}
 			hasWarning = true
 		}
 	}
@@ -493,6 +511,157 @@ func TestPreInvocation_AntigravityNativeToolCalls(t *testing.T) {
 	}
 	if !hasWarning {
 		t.Errorf("expected warning ephemeralMessage for service.go, got steps: %+v", resp.InjectSteps)
+	}
+}
+
+func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
+	ctx := context.Background()
+	workspace, idxPath := setupEnrolledWorkspace(t)
+	dataDir := os.Getenv("REPO_MEMORY_DATA_DIR")
+	repoID := "test-repo"
+	convID := "conv-rewind-rearm"
+
+	filePath := filepath.Join(workspace, "service.go")
+	if err := os.WriteFile(filePath, []byte("package service\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := dossiers.Entry{
+		ID:           "native-entry-1",
+		Type:         dossiers.EntryTypeInvariant,
+		DossierScope: "core",
+		Text:         "Must preserve service.go invariants",
+		Anchors:      []string{"service.go"},
+	}
+	if err := idx.UpsertEntry(ctx, entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.UpsertEntryAnchors(ctx, entry.ID, entry.Anchors); err != nil {
+		t.Fatal(err)
+	}
+	idx.Close()
+
+	transcriptDir := filepath.Join(t.TempDir(), "logs")
+	if err := os.MkdirAll(transcriptDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(transcriptDir, "transcript_full.jsonl")
+
+	step0 := map[string]any{"step_index": 0, "type": "USER_INPUT", "content": "Please check service.go"}
+	step1 := map[string]any{
+		"step_index": 1,
+		"type":       "PLANNER_RESPONSE",
+		"tool_calls": []map[string]any{
+			{
+				"name": "view_file",
+				"args": map[string]any{
+					"AbsolutePath": filePath,
+				},
+			},
+		},
+	}
+	step2 := map[string]any{"step_index": 2, "type": "TOOL_RESPONSE", "content": "package service"}
+	step3 := map[string]any{"step_index": 3, "type": "PLANNER_RESPONSE", "content": "Checked service.go"}
+
+	b0, _ := json.Marshal(step0)
+	b1, _ := json.Marshal(step1)
+	b2, _ := json.Marshal(step2)
+	b3, _ := json.Marshal(step3)
+
+	content4 := strings.Join([]string{string(b0), string(b1), string(b2), string(b3)}, "\n") + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(content4), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload4 := `{
+		"conversationId": "` + convID + `",
+		"invocationNum": 1,
+		"initialNumSteps": 4,
+		"transcriptPath": "` + transcriptPath + `",
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	// 1. Initial invocation with 4-step transcript touching service.go
+	out1, err := HandlePreInvocation(ctx, []byte(payload4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp1 InjectStepsResponse
+	if err := json.Unmarshal(out1, &resp1); err != nil {
+		t.Fatalf("unmarshal out1: %v", err)
+	}
+	if len(resp1.InjectSteps) == 0 || !strings.Contains(resp1.InjectSteps[0].UserMessage, "Must preserve service.go invariants") {
+		t.Fatalf("expected userMessage injection on initial call, got %+v", resp1.InjectSteps)
+	}
+	if resp1.InjectSteps[0].EphemeralMessage != "" {
+		t.Errorf("expected empty ephemeralMessage, got %q", resp1.InjectSteps[0].EphemeralMessage)
+	}
+
+	loaded1, err := LoadLedger(dataDir, repoID, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded1.LastKnownStepCount != 4 {
+		t.Errorf("got LastKnownStepCount = %d, want 4", loaded1.LastKnownStepCount)
+	}
+	if !loaded1.InjectedSet["native-entry-1"] {
+		t.Errorf("expected InjectedSet[\"native-entry-1\"] == true")
+	}
+
+	// 2. Subsequent invocation with the same 4-step transcript is deduplicated
+	out2, err := HandlePreInvocation(ctx, []byte(payload4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out2) != "{}" {
+		t.Errorf("expected deduplicated '{}' on second invocation, got %s", string(out2))
+	}
+
+	// 3. Rewind transcript to 2 steps (len(steps) < ledger.LastKnownStepCount)
+	content2 := strings.Join([]string{string(b0), string(b1)}, "\n") + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload2 := `{
+		"conversationId": "` + convID + `",
+		"invocationNum": 1,
+		"initialNumSteps": 2,
+		"transcriptPath": "` + transcriptPath + `",
+		"workspacePaths": ["` + workspace + `"]
+	}`
+
+	out3, err := HandlePreInvocation(ctx, []byte(payload2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp3 InjectStepsResponse
+	if err := json.Unmarshal(out3, &resp3); err != nil {
+		t.Fatalf("unmarshal out3: %v", err)
+	}
+	if len(resp3.InjectSteps) == 0 || !strings.Contains(resp3.InjectSteps[0].UserMessage, "Must preserve service.go invariants") {
+		t.Fatalf("expected userMessage re-injection after rewind, got %+v", resp3.InjectSteps)
+	}
+	if resp3.InjectSteps[0].EphemeralMessage != "" {
+		t.Errorf("expected empty ephemeralMessage after rewind, got %q", resp3.InjectSteps[0].EphemeralMessage)
+	}
+
+	loaded3, err := LoadLedger(dataDir, repoID, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded3.LastKnownStepCount != 2 {
+		t.Errorf("got LastKnownStepCount = %d after rewind, want 2", loaded3.LastKnownStepCount)
+	}
+	if loaded3.LastProcessedStepIndex != 1 {
+		t.Errorf("got LastProcessedStepIndex = %d after rewind, want 1", loaded3.LastProcessedStepIndex)
+	}
+	if !loaded3.InjectedSet["native-entry-1"] {
+		t.Errorf("expected InjectedSet[\"native-entry-1\"] == true after rewind re-injection")
 	}
 }
 

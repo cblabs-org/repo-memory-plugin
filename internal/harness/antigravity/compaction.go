@@ -100,6 +100,6 @@ func BuildReinjection(ctx context.Context, idx *index.Index, lost []delivery.Inj
 	formatted := delivery.FormatEntries(selected)
 
 	return &InjectStep{
-		EphemeralMessage: formatted,
+		UserMessage: formatted,
 	}, nil
 }

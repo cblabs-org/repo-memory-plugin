@@ -29,6 +29,7 @@ type Ledger struct {
 	LastHandledCheckpointStep int                 `json:"last_handled_checkpoint_step,omitempty"`
 	PendingGates              map[string][]string `json:"pending_gates,omitempty"`
 	LastProcessedStepIndex    int                 `json:"last_processed_step_index,omitempty"`
+	LastKnownStepCount        int                 `json:"last_known_step_count,omitempty"`
 	InjectedSet               map[string]bool     `json:"injected_set,omitempty"`
 }
 
@@ -117,9 +118,18 @@ func (l *Ledger) AcknowledgePendingGates(file string) {
 }
 
 func (l *Ledger) RearmDedup() {
-	l.SeenDossiers = make(map[string]bool)
-	l.SeenAnchors = make(map[string]bool)
-	l.InjectedSet = make(map[string]bool)
+	clear(l.SeenDossiers)
+	if l.SeenDossiers == nil {
+		l.SeenDossiers = make(map[string]bool)
+	}
+	clear(l.SeenAnchors)
+	if l.SeenAnchors == nil {
+		l.SeenAnchors = make(map[string]bool)
+	}
+	clear(l.InjectedSet)
+	if l.InjectedSet == nil {
+		l.InjectedSet = make(map[string]bool)
+	}
 }
 
 func (l *Ledger) HasInjected(entryID string) bool {
