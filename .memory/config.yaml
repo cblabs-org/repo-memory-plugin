@@ -1,6 +1,11 @@
 # repo-memory-plugin subsystem configuration
 # Proposed by PA based on directory structure and module analysis
 
+doc_seeds:
+  - "docs/antigravity-hooks-reference.md"
+  - "docs/design-v2-distillation-retrieval.md"
+  - "docs/addendum-a-provenance-and-hardening.md"
+
 subsystems:
   core-infrastructure:
     description: "Config loading, data directory layout, storage registry, and cross-cutting types"
