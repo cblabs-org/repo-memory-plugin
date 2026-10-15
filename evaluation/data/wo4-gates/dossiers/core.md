@@ -1,10 +1,5 @@
 # core
 
-## Ruled out, failure signatures and gotchas
-
-### [seed-ce39aaca] (none)
-`ruled-out · anchors: internal/core/views/generator.go, MAP.md, SIGNATURES.md, DECISIONS.md, cmd/repo-memory/cmd_views.go, .memory/views`
-
 ## Decisions
 
 ### [seed-01e79d6d] Symlinks & Subdirectory Enrolment: Registered paths are indexed both as raw paths and evaluated symlink paths (e.g. `/var` vs `/private/var` on macOS). `FindRegistryEntry` also supports subdirectories within enrolled repositories so hooks invoked from subfolders match correctly.

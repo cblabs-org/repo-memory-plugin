@@ -18,8 +18,3 @@
 
 ### [seed-b4f1cf3d] Replaced `claims.Claim` with a local `publish.Item` in `internal/core/pipeline/publish/local.go` rather than deleting `publish`, ensuring that the local publish pipeline and tests remained intact and cleanly decoupled from the deleted v1 `claims` package.
 `decision · anchors: internal/core/pipeline/triage, internal/core/pipeline/extract, internal/core/pipeline/reconcile, internal/core/pipeline/verify, internal/core/claims, internal/core/events, internal/core/views, cmd/repo-memory/cmd_views.go, internal/core/tick/pipeline.go, claims/store, cmd/repo-memory/cmd_reindex.go, claims/store, internal/core/index/index.go, internal/core/index/rebuild.go, internal/core/pipeline/publish/local.go, local_test.go, internal/core/index/v2_test.go, internal/core/tick/pipeline_test.go`
-
-## Open issues
-
-### [seed-95735b85] (none)
-`open-issue · anchors: internal/core/pipeline/triage/rules.go, internal/core/pipeline/triage/windows.go, internal/core/pipeline/triage/synopsis.go, internal/core/pipeline/triage/triage.go, internal/core/pipeline/triage/rules_test.go, internal/core/pipeline/triage/windows_test.go, internal/core/pipeline/triage/synopsis_test.go`

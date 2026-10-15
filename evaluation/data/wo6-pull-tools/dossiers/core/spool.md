@@ -15,8 +15,3 @@
 
 ### [seed-fbcb7efb] Single-pass hashing: When performing prefix verification during incremental copying, bytes `0` to `state.ByteOffset` are hashed; if the prefix matches, subsequent appended bytes are piped through the same hasher via `io.TeeReader`, computing the complete new prefix hash in a single pass without re-reading the entire file.
 `decision · anchors: internal/core/spool/doc.go, internal/core/spool/entry.go, internal/core/spool/entry_test.go, internal/core/spool/writer.go, internal/core/spool/writer_test.go, internal/core/spool/reader.go, internal/core/spool/reader_test.go, internal/core/spool/copy.go, internal/core/spool/copy_test.go`
-
-## Open issues
-
-### [seed-ad1c898f] (none)
-`open-issue · anchors: internal/core/spool/doc.go, internal/core/spool/entry.go, internal/core/spool/entry_test.go, internal/core/spool/writer.go, internal/core/spool/writer_test.go, internal/core/spool/reader.go, internal/core/spool/reader_test.go, internal/core/spool/copy.go, internal/core/spool/copy_test.go`

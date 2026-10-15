@@ -15,18 +15,6 @@
     },
     {
       "type": "add",
-      "entry_id": "seed-ce39aaca",
-      "dossier_scope": "root",
-      "timestamp": "2026-10-04T13:49:55+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": null,
-        "entry_type": "ruled-out",
-        "text": "(none)"
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "seed-6823189b",
       "dossier_scope": "root",
       "timestamp": "2026-10-04T13:49:55+01:00",

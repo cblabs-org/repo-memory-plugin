@@ -88,28 +88,6 @@
         "entry_type": "ruled-out",
         "text": "When writing files on Windows, file handles must be closed before calling `os.Rename`. Attempting to rename an open handle results in `ERROR_ACCESS_DENIED`. The writer ensures handles are synced and closed before renaming, with a retry backoff loop for transient file indexer locks."
       }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-ad1c898f",
-      "dossier_scope": "core/spool",
-      "timestamp": "2026-10-02T08:10:17+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/spool/doc.go",
-          "internal/core/spool/entry.go",
-          "internal/core/spool/entry_test.go",
-          "internal/core/spool/writer.go",
-          "internal/core/spool/writer_test.go",
-          "internal/core/spool/reader.go",
-          "internal/core/spool/reader_test.go",
-          "internal/core/spool/copy.go",
-          "internal/core/spool/copy_test.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "(none)"
-      }
     }
   ],
   "created_at": "2026-10-02T07:10:17Z",

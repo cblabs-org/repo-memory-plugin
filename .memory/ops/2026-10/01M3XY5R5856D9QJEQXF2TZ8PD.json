@@ -36,18 +36,6 @@
         "entry_type": "ruled-out",
         "text": "The `ep.Header.ID` doesn't exist, it is `EpisodeID`."
       }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-95735b85",
-      "dossier_scope": "root",
-      "timestamp": "2026-10-02T10:12:25+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": null,
-        "entry_type": "open-issue",
-        "text": "(none)"
-      }
     }
   ],
   "created_at": "2026-10-02T09:12:25Z",

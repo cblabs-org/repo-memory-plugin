@@ -63,30 +63,33 @@ Remediate all 5 findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`, `[MINOR-2]`, `[
 
 ## Verification Criteria
 
-- [ ] `go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
-- [ ] `go vet ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
-- [ ] `GOOS=windows go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
-- [ ] `go test -race ./cmd/... ./internal/...` passes across all 25 testable packages.
-- [ ] `git grep -i '"text": "(none)' .memory/ evaluation/data/` returns 0 matches.
-- [ ] `~/.local/bin/repo-memory` is rebuilt and `~/.local/bin/repo-memory reindex .` succeeds.
+- [x] `go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
+- [x] `go vet ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
+- [x] `GOOS=windows go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` passes.
+- [x] `go test -race ./cmd/... ./internal/...` passes across all 25 testable packages.
+- [x] `git grep -i '"text": "(none)' .memory/ evaluation/data/` returns 0 matches.
+- [x] `~/.local/bin/repo-memory` is rebuilt and `~/.local/bin/repo-memory reindex .` succeeds.
 
 ---
 
 ## Completion Report
 
-*(To be filled in by the Worker after PA approval)*
-
 ### Status
-(pending)
+✅ Complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/seed/convert.go`, `internal/core/seed/seed_test.go`, `internal/core/seed/gc_test.go`, `.memory/`, `evaluation/data/*/` — updated `IsJunkText` to match parenthesized/punctuated placeholders (`(none)`, `(none).`, `(n/a)`, `(tbd)`, `(todo)`, `-`), added unit tests, and ran `repo-memory ops gc` across `.memory/` and all 8 `evaluation/data/<wo>` snapshots (`[MAJOR-1]`)
+- `internal/core/delivery/ledger.go`, `internal/harness/antigravity/ledger_store.go`, `internal/harness/antigravity/compaction.go`, `internal/harness/antigravity/preinvocation.go`, `internal/harness/antigravity/preinvocation_test.go` — removed `,omitempty` from `InjectedSet` and `LastHandledCheckpointStep`, preserved unmarshaled `InjectedSet` on `loadLedgerLocked` without overwriting from historical `Injections`, derived `CheckpointStepIdx` from preceding step index on `CHECKPOINT` lines, and reset `LastHandledCheckpointStep = -1` when rewinding past a checkpoint (`[MAJOR-2]`)
+- `internal/core/dossiers/projector.go`, `internal/core/dossiers/writer.go`, `internal/core/dossiers/dossiers_test.go` — deleted empty shell source dossiers in `moveEntry` and skipped 0-entry/0-history dossiers in `Writer.WriteAll` (`[MINOR-1]`)
+- `internal/core/seed/parser.go`, `internal/core/seed/scanner.go`, `internal/core/seed/seed_test.go` — added `stripAnchorSymbol` and `isValidAnchorSymbol` so `path#symbol` and `path:symbol` anchors are accepted by `IsValidAnchorPathSyntax`, `extractBacktickPaths`, and `buildRepoPathValidator` (`[MINOR-2]`)
+- `internal/core/index/index.go` — added `_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)` to `NewReadOnlyIndex` (`[MINOR-3]`)
 
 ### Decisions Made
-- Decision description and rationale
+- Preserved unmarshaled `InjectedSet` in `loadLedgerLocked` whenever `"injected_set"` is present in JSON (even when empty `{}`), falling back to reconstructing from post-checkpoint non-`about-to-edit:` `Injections` only when loading legacy JSON files where `InjectedSet == nil`.
+- Derived `CheckpointStepIdx` in `DetectCompaction` from the preceding non-checkpoint step index when a raw `CHECKPOINT` line has `StepIndex == 0`, and reset `LastHandledCheckpointStep = -1` on rewind when no checkpoint remains or `LastHandledCheckpointStep > maxRemainingStepIdx`.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+- Raw `CHECKPOINT` lines parsed by `ParseTranscript` have `StepIndex == 0` unless derived from the preceding step; relying on `steps[checkpointIdx].StepIndex` directly caused `LastHandledCheckpointStep` to remain `0` instead of the actual checkpoint position.
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+- None.

@@ -33,6 +33,17 @@ func DetectCompaction(steps []Step, ledger *delivery.Ledger) CompactionResult {
 
 	result.Detected = true
 	result.CheckpointStepIdx = steps[checkpointIdx].StepIndex
+	if result.CheckpointStepIdx == 0 && checkpointIdx > 0 {
+		for i := checkpointIdx - 1; i >= 0; i-- {
+			if !steps[i].IsCheckpoint && !steps[i].IsGap && steps[i].StepIndex > 0 {
+				result.CheckpointStepIdx = steps[i].StepIndex + 1
+				break
+			}
+		}
+		if result.CheckpointStepIdx == 0 {
+			result.CheckpointStepIdx = checkpointIdx
+		}
+	}
 
 	var nextStepIdx = 999999999
 	for i := checkpointIdx + 1; i < len(steps); i++ {

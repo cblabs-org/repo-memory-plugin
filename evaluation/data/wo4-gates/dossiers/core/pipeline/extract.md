@@ -18,8 +18,3 @@
 
 ### [seed-e96d91d7] Used heuristic token counting (`bytes / 4`) as standard across the project.
 `decision · anchors: internal/core/pipeline/extract/packer.go, internal/core/pipeline/extract/extractor.go, internal/core/pipeline/extract/extractor_test.go, prompts/extract/prompt.md`
-
-## Open issues
-
-### [seed-1c3bab6e] (none)
-`open-issue · anchors: internal/core/index/index.go, internal/core/pipeline/extract/extractor.go, internal/core/tick/tick.go, internal/core/tick/pipeline.go, internal/core/tick/pipeline_test.go`

@@ -77,6 +77,50 @@ func TestRunOpsGC_PrunesJunkStaleAndRepairsScopes(t *testing.T) {
 					"text":       "(pending)",
 				},
 			},
+			{
+				Type:         ops.OpAdd,
+				EntryID:      "seed-junk0003",
+				DossierScope: "core/ops",
+				Timestamp:    now,
+				Source:       ops.SourceSeed,
+				Fields: map[string]any{
+					"entry_type": "open-issue",
+					"text":       "(none)",
+				},
+			},
+			{
+				Type:         ops.OpAdd,
+				EntryID:      "seed-junk0004",
+				DossierScope: "core/ops",
+				Timestamp:    now,
+				Source:       ops.SourceSeed,
+				Fields: map[string]any{
+					"entry_type": "open-issue",
+					"text":       "(none).",
+				},
+			},
+			{
+				Type:         ops.OpAdd,
+				EntryID:      "seed-junk0005",
+				DossierScope: "core/ops",
+				Timestamp:    now,
+				Source:       ops.SourceSeed,
+				Fields: map[string]any{
+					"entry_type": "decision",
+					"text":       "(n/a)",
+				},
+			},
+			{
+				Type:         ops.OpAdd,
+				EntryID:      "seed-junk0006",
+				DossierScope: "core/ops",
+				Timestamp:    now,
+				Source:       ops.SourceSeed,
+				Fields: map[string]any{
+					"entry_type": "ruled-out",
+					"text":       "-",
+				},
+			},
 		},
 	}
 
@@ -169,8 +213,8 @@ func TestRunOpsGC_PrunesJunkStaleAndRepairsScopes(t *testing.T) {
 	if stats.BatchesModified != 1 {
 		t.Errorf("BatchesModified = %d, want 1", stats.BatchesModified)
 	}
-	if stats.OpsRemoved != 4 {
-		t.Errorf("OpsRemoved = %d, want 4", stats.OpsRemoved)
+	if stats.OpsRemoved != 8 {
+		t.Errorf("OpsRemoved = %d, want 8", stats.OpsRemoved)
 	}
 	if stats.AnchorsRemoved != 8 {
 		t.Errorf("AnchorsRemoved = %d, want 8", stats.AnchorsRemoved)

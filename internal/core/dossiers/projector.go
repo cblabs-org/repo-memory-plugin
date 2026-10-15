@@ -369,6 +369,9 @@ func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entry
 	}
 	if found {
 		fromD.Entries = keep
+		if len(fromD.Entries) == 0 && len(fromD.History) == 0 && fromD.Title == "" && fromD.Purpose == "" {
+			delete(dossiers, fromScope)
+		}
 		var destKeep []Entry
 		for _, e := range toD.Entries {
 			if e.ID != entryID {

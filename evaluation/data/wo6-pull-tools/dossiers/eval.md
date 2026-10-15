@@ -15,8 +15,3 @@
 
 ### [seed-8f2ba13e] Used `-f` to `git add` the CLI command `cmd/repo-memory/cmd_eval.go` because `.gitignore` globally ignores anything matching `repo-memory` unless specified otherwise.
 `decision · anchors: internal/eval/dataset.go, internal/eval/store.go, internal/eval/runner.go, cmd/repo-memory/cmd_eval.go, cmd/repo-memory/main.go, internal/eval/eval_test.go`
-
-## Open issues
-
-### [seed-bceb01f9] (none)
-`open-issue · anchors: internal/eval/dataset.go, internal/eval/store.go, internal/eval/runner.go, cmd/repo-memory/cmd_eval.go, cmd/repo-memory/main.go, internal/eval/eval_test.go`
