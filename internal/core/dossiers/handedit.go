@@ -50,6 +50,35 @@ func parseMarkdownEntries(md string) map[string]parsedEntry {
 	return entries
 }
 
+func InferEntryTypeFromID(id string) EntryType {
+	switch {
+	case strings.HasPrefix(id, "inv-"):
+		return EntryTypeInvariant
+	case strings.HasPrefix(id, "con-"):
+		return EntryTypeContract
+	case strings.HasPrefix(id, "rul-"):
+		return EntryTypeRuledOut
+	case strings.HasPrefix(id, "fail-"), strings.HasPrefix(id, "err-"):
+		return EntryTypeFailureSignature
+	case strings.HasPrefix(id, "got-"):
+		return EntryTypeGotcha
+	case strings.HasPrefix(id, "dec-"):
+		return EntryTypeDecision
+	case strings.HasPrefix(id, "rec-"):
+		return EntryTypeRecipe
+	case strings.HasPrefix(id, "proc-"):
+		return EntryTypeProcedure
+	case strings.HasPrefix(id, "iface-"):
+		return EntryTypeInterface
+	case strings.HasPrefix(id, "issue-"), strings.HasPrefix(id, "iss-"):
+		return EntryTypeOpenIssue
+	case strings.HasPrefix(id, "docseed-"):
+		return EntryTypeInvariant
+	default:
+		return EntryTypeInvariant
+	}
+}
+
 func DetectHandEdits(rendered string, onDisk string, dossierScope string) ([]ops.Op, error) {
 	if rendered == onDisk {
 		return nil, nil
@@ -64,13 +93,7 @@ func DetectHandEdits(rendered string, onDisk string, dossierScope string) ([]ops
 	for id, onDiskEntry := range onDiskEntries {
 		renderedEntry, ok := renderedEntries[id]
 		if !ok {
-			entryType := string(EntryTypeInvariant)
-			for et, prefix := range EntryTypePrefixes {
-				if strings.HasPrefix(id, prefix) {
-					entryType = string(et)
-					break
-				}
-			}
+			entryType := string(InferEntryTypeFromID(id))
 
 			// Possibly a new entry added by hand, but ID must be valid. We assume it's valid.
 			newOps = append(newOps, ops.Op{
