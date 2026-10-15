@@ -1,5 +1,19 @@
 # root
 
+## Invariants & contracts
+
+### [docseed-70521f15] **Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and newly entered scope entries that are tracked in a per-session `InjectedSet`.
+`invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
+
+### [docseed-9d9196ea] The 125 v1 claims and `.memory/views/`. They are replaced by `.memory/ops/` and `.memory/dossiers/`.
+`invariant · kind: semantic · anchors: .memory/ops, .memory/dossiers · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
+
+### [docseed-dfdc29da] **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/t...
+`invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
+
+### [docseed-f9386d51] **Updating:** only the text between the markers is ever rewritten. The version tag (`v1` $\to$ `v2`) allows automatic in-place upgrades from `views/MAP.md` to `.memory/ATLAS.md`.
+`invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/addendum-a-provenance-and-hardening.md · evidence: doc:docs/addendum-a-provenance-and-hardening.md`
+
 ## Ruled out, failure signatures and gotchas
 
 ### [seed-309e02f1] PR-06b/wo2 and wo3 have unfilled completion report templates despite code being completed — excluded from selection.
@@ -28,6 +42,9 @@
 
 ### [seed-dba1dab0] The `ep.Header.ID` doesn't exist, it is `EpisodeID`.
 `ruled-out · kind: episodic`
+
+### [docseed-3d67af0d] **Optional Section Resolution (`{section?}`) & Five-Tier Scope Hierarchy:** Dossiers omit empty sections and separate ephemeral scratch (`temp:`), conversation state (`session:`), personal gitignored preferences (`user:`), branch-local unmerged work (`branch:` in `.memory/local/`), and git-tracked shared truth (`repo:` in `.memory/ops/` and `.memory/dossiers/`).
+`gotcha · kind: semantic · anchors: .memory/ops, .memory/dossiers · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
 
 ## Decisions
 
@@ -102,6 +119,26 @@
 
 ### [seed-f4bac002] Preserved `G1`/`P1` ("zero user or agent cooperation required") throughout §1, §4, and §5.1 by keeping the milestone-gated `Stop` continuation (`NO_TOOL_CALL`, `executionNum == 0`) as the primary automatic Stage 1 mechanism while framing `memory_note` strictly as an optional mid-turn override that advances the conversation mark.
 `decision · kind: episodic`
+
+## Procedures / Recipes
+
+### [docseed-11db9bc8] **Five-Tier State Scope Hierarchy & Pre-Consolidation Corroboration Gate (`VD18`, §6, §7.1):** Formalizes `temp:`, `session:`, `user:` (gitignored `<data-dir>/repos/<repo-id>/user-dossiers/`), `branch:` (`.memory/local/`), and `repo:` (`.memory/ops/` & `.memory/dossiers/`), and enforces a deterministic Pre-Consolidation Corroboration Gate requiring a passing `PostToolUse` build/test step, ver...
+`recipe · kind: procedural · anchors: .memory/ops, .memory/dossiers · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
+
+### [docseed-54e73d93] **Bootstrap (`repo-memory seed-docs`):** Scans configured markdown paths (`docs/developer/**/*.md`, `.agents/skills/**/SKILL.md`, or paths listed under `doc_seeds` in `.memory/config.yaml`) and runs `repo-memory-distiller` to extract concrete `invariant`, `gotcha`, `recipe`, and `failure-signature` entries anchored to the actual source files, build manifests, and symbols they govern.
+`recipe · kind: procedural · anchors: .memory/config.yaml · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
+
+### [docseed-72185a3f] **Ingestion (`repo-memory seed-docs`):** Discovers curated markdown files configured under `doc_seeds` in `.memory/config.yaml` (defaulting to `docs/developer/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files that do not have `generated_by: repo-memory`). Each file is passed through the preparation layer and `repo-memory-distiller` to extract concrete `invariant`, `contract`, `gotcha...
+`recipe · kind: procedural · anchors: .memory/config.yaml · source_doc: docs/addendum-a-provenance-and-hardening.md · evidence: doc:docs/addendum-a-provenance-and-hardening.md`
+
+### [docseed-b52782ec] **Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`).
+`recipe · kind: procedural · anchors: Makefile, go.mod · source_doc: docs/addendum-a-provenance-and-hardening.md · evidence: doc:docs/addendum-a-provenance-and-hardening.md`
+
+### [docseed-bb4fb8dd] **Doc-Seeded Dossiers (`repo-memory seed-docs`) & Async Freshness ("Dreaming"):** Curated in-repo documentation (`docs/developer/`, `.agents/skills/`) is distilled into anchored dossier entries (`source: doc-seed`) and kept fresh asynchronously on `git diff` changes (§7.6).
+`recipe · kind: procedural · anchors: .agents/skills · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
+
+### [docseed-bdc24763] **Doc-Seeded Dossiers & Async Doc Freshness ("Dreaming") (`VD16`, §7.6):** `repo-memory seed-docs` (`source: doc-seed`) distills curated repository documentation (`docs/developer/`, `.agents/skills/`) into code-anchored dossier entries delivered via `PreInvocation` push, paired with an async git-diff watcher in `tick` (`source_doc_path`, `source_doc_blob_sha`) that re-distills affected entries...
+`recipe · kind: procedural · anchors: .agents/skills · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
 
 ## Open issues
 

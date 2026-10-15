@@ -228,6 +228,21 @@ func TestCheckDocFreshness_DetectsModifiedAndDeletedDocs(t *testing.T) {
 	if !foundDeletedReason {
 		t.Errorf("expected history entry with RetiredReason 'source_doc_deleted: docs/arch.md', got %+v", hist)
 	}
+
+	if _, err := os.Stat(filepath.Join(repoRoot, ".memory", "dossiers", "foo.md")); !os.IsNotExist(err) {
+		t.Errorf("Step 4 expected foo.md to be removed once all active entries retired, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".memory", "dossiers", "foo.history.md")); err != nil {
+		t.Errorf("Step 4 expected foo.history.md to exist on disk: %v", err)
+	}
+	atlasBytes, err := os.ReadFile(filepath.Join(repoRoot, ".memory", "ATLAS.md"))
+	if err != nil {
+		t.Fatalf("Step 4 reading ATLAS.md: %v", err)
+	}
+	atlasStr := string(atlasBytes)
+	if strings.Contains(atlasStr, "0001-01-01T00:00:00Z") || strings.Contains(atlasStr, "| 0 |") || strings.Contains(atlasStr, "`foo`") {
+		t.Errorf("Step 4 expected ATLAS.md not to contain 0-entry foo row or zero timestamp, got:\n%s", atlasStr)
+	}
 }
 
 func TestCheckDocFreshness_DrainsDreamFreshnessJob(t *testing.T) {

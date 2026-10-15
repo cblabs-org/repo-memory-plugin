@@ -365,3 +365,82 @@ Paragraph mentioning ` + "`internal/core/scrub/scrub.go`" + ` before a sentence-
 		t.Errorf("unexpected op text: %q", gotText)
 	}
 }
+
+func TestParseDocToOps_NoPollutedScopes(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	opsDir := filepath.Join(repoRoot, ".memory", "ops")
+
+	// Create dot-prefixed and root-level files in repoRoot
+	writeTestFile(t, repoRoot, ".memory/config.yaml", "doc_seeds:\n  - docs/**/*.md\n")
+	writeTestFile(t, repoRoot, ".agents/skills/custom/SKILL.md", "---\nname: custom\ndescription: custom\n---\n# Custom\n")
+	writeTestFile(t, repoRoot, ".agents/agents/distiller.md", "---\nname: distiller\ndescription: distiller\n---\n")
+	writeTestFile(t, repoRoot, "Makefile", "build:\n\tgo build ./...\n")
+	writeTestFile(t, repoRoot, "internal/core/ops/op.go", "package ops\n")
+
+	docContent := `# Build & Configuration Guide
+
+## Root & Dotfile Rules
+- **Memory Config Schema**: Store workspace glob configuration inside ` + "`.memory/config.yaml`" + ` so doc seeding stays deterministic.
+- **Skill Layout**: Place reusable workspace skills under ` + "`.agents/skills`" + ` with valid YAML frontmatter headers.
+- **Agent Definition**: Define headless distillation agents inside ` + "`.agents/agents/distiller.md`" + ` without default tools.
+- **Makefile Entrypoint**: Run the top-level ` + "`Makefile`" + ` target to build all binaries cleanly across platforms.
+`
+	writeTestFile(t, repoRoot, "docs/config-guide.md", docContent)
+	// Also create a markdown file with zero extractable anchored bullets to verify FilesSkipped
+	writeTestFile(t, repoRoot, "docs/empty-guide.md", "# Empty Guide\n\nJust introductory prose with no bullets.\n")
+
+	reader := ops.NewReader(opsDir)
+	writer := ops.NewWriter(opsDir)
+	opts := DocSeedOptions{
+		RepoRoot: repoRoot,
+		OpsDir:   opsDir,
+		RepoCfg:  config.DefaultRepoConfig(),
+	}
+
+	res, err := SeedDocs(ctx, opts, &config.ScopeConfig{}, reader, writer)
+	if err != nil {
+		t.Fatalf("SeedDocs failed: %v", err)
+	}
+	if res.EntriesAdded != 4 {
+		t.Fatalf("expected 4 entries added from docs/config-guide.md, got %d", res.EntriesAdded)
+	}
+	// docs/empty-guide.md and .agents/skills/custom/SKILL.md have 0 candidate ops -> both should be marked skipped
+	if res.FilesSeeded != 1 {
+		t.Errorf("FilesSeeded = %d, want 1", res.FilesSeeded)
+	}
+	if res.FilesSkipped != 2 {
+		t.Errorf("FilesSkipped = %d, want 2", res.FilesSkipped)
+	}
+	for _, f := range res.Files {
+		if f.Added == 0 && f.Amended == 0 && f.Retired == 0 && !f.Skipped {
+			t.Errorf("expected file %s with 0 changes to have Skipped=true", f.Path)
+		}
+	}
+
+	for _, op := range res.Ops {
+		if isPollutedScope(op.DossierScope) {
+			t.Errorf("op %s assigned polluted DossierScope %q", op.EntryID, op.DossierScope)
+		}
+		if op.DossierScope != "root" {
+			t.Errorf("op %s DossierScope = %q, want \"root\"", op.EntryID, op.DossierScope)
+		}
+		anchors, _ := op.Fields["anchors"].([]string)
+		if len(anchors) == 0 {
+			t.Errorf("expected op %s to preserve its file anchor in Fields[\"anchors\"]", op.EntryID)
+		}
+	}
+
+	// Verify mutual idempotence with RunOpsGC: zero scopes should need repair
+	gcStats, err := RunOpsGC(ctx, GCOptions{
+		OpsDir:     opsDir,
+		ConfigPath: filepath.Join(repoRoot, ".memory", "config.yaml"),
+		DryRun:     true,
+	})
+	if err != nil {
+		t.Fatalf("RunOpsGC failed: %v", err)
+	}
+	if gcStats.ScopesRepaired != 0 {
+		t.Errorf("expected RunOpsGC ScopesRepaired == 0 after SeedDocs, got %d", gcStats.ScopesRepaired)
+	}
+}
