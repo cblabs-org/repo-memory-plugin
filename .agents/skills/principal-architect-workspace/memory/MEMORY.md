@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10b-delivery-and-storage-fixes | **Active (1/5 WOs)** — WO1 complete (`89595e4`) | Delivery (`UserMessage`, `DetectRewind`), Index (`#13`), Projector (`#11`), Seeder (`#10`, `#12`), Ops (`#16`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
+| pr-10b-delivery-and-storage-fixes | **Active (2/5 WOs)** — WO1 (`89595e4`), WO2 (`a808fa5`) complete | Delivery (`UserMessage`, `DetectRewind`), Index (`#13`), Projector (`#11`), Seeder (`#10`, `#12`), Ops (`#16`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Resumes at WO4 (`wo4-dry-run`) after `pr-10b` lands | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
