@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-11-v2-doc-seeding-and-lifecycles
 > **Base branch:** `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (`14c449c`)
-> **Status:** 🔄 Active (5/5 WOs complete — Step 6A PR Audit)
+> **Status:** 🔄 Active (5/6 WOs complete — Round 1 Review Remediation)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`, Decisions `VD16` & `VD17`).
 
 ## Objective
@@ -19,6 +19,7 @@ Implement the `v2.2` Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSour
 | 3 | [wo3-doc-seed-source](wo3-doc-seed-source/WORKORDER.md) | Add `DocSeeds []string` to `config.RepoConfig` (`.memory/config.yaml`, defaulting to `docs/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files without `generated_by: repo-memory`). Implement `DocSeedSource` in `internal/core/seed/doc_seed.go` and the `repo-memory seed-docs` CLI subcommand (`cmd/repo-memory/cmd_seed_docs.go`), extracting structured, code-anchored `invariant`, `contract`, `gotcha`, `recipe`/`procedure`, and `failure-signature` ops tagged with `source: "doc-seed"`, `source_doc_path`, and `source_doc_blob_sha` (`git hash-object`), supporting deterministic markdown extraction, `--dry-run`, and `--json`. | architect | ✅ Complete (`37f2051`) |
 | 4 | [wo4-async-doc-freshness-dreaming](wo4-async-doc-freshness-dreaming/WORKORDER.md) | Implement Async Doc Freshness ("Dreaming", `SPEC.md` §6.3.5 / `design-v2` §7.6 / Addendum A §11.1) in `internal/core/tick/dream_freshness.go` and wire into `PipelineExecutor.Run`: compare each `source: "doc-seed"` entry's `source_doc_blob_sha` against the current git blob SHA of `source_doc_path`; when a seeded doc is modified or deleted in git, deterministically re-seed/amend/supersede or retire the affected `doc-seed` entries and rebuild `dossiers/` and `index.db`. | standard | ✅ Complete (`f54c27f`) |
 | 5 | [wo5-dogfood-doc-seed-and-verification](wo5-dogfood-doc-seed-and-verification/WORKORDER.md) | Run `repo-memory seed-docs` on `repo-memory-plugin`'s curated docs/skills, re-project `.memory/dossiers/` and `.memory/ATLAS.md` with `{section?}` resolution and `kind:` metadata, rebuild `~/.local/bin/repo-memory` and `<data-dir>/<repo-id>/index.db`, and verify `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./...`. | standard | ✅ Complete (`572ddb5`) |
+| 6 | [wo6-review-remediation](wo6-review-remediation/WORKORDER.md) | Resolve Round 1 Cold-Firewall PR Audit findings (`[MAJOR-1]` polluted dot-prefixed/root-file scopes in `SeedDocs`/`ParseDocToOps`, `[MAJOR-2]` empty `# <scope>` files and `0001-01-01T00:00:00Z` `ATLAS.md` rows in `dossiers.Writer.WriteAll`, `[MINOR-1]` `FilesSkipped` counter when `candidateOps` is empty), clean & re-seed `.memory/`, and rebuild `~/.local/bin/repo-memory` + `index.db`. | standard | 🔄 In Progress |
 
 ## Dependencies
 
