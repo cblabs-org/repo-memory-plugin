@@ -41,7 +41,7 @@ Resolve GitHub Issue **#16** by implementing `repo-memory ops gc` (`internal/cor
 
 ## Atomic Implementation Checklist
 
-- [ ] **Step 1: Export helpers & implement `RunOpsGC` in `internal/core/seed/gc.go` (`#16`)**
+- [x] **Step 1: Export helpers & implement `RunOpsGC` in `internal/core/seed/gc.go` (`#16`)**
   - Export `IsJunkText` in `internal/core/seed/convert.go` and `IsValidAnchorPathSyntax` in `internal/core/seed/parser.go`.
   - Create `internal/core/seed/gc.go` with:
     - `DefaultStaleEntryIDs = []string{"seed-b1617c95"}`
@@ -56,13 +56,13 @@ Resolve GitHub Issue **#16** by implementing `repo-memory ops gc` (`internal/cor
       - If `opts.DossiersDir != ""` and `!opts.DryRun`:
         - Remove `filepath.Join(opts.DossiersDir, "dossiers")` and `filepath.Join(opts.DossiersDir, "ATLAS.md")`.
         - Project dossiers from `ops.NewReader(opts.OpsDir)` via `dossiers.NewProjector(reader).Project(ctx)` and write them via `dossiers.NewWriter(opts.DossiersDir).WriteAll(dossierMap)`.
-- [ ] **Step 2: Add `repo-memory ops gc` CLI command in `cmd/repo-memory/cmd_ops_gc.go` and unit tests in `internal/core/seed/gc_test.go`**
+- [x] **Step 2: Add `repo-memory ops gc` CLI command in `cmd/repo-memory/cmd_ops_gc.go` and unit tests in `internal/core/seed/gc_test.go`**
   - Create `cmd/repo-memory/cmd_ops_gc.go` registering `ops` parent command and `gc` subcommand (`repo-memory ops gc`) with flags `--ops-dir` (default `.memory/ops`), `--dossiers-dir` (default `""`), `--config` (default `.memory/config.yaml`), `--prune-id` (`StringSlice`), and `--dry-run`.
   - Add `TestRunOpsGC_PrunesJunkStaleAndRepairsScopes` in `internal/core/seed/gc_test.go`.
-- [ ] **Step 3: Remove `deleteJunkEntries` stopgap and root-level stray files**
+- [x] **Step 3: Remove `deleteJunkEntries` stopgap and root-level stray files**
   - Remove `deleteJunkEntries` from `evaluation/cmd/build-index/main.go`.
   - `git rm build-index render_dossiers.go`.
-- [ ] **Step 4: Rebuild `~/.local/bin/repo-memory`, clean `evaluation/data/*/`, seed `.memory/`, and re-index**
+- [x] **Step 4: Rebuild `~/.local/bin/repo-memory`, clean `evaluation/data/*/`, seed `.memory/`, and re-index**
   - Build and install `~/.local/bin/repo-memory`: `go build -o ~/.local/bin/repo-memory ./cmd/repo-memory`.
   - Run `~/.local/bin/repo-memory ops gc` across each of the 8 `evaluation/data/<wo>` directories (`--ops-dir evaluation/data/<wo>/ops --dossiers-dir evaluation/data/<wo>`).
   - Run `~/.local/bin/repo-memory seed --pa-dir .agents/skills/principal-architect-workspace/ --ops-dir .memory/ops/` followed by `~/.local/bin/repo-memory ops gc --ops-dir .memory/ops --dossiers-dir .memory` and `~/.local/bin/repo-memory reindex .`.
@@ -70,10 +70,10 @@ Resolve GitHub Issue **#16** by implementing `repo-memory ops gc` (`internal/cor
 
 ## Verification Criteria
 
-- [ ] `go test -v ./internal/core/seed/... ./cmd/repo-memory/...` passes.
-- [ ] `go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` and `go vet ./cmd/... ./internal/...` pass.
-- [ ] `git grep "seed-b1617c95" .memory/ evaluation/data/` returns no matches.
-- [ ] `~/.local/bin/repo-memory reindex .` succeeds and builds a valid `index.db`.
+- [x] `go test -v ./internal/core/seed/... ./cmd/repo-memory/...` passes.
+- [x] `go build ./cmd/... ./internal/... ./evaluation/cmd/build-index/...` and `go vet ./cmd/... ./internal/...` pass.
+- [x] `git grep "seed-b1617c95" .memory/ evaluation/data/` returns no matches.
+- [x] `~/.local/bin/repo-memory reindex .` succeeds and builds a valid `index.db`.
 
 ## Anti-Patterns — Do NOT
 
@@ -84,19 +84,26 @@ Resolve GitHub Issue **#16** by implementing `repo-memory ops gc` (`internal/cor
 
 ## Completion Report
 
-*(To be filled in by the Worker after PA approval)*
-
 ### Status
-(pending)
+✅ Complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/seed/convert.go` — Exported `IsJunkText` (preserving `isJunkText` wrapper) for reuse in `ops gc`.
+- `internal/core/seed/parser.go` — Exported `IsValidAnchorPathSyntax` (preserving `isValidAnchorPathSyntax` wrapper) for reuse in `ops gc`.
+- `internal/core/seed/gc.go` — Implemented `DefaultStaleEntryIDs` (`"seed-b1617c95"`), `GCOptions`, `GCStats`, and `RunOpsGC` to prune placeholder/stale ops, strip non-path anchor tokens, repair polluted `dossier_scope` values via `config.ScopeResolver`, remove empty batch files, and re-project `dossiers/` and `ATLAS.md`.
+- `internal/core/seed/gc_test.go` — Added `TestRunOpsGC_PrunesJunkStaleAndRepairsScopes` covering junk/stale pruning, anchor sanitization, scope repair, empty batch deletion, and dossier/ATLAS re-rendering.
+- `cmd/repo-memory/cmd_ops_gc.go` — Added `repo-memory ops gc` CLI subcommand (`--ops-dir`, `--dossiers-dir`, `--config`, `--prune-id`, `--dry-run`).
+- `cmd/repo-memory/main.go` — Registered `opsCmd` on `rootCmd`.
+- `evaluation/cmd/build-index/main.go` — Removed the `deleteJunkEntries()` stopgap (`#16` item 4).
+- `build-index`, `render_dossiers.go` — Removed stray root-level compiled binary and one-off rendering script.
+- `evaluation/data/*/` — Cleaned all 8 `evaluation/data/<wo>` snapshots via `repo-memory ops gc` and re-rendered their `dossiers/` and `ATLAS.md`.
+- `.memory/` — Seeded `.memory/ops/` from `.agents/skills/principal-architect-workspace/`, ran `repo-memory ops gc --ops-dir .memory/ops --dossiers-dir .memory`, and rebuilt `<data-dir>/<repo-id>/index.db` via `~/.local/bin/repo-memory reindex .`.
 
 ### Decisions Made
-- Decision description and rationale
+- Filtered module-derivation anchor inputs in `RunOpsGC` to multi-segment non-dot paths (`strings.Contains(a, "/") && !strings.HasPrefix(a, ".")`) so root-level files (`Makefile`, `.gitignore`) and dot-directories (`.agents/...`, `.memory/...`) map cleanly to `"root"` without creating spurious `.agents` or `Makefile` module scopes during scope repair.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+- None.
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+- None.

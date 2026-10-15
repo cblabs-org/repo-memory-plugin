@@ -10,10 +10,7 @@
       "fields": {
         "anchors": [
           "internal/harness/antigravity/transcript.go",
-          "transcript_full.jsonl",
-          "transcript_full/*.jsonl",
-          "transcript.jsonl",
-          "testdata/fixtures/antigravity/v1/"
+          "testdata/fixtures/antigravity/v1"
         ],
         "entry_type": "decision",
         "text": "Used `bufio.Scanner` with a generous 50MB buffer on top of an `io.MultiReader` to ensure lexical chunks that straddle a single JSON line can seamlessly parse into unified lines before being evaluated."
@@ -28,10 +25,7 @@
       "fields": {
         "anchors": [
           "internal/harness/antigravity/transcript.go",
-          "transcript_full.jsonl",
-          "transcript_full/*.jsonl",
-          "transcript.jsonl",
-          "testdata/fixtures/antigravity/v1/"
+          "testdata/fixtures/antigravity/v1"
         ],
         "entry_type": "ruled-out",
         "text": "`cat`'s EOF behavior on newlines broke the chunked test initially. Fixed using `printf` to ensure strict byte continuity over chunks without injection of newlines."

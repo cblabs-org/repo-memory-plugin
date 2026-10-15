@@ -10,11 +10,6 @@
       "fields": {
         "anchors": [
           "internal/core/episode/commit_linkage.go",
-          "step.Commit",
-          "header.Commits",
-          "header.HeadEnd",
-          "step.Commit",
-          "Header.UnmarshalJSON",
           "internal/core/episode/store.go",
           "internal/core/episode/store.go",
           "internal/core/episode/commit_linkage_test.go",
@@ -33,11 +28,6 @@
       "fields": {
         "anchors": [
           "internal/core/episode/commit_linkage.go",
-          "step.Commit",
-          "header.Commits",
-          "header.HeadEnd",
-          "step.Commit",
-          "Header.UnmarshalJSON",
           "internal/core/episode/store.go",
           "internal/core/episode/store.go",
           "internal/core/episode/commit_linkage_test.go",
@@ -56,11 +46,6 @@
       "fields": {
         "anchors": [
           "internal/core/episode/commit_linkage.go",
-          "step.Commit",
-          "header.Commits",
-          "header.HeadEnd",
-          "step.Commit",
-          "Header.UnmarshalJSON",
           "internal/core/episode/store.go",
           "internal/core/episode/store.go",
           "internal/core/episode/commit_linkage_test.go",
@@ -79,11 +64,6 @@
       "fields": {
         "anchors": [
           "internal/core/episode/commit_linkage.go",
-          "step.Commit",
-          "header.Commits",
-          "header.HeadEnd",
-          "step.Commit",
-          "Header.UnmarshalJSON",
           "internal/core/episode/store.go",
           "internal/core/episode/store.go",
           "internal/core/episode/commit_linkage_test.go",

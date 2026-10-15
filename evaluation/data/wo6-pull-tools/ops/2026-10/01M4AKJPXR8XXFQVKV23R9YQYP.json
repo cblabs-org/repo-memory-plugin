@@ -11,7 +11,6 @@
         "anchors": [
           "internal/harness/antigravity/pretooluse.go",
           "cmd/repo-memory/cmd_hook.go",
-          "antigravity.HandlePreToolUse",
           "internal/harness/antigravity/pretooluse_test.go",
           "cmd/repo-memory/hook_test.go"
         ],
@@ -29,7 +28,6 @@
         "anchors": [
           "internal/harness/antigravity/pretooluse.go",
           "cmd/repo-memory/cmd_hook.go",
-          "antigravity.HandlePreToolUse",
           "internal/harness/antigravity/pretooluse_test.go",
           "cmd/repo-memory/hook_test.go"
         ],
@@ -47,7 +45,6 @@
         "anchors": [
           "internal/harness/antigravity/pretooluse.go",
           "cmd/repo-memory/cmd_hook.go",
-          "antigravity.HandlePreToolUse",
           "internal/harness/antigravity/pretooluse_test.go",
           "cmd/repo-memory/hook_test.go"
         ],

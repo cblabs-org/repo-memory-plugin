@@ -11,28 +11,10 @@
         "anchors": [
           "internal/core/pipeline/verify/verifier.go",
           "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
           "prompts/verify/prompt.md"
         ],
         "entry_type": "decision",
         "text": "Used local shell `exec.Command` calls for `git branch --contains` and `git rev-parse` directly inside the Verifier since the `gitops` package was strictly out-of-scope for editing."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-d900dbd5",
-      "dossier_scope": "core/pipeline/verify",
-      "timestamp": "2026-10-02T12:27:27+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/pipeline/verify/verifier.go",
-          "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
-          "prompts/verify/prompt.md"
-        ],
-        "entry_type": "ruled-out",
-        "text": "N/A"
       }
     },
     {
@@ -45,7 +27,6 @@
         "anchors": [
           "internal/core/pipeline/verify/verifier.go",
           "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
           "prompts/verify/prompt.md"
         ],
         "entry_type": "open-issue",

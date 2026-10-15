@@ -11,8 +11,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/pipeline/extract/extractor.go",
-          "Extractor.Extract",
-          "sync.WaitGroup",
           "internal/core/tick/tick.go",
           "internal/core/tick/pipeline.go",
           "internal/core/tick/pipeline_test.go"
@@ -31,8 +29,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/pipeline/extract/extractor.go",
-          "Extractor.Extract",
-          "sync.WaitGroup",
           "internal/core/tick/tick.go",
           "internal/core/tick/pipeline.go",
           "internal/core/tick/pipeline_test.go"
@@ -51,8 +47,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/pipeline/extract/extractor.go",
-          "Extractor.Extract",
-          "sync.WaitGroup",
           "internal/core/tick/tick.go",
           "internal/core/tick/pipeline.go",
           "internal/core/tick/pipeline_test.go"
@@ -71,8 +65,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "internal/core/pipeline/extract/extractor.go",
-          "Extractor.Extract",
-          "sync.WaitGroup",
           "internal/core/tick/tick.go",
           "internal/core/tick/pipeline.go",
           "internal/core/tick/pipeline_test.go"

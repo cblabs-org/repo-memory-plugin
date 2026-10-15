@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-6c5fb0e7",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-09T17:42:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Harness entry point: `internal/eval/x6_replay.go`, providing a `ReplayHarness` struct with methods `CheckoutParent`, `InjectCondition`, and `RunWorker`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-873b1261",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-09T17:42:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Injection mechanics: Modifying `.memory/config.yaml` to disable memory for condition `a`. For conditions `b` and `c`, memory is enabled and we perform file copies to the expected directories (repo root for PA docs, data dir for dossiers) to simulate the presence of time-cut memory context. `RunWorker` invokes `agy --agent Execution-Worker` via headless `exec.CommandContext` to process the target Work Order autonomously."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-88a336e2",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-09T17:42:36+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "ruled-out",
+        "text": "Encountered a worktree lock while trying to checkout `pr-09-v2-x6-lite/wo3-replay-harness`. Decided to build the harness directly in the active subagent worktree; changes will be committed and merged to the target branch."
+      }
+    }
+  ],
+  "created_at": "2026-10-09T16:42:36Z",
+  "batch_id": "01M4GRQ330VS9VAW5CB2TNFGYS"
+}

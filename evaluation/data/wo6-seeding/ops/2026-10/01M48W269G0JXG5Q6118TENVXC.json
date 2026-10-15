@@ -11,7 +11,6 @@
         "anchors": [
           "internal/core/seed/parser.go",
           "internal/core/seed/convert.go",
-          "ops.Op",
           "internal/core/seed/scanner.go",
           "cmd/repo-memory/cmd_seed.go",
           "cmd/repo-memory/main.go",
@@ -31,7 +30,6 @@
         "anchors": [
           "internal/core/seed/parser.go",
           "internal/core/seed/convert.go",
-          "ops.Op",
           "internal/core/seed/scanner.go",
           "cmd/repo-memory/cmd_seed.go",
           "cmd/repo-memory/main.go",

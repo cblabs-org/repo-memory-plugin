@@ -11,7 +11,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "cmd/repo-memory/cmd_search.go",
-          "idx.SearchEpisodes()",
           "cmd/repo-memory/cmd_search_test.go",
           "cmd/repo-memory/install_test.go"
         ],
@@ -29,7 +28,6 @@
         "anchors": [
           "internal/core/index/index.go",
           "cmd/repo-memory/cmd_search.go",
-          "idx.SearchEpisodes()",
           "cmd/repo-memory/cmd_search_test.go",
           "cmd/repo-memory/install_test.go"
         ],
@@ -47,30 +45,11 @@
         "anchors": [
           "internal/core/index/index.go",
           "cmd/repo-memory/cmd_search.go",
-          "idx.SearchEpisodes()",
           "cmd/repo-memory/cmd_search_test.go",
           "cmd/repo-memory/install_test.go"
         ],
         "entry_type": "ruled-out",
         "text": "When writing tests with `cobra.Command`, one must strictly bind any stdout calls (`fmt.Fprintln()`) to `cmd.OutOrStdout()` and set `rootCmd.SetOut(buf)` instead of directly using `os.Stdout`. Otherwise output capture assertions fail."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-b18370e2",
-      "dossier_scope": "core/index",
-      "timestamp": "2026-10-02T09:26:15+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/index/index.go",
-          "cmd/repo-memory/cmd_search.go",
-          "idx.SearchEpisodes()",
-          "cmd/repo-memory/cmd_search_test.go",
-          "cmd/repo-memory/install_test.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "None"
       }
     }
   ],

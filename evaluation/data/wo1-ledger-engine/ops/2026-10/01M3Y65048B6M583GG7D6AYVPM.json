@@ -4,13 +4,12 @@
     {
       "type": "add",
       "entry_id": "seed-20ddcc44",
-      "dossier_scope": "pending",
+      "dossier_scope": "core/pipeline",
       "timestamp": "2026-10-02T12:31:49+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/core/pipeline/publish/local.go",
-          "pending/",
           "internal/core/pipeline/publish/local_test.go"
         ],
         "entry_type": "decision",
@@ -20,13 +19,12 @@
     {
       "type": "add",
       "entry_id": "seed-bb928b56",
-      "dossier_scope": "pending",
+      "dossier_scope": "core/pipeline",
       "timestamp": "2026-10-02T12:31:49+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/core/pipeline/publish/local.go",
-          "pending/",
           "internal/core/pipeline/publish/local_test.go"
         ],
         "entry_type": "decision",
@@ -36,13 +34,12 @@
     {
       "type": "add",
       "entry_id": "seed-6ebc82d6",
-      "dossier_scope": "pending",
+      "dossier_scope": "core/pipeline",
       "timestamp": "2026-10-02T12:31:49+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/core/pipeline/publish/local.go",
-          "pending/",
           "internal/core/pipeline/publish/local_test.go"
         ],
         "entry_type": "ruled-out",
@@ -52,13 +49,12 @@
     {
       "type": "add",
       "entry_id": "seed-985afa4a",
-      "dossier_scope": "pending",
+      "dossier_scope": "core/pipeline",
       "timestamp": "2026-10-02T12:31:49+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/core/pipeline/publish/local.go",
-          "pending/",
           "internal/core/pipeline/publish/local_test.go"
         ],
         "entry_type": "open-issue",

@@ -16,9 +16,9 @@ func generateDeterministicID(relPath string, section string, bulletText string) 
 	return fmt.Sprintf("seed-%x", hash[:4])
 }
 
-// isJunkText returns true for placeholder entries that PA agents produce
+// IsJunkText returns true for placeholder entries that PA agents produce
 // when they haven't filled in a section. These waste injection budget.
-func isJunkText(text string) bool {
+func IsJunkText(text string) bool {
 	t := strings.TrimSpace(text)
 	if t == "" {
 		return true
@@ -33,6 +33,10 @@ func isJunkText(text string) bool {
 		return true
 	}
 	return false
+}
+
+func isJunkText(text string) bool {
+	return IsJunkText(text)
 }
 
 func ReportToOps(report *CompletionReport, resolver *config.ScopeResolver, path string, commitTime time.Time, existingIDs map[string]bool) []ops.Op {

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-3a2125f4",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T20:38:41+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/verify_template.sh",
+          "evaluation/eval-v2/scripts/exclude.txt",
+          "evaluation/eval-v2/MANIFEST.md"
+        ],
+        "entry_type": "decision",
+        "text": "Used APFS copy-on-write cloning (`cp -c -R`) to create condition templates instantly with zero redundant disk allocation."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-487ba6c9",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T20:38:41+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/verify_template.sh",
+          "evaluation/eval-v2/scripts/exclude.txt",
+          "evaluation/eval-v2/MANIFEST.md"
+        ],
+        "entry_type": "decision",
+        "text": "Retained `.pio/libdeps` and packages in the template so evaluations do not require external network access or dependency downloads."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-ab31c39d",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T20:38:41+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/verify_template.sh",
+          "evaluation/eval-v2/scripts/exclude.txt",
+          "evaluation/eval-v2/MANIFEST.md"
+        ],
+        "entry_type": "decision",
+        "text": "Stored `exclude.txt` in `evaluation/eval-v2/scripts/` to keep root evaluation directory clean and structured."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-9ab471a2",
+      "dossier_scope": "evaluation/eval-v2/scripts",
+      "timestamp": "2026-10-11T20:38:41+01:00",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "evaluation/eval-v2/scripts/verify_template.sh",
+          "evaluation/eval-v2/scripts/exclude.txt",
+          "evaluation/eval-v2/MANIFEST.md"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Sockets created by git fsmonitor (`fsmonitor--daemon.ipc`) in the source repo produced an rsync warning, which was resolved as `.git` was discarded and squashed to a clean `baseline` commit as specified."
+      }
+    }
+  ],
+  "created_at": "2026-10-11T19:38:41Z",
+  "batch_id": "01M4P7JYF8Z5EVT3ES0J2Z8YAH"
+}

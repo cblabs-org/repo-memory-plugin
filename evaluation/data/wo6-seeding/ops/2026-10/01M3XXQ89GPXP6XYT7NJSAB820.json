@@ -4,17 +4,15 @@
     {
       "type": "add",
       "entry_id": "seed-4c2dd2e9",
-      "dossier_scope": "runs",
+      "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-02T10:04:30+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/harness/interfaces.go",
-          "Housekeeper.Run",
           "internal/harness/antigravity/executor.go",
           "internal/core/tick/sweep.go",
           "internal/harness/antigravity/attribution.go",
-          "/runs/",
           "internal/harness/fake/fake.go",
           "fake_test.go",
           "internal/harness/fake/recorded.go"
@@ -26,17 +24,15 @@
     {
       "type": "add",
       "entry_id": "seed-64752358",
-      "dossier_scope": "runs",
+      "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-02T10:04:30+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/harness/interfaces.go",
-          "Housekeeper.Run",
           "internal/harness/antigravity/executor.go",
           "internal/core/tick/sweep.go",
           "internal/harness/antigravity/attribution.go",
-          "/runs/",
           "internal/harness/fake/fake.go",
           "fake_test.go",
           "internal/harness/fake/recorded.go"
@@ -48,17 +44,15 @@
     {
       "type": "add",
       "entry_id": "seed-f5f24ef7",
-      "dossier_scope": "runs",
+      "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-02T10:04:30+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "internal/harness/interfaces.go",
-          "Housekeeper.Run",
           "internal/harness/antigravity/executor.go",
           "internal/core/tick/sweep.go",
           "internal/harness/antigravity/attribution.go",
-          "/runs/",
           "internal/harness/fake/fake.go",
           "fake_test.go",
           "internal/harness/fake/recorded.go"

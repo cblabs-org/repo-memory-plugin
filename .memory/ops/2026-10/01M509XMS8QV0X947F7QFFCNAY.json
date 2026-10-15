@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-0b464259",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-15T17:31:53Z",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Kept `AGENTS.md` untouched by default unless configured, while making `GEMINI.md` and `CLAUDE.md` strictly machine-managed via the `\u003c!-- repo-memory:begin v2 --\u003e` delimited block during `repo-memory enroll` / `unenroll` (`init`/`leave`)."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T17:31:53Z",
+  "batch_id": "01M509XMS8QV0X947F7QFFCNAY"
+}

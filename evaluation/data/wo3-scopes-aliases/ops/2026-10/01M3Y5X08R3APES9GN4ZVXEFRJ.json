@@ -11,7 +11,6 @@
         "anchors": [
           "internal/core/pipeline/verify/verifier.go",
           "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
           "prompts/verify/prompt.md"
         ],
         "entry_type": "decision",
@@ -28,7 +27,6 @@
         "anchors": [
           "internal/core/pipeline/verify/verifier.go",
           "internal/core/pipeline/verify/verifier_test.go",
-          "fake.NewFakeHousekeeper()",
           "prompts/verify/prompt.md"
         ],
         "entry_type": "open-issue",

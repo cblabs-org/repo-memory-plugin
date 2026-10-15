@@ -9,13 +9,8 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "jobs.Cost",
-          "harness.Usage",
           "internal/core/jobs/cost_test.go",
           "internal/core/jobs/store_test.go",
-          "harness.Housekeeper",
-          "jobs.Cost",
-          "p.checkBudget(\u0026cost)",
           "internal/core/tick/pipeline_test.go",
           "gen_metadata.go",
           "quota.go",
@@ -35,13 +30,8 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "jobs.Cost",
-          "harness.Usage",
           "internal/core/jobs/cost_test.go",
           "internal/core/jobs/store_test.go",
-          "harness.Housekeeper",
-          "jobs.Cost",
-          "p.checkBudget(\u0026cost)",
           "internal/core/tick/pipeline_test.go",
           "gen_metadata.go",
           "quota.go",
@@ -61,13 +51,8 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "jobs.Cost",
-          "harness.Usage",
           "internal/core/jobs/cost_test.go",
           "internal/core/jobs/store_test.go",
-          "harness.Housekeeper",
-          "jobs.Cost",
-          "p.checkBudget(\u0026cost)",
           "internal/core/tick/pipeline_test.go",
           "gen_metadata.go",
           "quota.go",
@@ -87,13 +72,8 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "jobs.Cost",
-          "harness.Usage",
           "internal/core/jobs/cost_test.go",
           "internal/core/jobs/store_test.go",
-          "harness.Housekeeper",
-          "jobs.Cost",
-          "p.checkBudget(\u0026cost)",
           "internal/core/tick/pipeline_test.go",
           "gen_metadata.go",
           "quota.go",
@@ -113,13 +93,8 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "jobs.Cost",
-          "harness.Usage",
           "internal/core/jobs/cost_test.go",
           "internal/core/jobs/store_test.go",
-          "harness.Housekeeper",
-          "jobs.Cost",
-          "p.checkBudget(\u0026cost)",
           "internal/core/tick/pipeline_test.go",
           "gen_metadata.go",
           "quota.go",

@@ -12,8 +12,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],
@@ -32,8 +30,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],
@@ -52,8 +48,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],
@@ -72,8 +66,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],
@@ -92,8 +84,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],
@@ -112,8 +102,6 @@
           "internal/core/config/config.go",
           ".memory/config.yaml",
           "internal/core/config/config_test.go",
-          "ota.Purpose",
-          "ota.Description",
           "internal/core/config/subsystem.go",
           "internal/core/config/subsystem_test.go"
         ],

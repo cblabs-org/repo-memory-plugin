@@ -11,11 +11,6 @@
         "anchors": [
           "internal/mcpserver/server.go",
           "internal/mcpserver/tools.go",
-          "idx.ResolveAlias",
-          "idx.SearchEntries",
-          "dossiers.EntryType",
-          "ops.OpAdd",
-          "ops.Writer",
           "internal/mcpserver/tools_test.go"
         ],
         "entry_type": "decision",
@@ -32,11 +27,6 @@
         "anchors": [
           "internal/mcpserver/server.go",
           "internal/mcpserver/tools.go",
-          "idx.ResolveAlias",
-          "idx.SearchEntries",
-          "dossiers.EntryType",
-          "ops.OpAdd",
-          "ops.Writer",
           "internal/mcpserver/tools_test.go"
         ],
         "entry_type": "decision",
@@ -53,11 +43,6 @@
         "anchors": [
           "internal/mcpserver/server.go",
           "internal/mcpserver/tools.go",
-          "idx.ResolveAlias",
-          "idx.SearchEntries",
-          "dossiers.EntryType",
-          "ops.OpAdd",
-          "ops.Writer",
           "internal/mcpserver/tools_test.go"
         ],
         "entry_type": "decision",
@@ -74,11 +59,6 @@
         "anchors": [
           "internal/mcpserver/server.go",
           "internal/mcpserver/tools.go",
-          "idx.ResolveAlias",
-          "idx.SearchEntries",
-          "dossiers.EntryType",
-          "ops.OpAdd",
-          "ops.Writer",
           "internal/mcpserver/tools_test.go"
         ],
         "entry_type": "ruled-out",
@@ -95,11 +75,6 @@
         "anchors": [
           "internal/mcpserver/server.go",
           "internal/mcpserver/tools.go",
-          "idx.ResolveAlias",
-          "idx.SearchEntries",
-          "dossiers.EntryType",
-          "ops.OpAdd",
-          "ops.Writer",
           "internal/mcpserver/tools_test.go"
         ],
         "entry_type": "open-issue",

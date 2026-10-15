@@ -1,10 +1,5 @@
 # core/delivery
 
-## Ruled out, failure signatures and gotchas
-
-### [seed-d31c5341] None
-`ruled-out · anchors: internal/core/delivery/doc.go, internal/core/delivery/types.go, internal/core/delivery/ledger.go, internal/core/delivery/anchor.go, internal/core/delivery/ranker.go, internal/core/delivery/formatter.go, internal/core/delivery/engine.go, internal/core/delivery/delivery_test.go`
-
 ## Decisions
 
 ### [seed-5592e8e5] Addressed unacknowledged `gate: edit` lookups by adding `ledger *Ledger` explicitly as a parameter to `GateEntries()`.

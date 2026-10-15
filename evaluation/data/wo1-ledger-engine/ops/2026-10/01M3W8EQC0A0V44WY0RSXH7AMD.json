@@ -15,7 +15,6 @@
           "internal/harness/fake/fake_test.go",
           "internal/core/suite_test.go",
           "internal/core/boundary_test.go",
-          "*_test.go",
           "internal/harness/fake"
         ],
         "entry_type": "decision",
@@ -36,7 +35,6 @@
           "internal/harness/fake/fake_test.go",
           "internal/core/suite_test.go",
           "internal/core/boundary_test.go",
-          "*_test.go",
           "internal/harness/fake"
         ],
         "entry_type": "ruled-out",

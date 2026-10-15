@@ -4,16 +4,15 @@
     {
       "type": "add",
       "entry_id": "seed-664ccba0",
-      "dossier_scope": "rules",
+      "dossier_scope": "packaging/antigravity",
       "timestamp": "2026-10-01T18:46:57+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "cmd/repo-memory/main.go",
           "cmd/repo-memory/cmd_install.go",
-          "sidecars/tick/",
-          "rules/",
-          "skills/memory/",
+          "sidecars/tick",
+          "skills/memory",
           "cmd/repo-memory/cmd_uninstall.go",
           "cmd/repo-memory/cmd_hook.go",
           "cmd_tick.go",
@@ -38,16 +37,15 @@
     {
       "type": "add",
       "entry_id": "seed-73d6dc53",
-      "dossier_scope": "rules",
+      "dossier_scope": "packaging/antigravity",
       "timestamp": "2026-10-01T18:46:57+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "cmd/repo-memory/main.go",
           "cmd/repo-memory/cmd_install.go",
-          "sidecars/tick/",
-          "rules/",
-          "skills/memory/",
+          "sidecars/tick",
+          "skills/memory",
           "cmd/repo-memory/cmd_uninstall.go",
           "cmd/repo-memory/cmd_hook.go",
           "cmd_tick.go",
@@ -67,74 +65,6 @@
         ],
         "entry_type": "decision",
         "text": "Configurable plugin directory resolution via `REPO_MEMORY_PLUGIN_DIR` and `ANTIGRAVITY_CONFIG_DIR`: Allows hermetic unit testing without modifying the user's real `~/.gemini/config/plugins` directory."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-c39c50a7",
-      "dossier_scope": "rules",
-      "timestamp": "2026-10-01T18:46:57+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "cmd/repo-memory/main.go",
-          "cmd/repo-memory/cmd_install.go",
-          "sidecars/tick/",
-          "rules/",
-          "skills/memory/",
-          "cmd/repo-memory/cmd_uninstall.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "cmd_tick.go",
-          "cmd_mcp.go",
-          "cmd_search.go",
-          "cmd_report.go",
-          "cmd_status.go",
-          "cmd_reindex.go",
-          "cmd_doctor.go",
-          "cmd/repo-memory/install_test.go",
-          "packaging/antigravity/hooks.json",
-          "packaging/antigravity/mcp_config.json",
-          "packaging/antigravity/sidecar.json",
-          "packaging/antigravity/plugin.json",
-          "packaging/antigravity/templates.go",
-          "packaging/antigravity/templates_test.go"
-        ],
-        "entry_type": "ruled-out",
-        "text": "None."
-      }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-49756102",
-      "dossier_scope": "rules",
-      "timestamp": "2026-10-01T18:46:57+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "cmd/repo-memory/main.go",
-          "cmd/repo-memory/cmd_install.go",
-          "sidecars/tick/",
-          "rules/",
-          "skills/memory/",
-          "cmd/repo-memory/cmd_uninstall.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "cmd_tick.go",
-          "cmd_mcp.go",
-          "cmd_search.go",
-          "cmd_report.go",
-          "cmd_status.go",
-          "cmd_reindex.go",
-          "cmd_doctor.go",
-          "cmd/repo-memory/install_test.go",
-          "packaging/antigravity/hooks.json",
-          "packaging/antigravity/mcp_config.json",
-          "packaging/antigravity/sidecar.json",
-          "packaging/antigravity/plugin.json",
-          "packaging/antigravity/templates.go",
-          "packaging/antigravity/templates_test.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "None."
       }
     }
   ],

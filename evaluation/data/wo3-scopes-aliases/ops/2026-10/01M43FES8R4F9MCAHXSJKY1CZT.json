@@ -4,16 +4,15 @@
     {
       "type": "add",
       "entry_id": "seed-4e193660",
-      "dossier_scope": ".agents",
+      "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-04T13:50:39+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "pr-05b-dogfood-pilot/wo4-b5-evaluation",
           "pr-05-v2-foundation/wo1-close-pr05b",
-          ".agents/",
-          ".memory/claims/",
-          ".memory/archive/v1-claims/",
+          ".memory/claims",
+          ".memory/archive/v1-claims",
           "docs/dogfood-evaluation-01.md",
           "docs/design-v2-distillation-retrieval.md",
           "docs/experiments/SPEC-CHANGES.md",
@@ -26,16 +25,15 @@
     {
       "type": "add",
       "entry_id": "seed-95b3ba69",
-      "dossier_scope": ".agents",
+      "dossier_scope": "harness/antigravity",
       "timestamp": "2026-10-04T13:50:39+01:00",
       "source": "seed",
       "fields": {
         "anchors": [
           "pr-05b-dogfood-pilot/wo4-b5-evaluation",
           "pr-05-v2-foundation/wo1-close-pr05b",
-          ".agents/",
-          ".memory/claims/",
-          ".memory/archive/v1-claims/",
+          ".memory/claims",
+          ".memory/archive/v1-claims",
           "docs/dogfood-evaluation-01.md",
           "docs/design-v2-distillation-retrieval.md",
           "docs/experiments/SPEC-CHANGES.md",
