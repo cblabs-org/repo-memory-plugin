@@ -1,8 +1,9 @@
 # Antigravity Hooks Reference
 
 > Empirically validated reference for Antigravity hook events, `injectSteps` message injection,
-> and `stdin`/`stdout` JSON schemas. Sourced from `~/.gemini/antigravity/builtin/skills/agy-customizations/docs/hooks.md`,
-> `agy -p "/changelog"`, and direct experimentation (PR-06 spike, October 2026).
+> two-plugin packaging, subagent lifecycle ordering, and `stdin`/`stdout` JSON schemas. Sourced from
+> `~/.gemini/antigravity/builtin/skills/agy-customizations/docs/hooks.md`, `agy -p "/changelog"`,
+> and direct experimentation (`E01`–`E12`, `X1`–`X9`, `phase0-plugin-split`, and `PR-08`/`PR-09`, October 2026).
 
 ## Documentation Sources
 
@@ -24,17 +25,25 @@
 | v1.1.10 | Hook ordering: `hooks.json` hooks run before built-in termination checks |
 | v1.2.1 | Added `excludeDefaultComponents: true` for custom agents, preserving `PostInvocation` hooks |
 | v1.2.3–4 | Fixed `/hooks` for plugin-bundled hooks; fixed `hooks.json` dropped during token budget truncation |
+| v1.3.3 | Confirmed `userMessage` plain-string persistence (`USER_INPUT` / `SYSTEM_SDK`) vs 1-step `ephemeralMessage` (`EPHEMERAL_MESSAGE`) and nested-object `systemMessage` |
 
 ---
 
-## `hooks.json` Discovery Paths
+## `hooks.json` Discovery Paths & Two-Plugin Packaging Split
 
 Antigravity discovers `hooks.json` from:
 
 1. **Workspace:** `<workspace>/.agents/hooks.json` (or `.agent/hooks.json`)
 2. **Global:** `~/.gemini/config/hooks.json`
 3. **Plugin:** `<plugin-root>/hooks.json` (e.g., `~/.gemini/config/plugins/<name>/hooks.json`
-   or `<workspace>/.agents/plugins/<name>/hooks.json`)
+   or per-workspace plugins listed in `<workspace>/.agents/plugins.json`)
+
+### Two-Plugin Packaging Split (`sidecar.json` vs Workspace Hooks)
+
+Empirically (`docs/experiments/phase0-plugin-split.md`), Antigravity only spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from **global** plugins under `~/.gemini/config/plugins/<name>/`, whereas workspace-scoped hooks, MCP servers, and skills can be activated per repository via `<workspace>/.agents/plugins.json`:
+
+1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Declares `plugin.json` and `sidecar.json` (`builtin: schedule`) so the scheduled tick runs while the IDE is open, and bundles the workspace plugin inside `workspace-plugin/repo-memory/`. It declares **no global hooks**, preventing hooks from firing in non-enrolled workspaces.
+2. **Per-Workspace Plugin (`<workspace>/.agents/plugins.json`):** Enrolled repositories reference the nested `workspace-plugin/repo-memory` directory via a resolved **absolute path** (because `.agents/plugins.json` does not expand `~` or `$HOME`). This activates `hooks.json`, `mcp.json`, agents, and skills exclusively for that workspace.
 
 ### `<plugin>/hooks.json` vs `<plugin>/hooks/hooks.json`
 
@@ -79,9 +88,33 @@ Every hook command receives a JSON object on `stdin` containing:
 ## Message Injection via `injectSteps`
 
 `SessionStart`, `PreInvocation`, and `PostInvocation` all support injecting messages into the
-agent's context via the `injectSteps` response field. Three message types are supported:
+agent's context via the `injectSteps` response field. Three message types are supported, with
+critically different lifetimes:
 
-### A. `ephemeralMessage` — Single-Invocation Scope
+### A. `userMessage` — Persistent Session Scope (Recommended for Dossiers & Context)
+
+```json
+{
+  "injectSteps": [
+    {
+      "userMessage": "<repo-memory context=\"startup\" scopes=\"global,auth\">...</repo-memory>"
+    }
+  ]
+}
+```
+
+- **Value type:** Plain string
+- **Transcript:** Appends a `USER_INPUT` step (`"source": "SYSTEM_SDK"`)
+- **Persistence:** **Remains in the conversation history across all subsequent invocations and turns**
+  until context compaction (`CHECKPOINT`) or transcript rewind (`step_index` regression).
+- **Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and
+  newly entered scope entries that are tracked in a per-session `InjectedSet`.
+- **Compaction & Rewind interaction:** Because `userMessage` persists until `CHECKPOINT` or
+  transcript rewind, pair `InjectedSet` deduplication with `DetectCompaction` (checking for new
+  `CHECKPOINT` steps in `transcript.jsonl`) and `DetectRewind` (checking whether the highest
+  `step_index` regressed below `LastSeenStepIndex`), clearing `InjectedSet` when either occurs.
+
+### B. `ephemeralMessage` — Single-Invocation Scope (1 Model Call Only)
 
 ```json
 {
@@ -95,29 +128,18 @@ agent's context via the `injectSteps` response field. Three message types are su
 
 - **Value type:** Plain string
 - **Transcript:** Appends an `EPHEMERAL_MESSAGE` step (`"source": "SYSTEM_SDK"`)
-- **Persistence:** Visible to the model on the immediate invocation only. Automatically excluded
-  from subsequent model calls once a `PLANNER_RESPONSE` step is recorded after it.
-- **Best for:** Per-invocation dynamic context or status reminders that should not accumulate.
+- **Persistence:** **Visible to the model on the immediate invocation (`invocationNum = k`) ONLY.**
+  Automatically excluded from all subsequent model calls (`invocationNum = k+1, k+2, ...`) once a
+  `PLANNER_RESPONSE` step is recorded after it.
+- **Anti-Pattern Warning (`ephemeralMessage` + `InjectedSet`):** Never combine `ephemeralMessage`
+  with session-level `InjectedSet` deduplication! If an entry is injected via `ephemeralMessage` at
+  `invocationNum == 0` and marked as injected in `InjectedSet`, the harness drops the message on
+  `invocationNum == 1` (right after the agent's first tool call) and the deduplicator suppresses
+  it for the rest of the session — causing "vanishing memory" before the agent writes any code.
+- **Best for:** Strictly 1-step transient nudges, post-`PreToolUse` gate reminders, or status
+  notices that should evaporate immediately after one model step.
 
-### B. `userMessage` — Persistent Session Scope
-
-```json
-{
-  "injectSteps": [
-    {
-      "userMessage": "Additional user-role message."
-    }
-  ]
-}
-```
-
-- **Value type:** Plain string
-- **Transcript:** Appends a `USER_INPUT` step (`"source": "SYSTEM_SDK"`)
-- **Persistence:** Remains in the conversation history across subsequent invocations and turns
-  (until context compaction/CHECKPOINT).
-- **Best for:** Durable user-role instructions injected by hooks.
-
-### C. `systemMessage` — Persistent Session Scope
+### C. `systemMessage` — Nested-Object Persistent Scope (Avoid Plain Strings)
 
 ```json
 {
@@ -136,16 +158,10 @@ agent's context via the `injectSteps` response field. Three message types are su
 
 - **Value type:** Nested object (NOT a plain string)
 - **Schema caveat:** Unlike `ephemeralMessage` and `userMessage` (which take a plain string),
-  `systemMessage` **must be a nested object** containing a `"systemMessage"` string field
-  and an optional `"metadata"` key-value object. Passing a bare string
-  (`{"systemMessage": "..."}`) fails silently.
-- **Transcript:** Appends a persistent `SYSTEM_MESSAGE` step prefixed with
-  `"The following system message was injected by a <Event> hook:\n..."` (rendered to the
-  model inside `<SYSTEM_MESSAGE>` tags).
-- **Persistence:** Persists in the conversation history across subsequent invocations and turns
-  until compaction. Injecting on every `PreInvocation` will accumulate duplicate steps if
-  not guarded (e.g., by checking `invocationNum == 0`).
-- **Best for:** Dossier delivery, system-level context, persistent instructions.
+  passing a plain string `{"systemMessage": "..."}` in `agy 1.3.3` fails proto deserialization
+  (`type mismatch: cannot convert string to message`). Because `userMessage` accepts a plain string
+  directly and persists identically across the session (`USER_INPUT` with `"source": "SYSTEM_SDK"`),
+  `repo-memory` uses `userMessage` as its canonical persistent delivery channel.
 
 ### D. `toolCall` — No-Op (Documented but Non-Functional)
 
@@ -173,13 +189,10 @@ Multiple inject steps can be combined in a single response:
 {
   "injectSteps": [
     {
-      "systemMessage": {
-        "systemMessage": "Persistent system context.",
-        "metadata": {"source": "repo-memory"}
-      }
+      "userMessage": "Persistent session-scoped dossier context."
     },
     {
-      "ephemeralMessage": "One-shot reminder for this invocation."
+      "ephemeralMessage": "One-shot reminder for this immediate invocation only."
     }
   ]
 }
@@ -353,43 +366,68 @@ Multiple inject steps can be combined in a single response:
 
 ---
 
+## Subagent Lifecycle & Hook Ordering (`invoke_subagent`)
+
+Empirically validated in `E08` and `X8`:
+
+1. Subagents spawned via `invoke_subagent` receive their own `conversationId` and `transcriptPath` and fire all 4 lifecycle hooks (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`).
+2. **Exact hook firing order during `invoke_subagent` (`X8`):**
+   - **Step 1:** `PreToolUse` (`toolCall.name == "invoke_subagent"`) fires in the **parent** session with `toolCall.args.Prompt`, `Role`, and `TypeName`.
+   - **Step 2:** `PreInvocation` (`invocationNum == 0`, `initialNumSteps == 0`) fires in the **child** subagent session *before* the parent's initial prompt step is written to the child's `transcript.jsonl`.
+   - **Step 3:** The child subagent executes its tool calls (`PreToolUse` / `PostToolUse` / `PreInvocation`) and eventually triggers `Stop` (`terminationReason == "NO_TOOL_CALL"`).
+   - **Step 4:** `PostToolUse` (`toolCall.name == "invoke_subagent"`) fires in the **parent** session.
+3. **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/touches files or receives its prompt step.
+
+---
+
 ## Practical Patterns
 
-### Inject dossier on first invocation only
+### 1. Persistent dossier injection with `InjectedSet`, `DetectCompaction`, and `DetectRewind`
 
 ```go
-if input.InvocationNum > 0 {
-    return []byte("{}"), nil  // no-op for subsequent invocations
+// Check for context compaction (CHECKPOINT) or transcript rewind (step_index regression)
+compacted, newOffset, _ := DetectCompaction(input.TranscriptPath, ledger.CompactionByteOffset)
+rewound, maxStep, _ := DetectRewind(input.TranscriptPath, ledger.LastSeenStepIndex)
+if compacted || rewound {
+    ledger.ClearInjectedSet()
 }
+ledger.CompactionByteOffset = newOffset
+ledger.LastSeenStepIndex = maxStep
+
+// Filter out entries already present in the session's persistent context
+uninjected := FilterUninjected(candidates, ledger.InjectedSet)
+if len(uninjected) == 0 {
+    return []byte("{}"), nil
+}
+
+// Inject as persistent userMessage so entries survive across tool calls and turns
 response := InjectStepsResponse{
     InjectSteps: []InjectStep{{
-        SystemMessage: &SystemMessageEntry{
-            SystemMessage: dossierContent,
-            Metadata: map[string]string{"source": "repo-memory"},
-        },
+        UserMessage: RenderDossierBlock(uninjected),
     }},
 }
 ```
 
-### Turn-note harvesting via Stop continuation
+### 2. Automatic Stage 1 milestone-gated reflection via `Stop` continuation
 
 ```go
-if input.TerminationReason == "NO_TOOL_CALL" && input.FullyIdle && input.ExecutionNum == 0 {
-    return json.Marshal(map[string]string{
-        "decision": "continue",
-        "reason":   "Please write a memory note summarizing this conversation.",
-    })
+if input.TerminationReason == "NO_TOOL_CALL" && input.ExecutionNum == 0 {
+    if PassesMilestoneGate(ledger) && !ledger.MemoryNoteCalledInTurn {
+        return json.Marshal(map[string]string{
+            "decision": "continue",
+            "reason":   BuildStage1ReflectionPrompt(ledger.TouchedScopes),
+        })
+    }
 }
 return json.Marshal(map[string]string{"decision": "stop"})
 ```
 
-### Per-invocation ephemeral status
+### 3. Single-step `ephemeralMessage` for transient gate or error alerts
 
 ```go
 response := InjectStepsResponse{
     InjectSteps: []InjectStep{{
-        EphemeralMessage: "You are currently in a memory capture continuation. " +
-            "Write the note and then stop.",
+        EphemeralMessage: "Note: command failed with known error signature; see scope dossier above.",
     }},
 }
 ```
