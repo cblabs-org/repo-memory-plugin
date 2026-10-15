@@ -2,9 +2,6 @@
 
 | Scope | Kind | Entries | Last Updated |
 |---|---|---|---|
-| .agents | module | 2 | 2026-10-15T17:43:53Z |
-| .memory | module | 8 | 2026-10-15T17:43:53Z |
-| Makefile | module | 1 | 2026-10-15T17:43:53Z |
 | cmd/repo-memory | module | 14 | 2026-10-05T17:59:33+01:00 |
 | core | module | 2 | 2026-10-01T18:54:42+01:00 |
 | core/config | module | 25 | 2026-10-11T17:46:18+01:00 |
@@ -30,5 +27,5 @@
 | packaging/antigravity | module | 3 | 2026-10-02T08:58:19+01:00 |
 | packaging/antigravity/agents | module | 4 | 2026-10-05T23:33:27+01:00 |
 | prompts | module | 5 | 2026-10-02T12:27:27+01:00 |
-| root | module | 35 | 2026-10-15T17:31:53Z |
+| root | module | 46 | 2026-10-15T17:43:53Z |
 | testdata/fixtures/antigravity | module | 2 | 2026-10-02T07:25:58+01:00 |
