@@ -312,9 +312,31 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 	// Scopes
 	if len(touchedFiles) > 0 {
-		moduleScopes := config.DeriveModuleScopes(touchedFiles)
-		for _, mScope := range moduleScopes {
-			scopeName := mScope.Name
+		var relTouchedFiles []string
+		for _, path := range touchedFiles {
+			rel := path
+			if r, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(r, "..") {
+				rel = r
+			}
+			relTouchedFiles = append(relTouchedFiles, rel)
+		}
+		var candidateScopes []string
+		seenScope := make(map[string]bool)
+		addScope := func(s string) {
+			if s != "" && !seenScope[s] {
+				seenScope[s] = true
+				candidateScopes = append(candidateScopes, s)
+			}
+		}
+		for _, rel := range relTouchedFiles {
+			for _, mScope := range config.DeriveModuleScopes([]string{rel, rel + ".1", rel + ".2"}) {
+				addScope(mScope.Name)
+			}
+		}
+		for _, mScope := range config.DeriveModuleScopes(relTouchedFiles) {
+			addScope(mScope.Name)
+		}
+		for _, scopeName := range candidateScopes {
 			if !ledger.HasSeenDossier(scopeName) {
 				entries, err := engine.DossierEntries(ctx, scopeName)
 				if err == nil && len(entries) > 0 {

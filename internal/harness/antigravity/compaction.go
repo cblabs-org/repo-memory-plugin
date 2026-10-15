@@ -91,7 +91,7 @@ func BuildReinjection(ctx context.Context, idx *index.Index, lost []delivery.Inj
 	}
 
 	ranked := delivery.RankEntries(valid, nil)
-	selected := delivery.SelectWithinBudget(ranked, budget)
+	selected := delivery.SelectWithinBudget(ranked, budget, 0)
 	
 	if len(selected) == 0 {
 		return nil, nil
