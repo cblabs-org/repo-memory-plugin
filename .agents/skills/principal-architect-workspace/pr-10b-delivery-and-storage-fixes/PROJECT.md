@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-10b-delivery-and-storage-fixes
 > **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (`69a4cba`)
-> **Status:** 🔄 Ready (0/5 WOs complete)
+> **Status:** 🔄 Executing (1/5 WOs complete)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`).
 
 ## Objective
@@ -14,7 +14,7 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" bug (`EphemeralM
 
 | # | WO | Scope | Complexity | Status |
 |---|---|---|---|---|
-| 1 | [wo1-persistent-usermessage-and-rewind](wo1-persistent-usermessage-and-rewind/WORKORDER.md) | In `internal/harness/antigravity/preinvocation.go` and `compaction.go`: switch `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` from `EphemeralMessage` to `UserMessage` (keeping `EphemeralMessage` strictly for 1-step `about-to-edit`, `error-match`, and search warnings). Wire `DetectRewind(steps, ledger.LastKnownStepCount)` into `HandlePreInvocation` before moment evaluation. Also add `-c user.name=test -c user.email=test@example.com` in `hooks_test.go` `TestStopHook_CompletePipeline` for hermetic test execution. Add regression tests verifying persistent vs ephemeral channel assignment and rewind re-arming. | standard | ☐ Pending |
+| 1 | [wo1-persistent-usermessage-and-rewind](wo1-persistent-usermessage-and-rewind/WORKORDER.md) | In `internal/harness/antigravity/preinvocation.go` and `compaction.go`: switch `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` from `EphemeralMessage` to `UserMessage` (keeping `EphemeralMessage` strictly for 1-step `about-to-edit`, `error-match`, and search warnings). Wire `DetectRewind(steps, ledger.LastKnownStepCount)` into `HandlePreInvocation` before moment evaluation. Also add `-c user.name=test -c user.email=test@example.com` in `hooks_test.go` `TestStopHook_CompletePipeline` for hermetic test execution. Add regression tests verifying persistent vs ephemeral channel assignment and rewind re-arming. | standard | ✅ Complete (`89595e4`) |
 | 2 | [wo2-index-and-projector-fixes](wo2-index-and-projector-fixes/WORKORDER.md) | Fix GitHub Issue **#13** (`internal/core/index/entries.go`: delete existing child rows in `entries_fts`, `entry_anchors`, and `error_patterns` before `INSERT OR REPLACE` on `entries`) and Issue **#11** (`internal/core/dossiers`: deduplicate entries by `ID` across scopes in the projector when an entry is re-added or moved to a new scope). Add unit tests for both fixes. | standard | ☐ Pending |
 | 3 | [wo3-seeder-fixes](wo3-seeder-fixes/WORKORDER.md) | Fix GitHub Issue **#10** (`internal/core/seed/convert.go`: validate extracted backtick anchor candidates as real repository file paths / symbols rather than arbitrary code tokens) and Issue **#12** (`internal/core/seed`: stamp `--before` seeded ops with the workorder/cutoff commit's timestamp and SHA rather than `HEAD`). Add unit tests for both fixes. | standard | ☐ Pending |
 | 4 | [wo4-ops-cleanup-and-rebuild](wo4-ops-cleanup-and-rebuild/WORKORDER.md) | Fix GitHub Issue **#16** (clean junk placeholder ops from `.memory/ops/`, re-render `.memory/dossiers/` and `ATLAS.md`), rebuild and install `~/.local/bin/repo-memory`, and re-seed/rebuild the `esp32-app-foundation` evaluation template index (`tpl-c`, `tpl-d`) so `PR-10` WO4/WO5 runs against clean anchors and persistent `UserMessage` delivery. | standard | ☐ Pending |
@@ -39,3 +39,8 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" bug (`EphemeralM
 ### 2026-10-15 — Project Creation & Human Approval Recorded
 - Initialized by Chief Architect following completion of `PR-10a-v2-2-docs-and-specs` (`69a4cba`).
 - Human approval of the 5-WO decomposition recorded in `PROGRAM.md` and `PROGRAM-PLAN.md` (`2026-10-15`).
+
+### 2026-10-15 — WO1 (`wo1-persistent-usermessage-and-rewind`) Complete (`89595e4`)
+- Switched `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` from `EphemeralMessage` to `UserMessage` (`ChannelUser`), keeping 1-step `about-to-edit`, `error-match`, and FTS search warnings on `EphemeralMessage` (`ChannelEphemeral`).
+- Added `LastKnownStepCount` to `delivery.Ledger`, updated `RearmDedup()` to clear maps in-place so `Engine` instances sharing `InjectedSet` observe resets immediately, and wired `DetectRewind(steps, ledger.LastKnownStepCount)` into `HandlePreInvocation` before step high-water-mark scanning.
+- Made `runGitInDir` in `hooks_test.go` hermetic with explicit `-c user.name=test -c user.email=test@example.com` flags and added `TestPreInvocation_RewindRearmsDedup`.
