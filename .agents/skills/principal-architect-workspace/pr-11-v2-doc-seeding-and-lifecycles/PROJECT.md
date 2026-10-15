@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-11-v2-doc-seeding-and-lifecycles
 > **Base branch:** `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (`14c449c`)
-> **Status:** 🔄 Active (4/5 WOs complete)
+> **Status:** 🔄 Active (5/5 WOs complete — Step 6A PR Audit)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`, Decisions `VD16` & `VD17`).
 
 ## Objective
@@ -18,7 +18,7 @@ Implement the `v2.2` Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSour
 | 2 | [wo2-optional-section-rendering](wo2-optional-section-rendering/WORKORDER.md) | Update `internal/core/dossiers/renderer.go` and `handedit.go` to enforce `SPEC.md` §5.4 / `design-v2` §7.3 Optional Section Resolution (`{section?}`) and entry metadata rendering: render `kind: <semantic\|procedural\|episodic>` in the backtick metadata line, group `invariant` + `contract`/`convention`/`interface` under `## Invariants & contracts`, group `recipe`/`procedure` under `## Procedures / Recipes`, omit empty optional sections completely, and preserve backward compatibility with existing tests and `DetectHandEdits`. | standard | ✅ Complete (`16d0be3`) |
 | 3 | [wo3-doc-seed-source](wo3-doc-seed-source/WORKORDER.md) | Add `DocSeeds []string` to `config.RepoConfig` (`.memory/config.yaml`, defaulting to `docs/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files without `generated_by: repo-memory`). Implement `DocSeedSource` in `internal/core/seed/doc_seed.go` and the `repo-memory seed-docs` CLI subcommand (`cmd/repo-memory/cmd_seed_docs.go`), extracting structured, code-anchored `invariant`, `contract`, `gotcha`, `recipe`/`procedure`, and `failure-signature` ops tagged with `source: "doc-seed"`, `source_doc_path`, and `source_doc_blob_sha` (`git hash-object`), supporting deterministic markdown extraction, `--dry-run`, and `--json`. | architect | ✅ Complete (`37f2051`) |
 | 4 | [wo4-async-doc-freshness-dreaming](wo4-async-doc-freshness-dreaming/WORKORDER.md) | Implement Async Doc Freshness ("Dreaming", `SPEC.md` §6.3.5 / `design-v2` §7.6 / Addendum A §11.1) in `internal/core/tick/dream_freshness.go` and wire into `PipelineExecutor.Run`: compare each `source: "doc-seed"` entry's `source_doc_blob_sha` against the current git blob SHA of `source_doc_path`; when a seeded doc is modified or deleted in git, deterministically re-seed/amend/supersede or retire the affected `doc-seed` entries and rebuild `dossiers/` and `index.db`. | standard | ✅ Complete (`f54c27f`) |
-| 5 | [wo5-dogfood-doc-seed-and-verification](wo5-dogfood-doc-seed-and-verification/WORKORDER.md) | Run `repo-memory seed-docs` on `repo-memory-plugin`'s curated docs/skills, re-project `.memory/dossiers/` and `.memory/ATLAS.md` with `{section?}` resolution and `kind:` metadata, rebuild `~/.local/bin/repo-memory` and `<data-dir>/<repo-id>/index.db`, and verify `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./...`. | standard | 🔄 In Progress |
+| 5 | [wo5-dogfood-doc-seed-and-verification](wo5-dogfood-doc-seed-and-verification/WORKORDER.md) | Run `repo-memory seed-docs` on `repo-memory-plugin`'s curated docs/skills, re-project `.memory/dossiers/` and `.memory/ATLAS.md` with `{section?}` resolution and `kind:` metadata, rebuild `~/.local/bin/repo-memory` and `<data-dir>/<repo-id>/index.db`, and verify `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./...`. | standard | ✅ Complete (`572ddb5`) |
 
 ## Dependencies
 
@@ -55,3 +55,7 @@ Implement the `v2.2` Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSour
 ### 2026-10-15 — WO4 (`wo4-async-doc-freshness-dreaming`) Complete (`f54c27f`)
 - Executed by Tier 3 Worker `ced46bcd-66d1-455f-b380-010b272cfcab`.
 - Implemented `CheckDocFreshness` / `checkDocFreshness` in `internal/core/tick/dream_freshness.go` and wired into `PipelineExecutor.Run` (`internal/core/tick/pipeline.go`).
+
+### 2026-10-15 — WO5 (`wo5-dogfood-doc-seed-and-verification`) Complete (`572ddb5`)
+- Executed by Tier 3 Worker `3682103d-eb9b-4738-b95f-6ad724d18667`.
+- Configured `doc_seeds` in `.memory/config.yaml`, refined `ParseDocToOps` to exclude flattened comparison tables and non-code target anchors, dogfooded `repo-memory seed-docs` (12 anchored `doc-seed` entries across `.memory/dossiers/`), re-projected all 30 dossiers with `kind:` and `{section?}` resolution, rebuilt `~/.local/bin/repo-memory` and `<data-dir>/<repo-id>/index.db`, and verified `go test -race ./cmd/... ./internal/...` and `GOOS=windows go build ./cmd/... ./internal/...`.
