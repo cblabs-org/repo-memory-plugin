@@ -2,8 +2,8 @@
 
 > **Programme:** Build `repo-memory`, a repository-level memory system for coding agents.
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
-> **Status:** Executing — **v2.2 revision approved (2026-10-15)**. **15/22 complete** (PR-01 through PR-09b, PR-10a-v2-2-docs-and-specs; PR-10-eval-v2 at WO3/7 Stage 1 complete). **PR-10b-delivery-and-storage-fixes active next**, before resuming PR-10-eval-v2 Stage 2 (WO4–WO7).
-> **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (ahead of `pr-10-eval-v2/wo3-index-build` `ec96755` and `main` `83edd25`)
+> **Status:** Executing — **v2.2 revision approved (2026-10-15)**. **16/22 complete** (PR-01 through PR-09b, PR-10a-v2-2-docs-and-specs [PR #17], PR-10b-delivery-and-storage-fixes [PR #18 APPROVED]; PR-10-eval-v2 at WO3/7 Stage 1 complete). **Next active:** Resume **PR-10-eval-v2** Stage 2 (WO4–WO7) and/or **PR-11-v2-doc-seeding-and-lifecycles**.
+> **Base branch:** `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (ahead of `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`)
 > **Revision:** v2.2 (2026-10-15). Synthesizes empirical findings from PR-09 (X6-lite + 231-transcript study) and PR-10 Stage 1 (77-session doc/skill audit), fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` persistence regression, and incorporates the 6 v2.2 architectural pillars.
 
 ## Programme Summary
@@ -92,10 +92,10 @@ Read side and empirical evaluation first, upgraded in v2.2 (`2026-10-15`) after 
 | 12 | `pr-08-v2-delivery` | Channels, moments, injection ledger, compaction re-injection, pull tools, latency budgets | ✅ **Complete** (PR #14, merged) | PR-07-v2-storage |
 | 13 | `pr-09-v2-x6-lite` | Pre-registered B1 replay + 231-session PA retrieval study (STOP verdict on spec-style tasks → pivoted to Eval v2 on esp32) | ✅ **Complete** (`45a68cd`) | PR-08-v2-delivery |
 | 13b | `pr-09b-product-fixes` | Stage 0 product fixes: canonical `IndexPath`, bm25 FTS scoring, relevance threshold, per-session `InjectedSet` dedup | ✅ **Complete** (`208b0e0`) | PR-09-v2-x6-lite |
-| 14a | `pr-10a-v2-2-docs-and-specs` | **v2.2 Spec & Design Upgrade:** Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and v2.2 Programme Plan | ✅ **Complete** | PR-10 Stage 1 (`ec96755`) |
-| 14b | `pr-10b-delivery-and-storage-fixes` | Fix `8d7ad7b`+`d3ab994` `EphemeralMessage`→`UserMessage` vanishing-memory bug, wire `DetectRewind`, fix open issues `#10`–`#13` & `#16`, rebuild binary & esp32 index | 🔄 **Next (Active)** | PR-10a-v2-2-docs-and-specs |
-| 14 | `pr-10-eval-v2` | **Eval v2 (2×2 factorial on esp32):** WO1–WO3 (Stage 0b & Stage 1) complete; resume WO4 (dry-run) → WO5 (Stage 2a pilot) → WO6 (Stage 2b main) → WO7 (report) | ⏸️ **WO3/7 Done** (resumes after PR-10b) | PR-10b-delivery-and-storage-fixes |
-| 15 | `pr-11-v2-doc-seeding-and-lifecycles` | Doc-Seeded Dossiers (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming"), `semantic`/`procedural`/`episodic` lifecycles, and `{section?}` optional rendering | ☐ Planned | PR-10b-delivery-and-storage-fixes |
+| 14a | `pr-10a-v2-2-docs-and-specs` | **v2.2 Spec & Design Upgrade:** Design v2 Rev 4, Addendum A Rev 3, SPEC v1.0, hooks reference, README, and v2.2 Programme Plan | ✅ **Complete** (PR #17, APPROVED) | PR-10 Stage 1 (`ec96755`) |
+| 14b | `pr-10b-delivery-and-storage-fixes` | Fix `8d7ad7b`+`d3ab994` `EphemeralMessage`→`UserMessage` vanishing-memory bug, wire `DetectRewind`, fix open issues `#10`–`#13` & `#16`, rebuild binary & esp32 index | ✅ **Complete** (PR #18, APPROVED) | PR-10a-v2-2-docs-and-specs |
+| 14 | `pr-10-eval-v2` | **Eval v2 (2×2 factorial on esp32):** WO1–WO3 (Stage 0b & Stage 1) complete; resume WO4 (dry-run) → WO5 (Stage 2a pilot) → WO6 (Stage 2b main) → WO7 (report) | 🔄 **Next (Resume WO4/7)** | PR-10b-delivery-and-storage-fixes |
+| 15 | `pr-11-v2-doc-seeding-and-lifecycles` | Doc-Seeded Dossiers (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming"), `semantic`/`procedural`/`episodic` lifecycles, and `{section?}` optional rendering | 🔄 **Ready (Parallel with PR-10 Stage 2)** | PR-10b-delivery-and-storage-fixes |
 | 16 | `pr-12-v2-distillation` | Automatic milestone-gated `Stop` (`NO_TOOL_CALL`) warm-cache turn notes, free harvest (`CHECKPOINT` + `brain/`), `memory_note` dedup, A8 managed block, §5.6 preparation layer, sidecar fallback | ☐ Planned | PR-10-eval-v2 & PR-11 |
 | 17 | `pr-13-v2-consolidation` | Warm batch consolidation (`stream-json` `repo-memory-distiller`), Pre-Consolidation Corroboration Gate, P13 echo filter, `user:`/`branch:`/`repo:` scope isolation, two-lane publish | ☐ Planned | PR-12-v2-distillation |
 | 18 | `pr-14-v2-pilot` | End-to-end live distillation & consolidation paired evaluation (Addendum A10) & cost report | ☐ Planned | PR-13-v2-consolidation |
@@ -246,4 +246,15 @@ The v2 plan was reviewed before kick-off against the code, git topology, the liv
   2. `wo2-addendum-a-rev3`: Upgraded `docs/addendum-a-provenance-and-hardening.md` to Revision 3 (`A7` procedural validation & `.agents/skills/rm-<slug>/SKILL.md` graduation, `A8` `v2` managed block, `A9` `DocSeedSource`).
   3. `wo3-spec-v1-0`: Upgraded `SPEC.md` from `Draft v0.10` to **`v1.0`** (`v2.2` Architecture) and marked `docs/experiments/SPEC-CHANGES.md` applied.
   4. `wo4-info-docs-and-cleanup`: Updated `docs/antigravity-hooks-reference.md`, created `README.md`, and removed stale v1 `GEMINI.md` and `.memory/views/`.
-  5. `wo5-verification-and-handover`: Verified cross-document links, external hygiene, and full Go test suite (`go test ./...` green).
+  5. `wo5-verification-and-handover`: Verified cross-document links, external hygiene, and full Go test suite (`go test ./...` green); remediated post-`CHECKPOINT` schema/path/CLI drift (`723593b`) and published as [PR #17](https://github.com/cblabs-org/repo-memory-plugin/pull/17).
+
+### 2026-10-15 — PR-10b-delivery-and-storage-fixes complete & Cold-Firewall PR #18 Approved (session 23)
+
+**Summary:**
+- Executed all 6 work orders (`wo1`–`wo6`) in [PR-10b-delivery-and-storage-fixes](../pr-10b-delivery-and-storage-fixes/PROJECT.md) via dedicated Tier 3 Execution Worker sub-agents (zero PA context compaction) and validated via the 2-round Cold-Firewall PR Audit loop on [PR #18](https://github.com/cblabs-org/repo-memory-plugin/pull/18):
+  1. `wo1-persistent-usermessage-and-rewind` (`89595e4`): Switched `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` from `EphemeralMessage` to persistent `UserMessage` (`ChannelUser`), keeping `EphemeralMessage` strictly for 1-step `about-to-edit`, `error-match`, and FTS warnings; wired `DetectRewind(steps, ledger.LastKnownStepCount)` into `HandlePreInvocation`.
+  2. `wo2-index-and-projector-fixes` (`a808fa5`): Fixed GitHub Issue **#13** (`ON CONFLICT(id) DO UPDATE` + child row cleanup in `entry_anchors`/`error_patterns` + recursive triggers) and Issue **#11** (`moveEntry` cross-scope deduplication in the dossier projector).
+  3. `wo3-seeder-fixes` (`bed436e`): Fixed GitHub Issue **#10** (`IsValidAnchorPathSyntax` + `buildRepoPathValidator` rejecting arbitrary code tokens/non-paths) and Issue **#12** (`--before` cutoff-relative commit timestamp stamping).
+  4. `wo4-ops-cleanup-and-rebuild` (`2b97c02`): Fixed GitHub Issue **#16** via `repo-memory ops gc`, cleaning `.memory/` and all 8 `evaluation/data/<wo>` snapshots, rebuilding `~/.local/bin/repo-memory`, and re-indexing `<data-dir>/<repo-id>/index.db` and the `esp32` evaluation templates (`tpl-c`, `tpl-d`).
+  5. `wo5-dry-run-verification` (`60fd200`): Added `TestPreInvocation_MultiInvocationLifecycle` verifying 5-phase multi-invocation persistence, deduplication, compaction re-injection, and rewind re-arming.
+  6. `wo6-review-remediation` (`bcdfae0`, `30123f3`): Resolved all 5 Cold-Firewall Audit findings on PR #18 (`[MAJOR-1]` parenthesized `(none)` filtering in `IsJunkText` + GC re-run, `[MAJOR-2]` preserving cleared `InjectedSet` across process boundaries in `loadLedgerLocked`, `[MINOR-1]` pruning empty source dossiers in `moveEntry`/`Writer.WriteAll`, `[MINOR-2]` `path#symbol`/`:symbol` anchor validation, `[MINOR-3]` `busy_timeout(5000)` + `foreign_keys(1)` on `NewReadOnlyIndex`). Approved in Round 2 Cold-Firewall Verification.
