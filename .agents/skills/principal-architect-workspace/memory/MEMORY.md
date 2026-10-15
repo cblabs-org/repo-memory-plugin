@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10a-v2-2-docs-and-specs | **Active (0/5 WOs)** — Approved in v2.2 Programme Plan | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
+| pr-10a-v2-2-docs-and-specs | **Active (1/5 WOs)** — WO1 (`design-v2-distillation-retrieval.md` Rev 4) complete; WO2 (`addendum-a-provenance-and-hardening.md` Rev 3) active next | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Resumes at WO4 (`wo4-dry-run`) after `pr-10a` and `pr-10b` land | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
