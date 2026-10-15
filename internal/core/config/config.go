@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -163,6 +165,7 @@ type SubsystemConfig struct {
 // RepoConfig represents the repository-level configuration (<repoRoot>/.memory/config.yaml).
 type RepoConfig struct {
 	Enabled    *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	DocSeeds   []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`
 	Subsystems map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
 	Budgets    BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`
 	Extra      map[string]any             `json:"extra,omitempty" yaml:",inline"`
@@ -395,4 +398,214 @@ func SetRepoEnabled(repoRoot string, enabled bool) error {
 
 	return nil
 }
+
+// DefaultDocSeedGlobs returns the default repository doc seed globs when DocSeeds is unset.
+func DefaultDocSeedGlobs() []string {
+	return []string{"docs/**/*.md", ".agents/skills/**/SKILL.md"}
+}
+
+// ResolveDocSeedGlobs expands the configured (or default) doc seed globs across repoRoot,
+// applying exclusion rules for PA workspaces, evaluation/experiment artifacts, .memory/,
+// and graduated skills containing `generated_by: repo-memory` in their YAML frontmatter.
+func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
+	if repoRoot == "" {
+		repoRoot = "."
+	}
+
+	patterns := cfg.DocSeeds
+	if len(patterns) == 0 {
+		patterns = DefaultDocSeedGlobs()
+	}
+
+	explicitExact := make(map[string]bool)
+	for _, rawPat := range cfg.DocSeeds {
+		norm := normalizeSlashPattern(rawPat)
+		if norm != "" && !strings.ContainsAny(norm, "*?[") {
+			explicitExact[norm] = true
+		}
+	}
+
+	matchedSet := make(map[string]bool)
+
+	for _, rawPat := range patterns {
+		pat := normalizeSlashPattern(rawPat)
+		if pat == "" {
+			continue
+		}
+
+		// Exact non-wildcard path
+		if !strings.ContainsAny(pat, "*?[") {
+			full := filepath.Join(repoRoot, filepath.FromSlash(pat))
+			info, err := os.Stat(full)
+			if err == nil && info.Mode().IsRegular() {
+				matchedSet[pat] = true
+			}
+			continue
+		}
+
+		// Determine prefix directory before any wildcard
+		segs := strings.Split(pat, "/")
+		var prefixSegs []string
+		for _, s := range segs {
+			if strings.ContainsAny(s, "*?[") {
+				break
+			}
+			prefixSegs = append(prefixSegs, s)
+		}
+		prefixRel := strings.Join(prefixSegs, "/")
+		walkRoot := repoRoot
+		if prefixRel != "" {
+			walkRoot = filepath.Join(repoRoot, filepath.FromSlash(prefixRel))
+		}
+		if _, err := os.Stat(walkRoot); err != nil {
+			continue
+		}
+
+		err := filepath.WalkDir(walkRoot, func(fullPath string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				if os.IsNotExist(walkErr) || os.IsPermission(walkErr) {
+					return nil
+				}
+				return walkErr
+			}
+			rel, err := filepath.Rel(repoRoot, fullPath)
+			if err != nil {
+				return nil
+			}
+			relSlash := filepath.ToSlash(rel)
+			if relSlash == "." {
+				return nil
+			}
+
+			if d.IsDir() {
+				base := d.Name()
+				if base == ".git" || base == ".memory" || relSlash == ".agents/skills/principal-architect-workspace" || strings.HasSuffix(relSlash, "/principal-architect-workspace") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			if matchSlashGlob(pat, relSlash) {
+				matchedSet[relSlash] = true
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("expanding doc seed glob %q: %w", rawPat, err)
+		}
+	}
+
+	var result []string
+	for relSlash := range matchedSet {
+		if !strings.HasSuffix(strings.ToLower(relSlash), ".md") {
+			continue
+		}
+		if shouldExcludeDocSeedPath(relSlash, explicitExact[relSlash]) {
+			continue
+		}
+		fullPath := filepath.Join(repoRoot, filepath.FromSlash(relSlash))
+		if hasGeneratedByRepoMemoryFrontmatter(fullPath) {
+			continue
+		}
+		result = append(result, relSlash)
+	}
+
+	sort.Strings(result)
+	return result, nil
+}
+
+func normalizeSlashPattern(raw string) string {
+	p := filepath.ToSlash(strings.TrimSpace(raw))
+	p = strings.TrimPrefix(p, "./")
+	p = strings.TrimPrefix(p, "/")
+	if p == "" || p == "." {
+		return ""
+	}
+	return p
+}
+
+func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
+	if relSlash == ".memory" || strings.HasPrefix(relSlash, ".memory/") || strings.Contains(relSlash, "/.memory/") {
+		return true
+	}
+	if strings.HasPrefix(relSlash, ".agents/skills/principal-architect-workspace/") ||
+		strings.Contains(relSlash, "/principal-architect-workspace/") ||
+		strings.HasPrefix(relSlash, "principal-architect-workspace/") {
+		return true
+	}
+	if !isExplicitExact {
+		if strings.HasPrefix(relSlash, "docs/evaluations/") || strings.HasPrefix(relSlash, "docs/experiments/") {
+			return true
+		}
+	}
+	return false
+}
+
+func matchSlashGlob(pattern, target string) bool {
+	patSegs := strings.Split(pattern, "/")
+	tgtSegs := strings.Split(target, "/")
+	return matchSegments(patSegs, tgtSegs)
+}
+
+func matchSegments(patSegs, tgtSegs []string) bool {
+	if len(patSegs) == 0 {
+		return len(tgtSegs) == 0
+	}
+	if patSegs[0] == "**" {
+		// Collapse consecutive **
+		for len(patSegs) > 1 && patSegs[1] == "**" {
+			patSegs = patSegs[1:]
+		}
+		// ** at end matches everything remaining
+		if len(patSegs) == 1 {
+			return true
+		}
+		// Match 0 or more target segments
+		for i := 0; i <= len(tgtSegs); i++ {
+			if matchSegments(patSegs[1:], tgtSegs[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(tgtSegs) == 0 {
+		return false
+	}
+	segPat := strings.ReplaceAll(patSegs[0], "**", "*")
+	matched, err := path.Match(segPat, tgtSegs[0])
+	if err != nil || !matched {
+		return false
+	}
+	return matchSegments(patSegs[1:], tgtSegs[1:])
+}
+
+func hasGeneratedByRepoMemoryFrontmatter(filePath string) bool {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+	content := strings.TrimPrefix(string(data), "\uFEFF")
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return false
+	}
+	for i := 1; i < len(lines); i++ {
+		trim := strings.TrimSpace(lines[i])
+		if trim == "---" {
+			break
+		}
+		if strings.HasPrefix(trim, "generated_by:") {
+			val := strings.TrimSpace(strings.TrimPrefix(trim, "generated_by:"))
+			val = strings.Trim(val, `"'`)
+			if val == "repo-memory" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 
