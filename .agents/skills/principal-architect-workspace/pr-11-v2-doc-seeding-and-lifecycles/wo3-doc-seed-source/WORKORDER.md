@@ -32,7 +32,7 @@ Implement `v2.2` Doc-Seeded Dossiers (`SPEC.md` §6.3.3, `docs/design-v2-distill
 
 ## Line-Item Instructions
 
-- [ ] `internal/core/config/config.go` — Add `DocSeeds` to `RepoConfig` and `ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error)`:
+- [x] `internal/core/config/config.go` — Add `DocSeeds` to `RepoConfig` and `ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error)`:
   1. Add `DocSeeds []string` (`json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`) to `RepoConfig`.
   2. Implement `ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error)`:
      - If `repoRoot == ""` default to `"."`.
@@ -45,7 +45,7 @@ Implement `v2.2` Doc-Seeded Dossiers (`SPEC.md` §6.3.3, `docs/design-v2-distill
        - Any file whose content contains `generated_by: repo-memory` in its YAML frontmatter (so graduated `rm-*` skills are never re-ingested as doc seeds).
      - Return deduplicated, lexicographically sorted repo-relative slash paths.
 
-- [ ] `internal/core/seed/doc_seed.go` — Implement `DocSeedSource` and deterministic doc seeding / reconciliation:
+- [x] `internal/core/seed/doc_seed.go` — Implement `DocSeedSource` and deterministic doc seeding / reconciliation:
   1. Define types:
      ```go
      type DocSeedOptions struct {
@@ -139,7 +139,7 @@ Implement `v2.2` Doc-Seeded Dossiers (`SPEC.md` §6.3.3, `docs/design-v2-distill
        - Write the batch via `opsWriter.Write(ops.NewBatch(allEmittedOps))`.
      - Return `result`.
 
-- [ ] `cmd/repo-memory/cmd_seed_docs.go` and `cmd/repo-memory/main.go` — Add `repo-memory seed-docs` CLI subcommand:
+- [x] `cmd/repo-memory/cmd_seed_docs.go` and `cmd/repo-memory/main.go` — Add `repo-memory seed-docs` CLI subcommand:
   1. Create `cmd/repo-memory/cmd_seed_docs.go` with `seedDocsCmd` (`Use: "seed-docs"`, `Short: "Seed dossier entries from curated repository markdown documentation and skills"`):
      - Flags:
        - `--ops-dir` (default `".memory/ops/"`)
@@ -154,7 +154,7 @@ Implement `v2.2` Doc-Seeded Dossiers (`SPEC.md` §6.3.3, `docs/design-v2-distill
        - If `--json` is set, marshal `res` as indented JSON to stdout; otherwise print a concise summary (`Seeded %d entries (%d added, %d amended, %d retired) from %d/%d docs (%d unchanged skipped)`).
   2. Register `rootCmd.AddCommand(seedDocsCmd)` in `cmd/repo-memory/main.go`.
 
-- [ ] `internal/core/seed/doc_seed_test.go` — Add comprehensive unit tests:
+- [x] `internal/core/seed/doc_seed_test.go` — Add comprehensive unit tests:
   1. `TestResolveDocSeedGlobs`: verifies default globs (`docs/**/*.md`, `.agents/skills/**/SKILL.md`), exclusion of `.agents/skills/principal-architect-workspace/**`, `docs/evaluations/**`, `docs/experiments/**`, and skills containing `generated_by: repo-memory`, plus custom `doc_seeds` globs.
   2. `TestSeedDocs_InitialAndIdempotent`: creates a temp repo with realistic source files (`internal/core/ops/op.go`, `packaging/antigravity/hooks.json`) and markdown docs (`docs/hooks-guide.md`, `.agents/skills/test-skill/SKILL.md`), runs `SeedDocs`, verifies `source: "doc-seed"`, `source_doc_path`, `source_doc_blob_sha`, `kind`, and repo-validated `anchors` are populated, and verifies a second run with unchanged files skips all files (`FilesSkipped == 2`, `len(res2.Ops) == 0`).
   3. `TestSeedDocs_ModifyAndDelete`: modifies `docs/hooks-guide.md` (changing a rule and removing an old bullet) and deletes `.agents/skills/test-skill/SKILL.md`, runs `SeedDocs`, and verifies the modified doc's `source_doc_blob_sha` is updated, removed bullets are retired, and the deleted file's entries are retired with `source_doc_deleted`.
@@ -171,4 +171,24 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ---
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+✅ Complete
+
+### Changes Made
+- `internal/core/config/config.go` — Added `DocSeeds []string` to `RepoConfig`, `DefaultDocSeedGlobs()`, and `ResolveDocSeedGlobs(repoRoot, cfg)` supporting exact paths, standard globs, and `**` recursive walks with exclusions for `.agents/skills/principal-architect-workspace/**`, `docs/evaluations/**`, `docs/experiments/**`, `.memory/**`, and skills containing `generated_by: repo-memory`.
+- `internal/core/seed/doc_seed.go` — Implemented `DocSeedOptions`, `DocSeedFileStat`, `DocSeedResult`, `DocSeedSource`, `ComputeGitBlobSHA`, `ParseDocToOps`, and `SeedDocs` for deterministic markdown extraction, repo anchor validation, cognitive lifecycle classification, and idempotent git blob SHA reconciliation (`OpAdd`, `OpAmend`, `OpMove`, `OpRetire`).
+- `cmd/repo-memory/cmd_seed_docs.go` — Added `repo-memory seed-docs` CLI subcommand with `--ops-dir`, `--config`, `--dry-run`, and `--json`, automatically re-projecting `.memory/dossiers/` and `.memory/ATLAS.md` when entries change.
+- `cmd/repo-memory/main.go` — Registered `seedDocsCmd` on `rootCmd`.
+- `internal/core/seed/doc_seed_test.go` — Added unit tests `TestResolveDocSeedGlobs`, `TestSeedDocs_InitialAndIdempotent`, and `TestSeedDocs_ModifyAndDelete`.
+
+### Decisions Made
+- When `opts.DocPaths` is empty in `SeedDocs`, previously seeded `source_doc_path` files from active `doc-seed` entries that are no longer matched by `ResolveDocSeedGlobs` (e.g., deleted files) are included in the reconciliation pass so their entries are deterministically retired with `source_doc_deleted: <path>`.
+- Extracted a stable normalized key hint (`<heading>:<bold-prefix>` or table key) when present so updating the prose of a named rule or table row amends the existing `docseed-<hash>` entry in place rather than churning entry IDs.
+
+### Dead Ends & Warnings
+- (none)
+
+### Out-of-Scope Findings
+- (none)
+
