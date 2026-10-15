@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-11-v2-doc-seeding-and-lifecycles
 > **Base branch:** `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (`14c449c`)
-> **Status:** 🔄 Active (6/6 WOs complete — Round 2 PR Audit)
+> **Status:** ✅ Complete (6/6 WOs complete — PR #19 APPROVED)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`, Decisions `VD16` & `VD17`).
 
 ## Objective
@@ -64,3 +64,9 @@ Implement the `v2.2` Doc-Seeded Dossiers (`repo-memory seed-docs` / `DocSeedSour
 ### 2026-10-15 — WO6 (`wo6-review-remediation`) Complete (`23f082d`)
 - Executed by Tier 3 Worker `aeef37a3-f5cd-47ec-804f-eaa6378368d0`.
 - Resolved all 3 Round 1 Cold-Firewall PR Audit findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`), cleaned and re-seeded `.memory/` so `seed-docs` and `ops gc` are mutually idempotent (`scopes_repaired=0`, 27 clean dossiers in `.memory/ATLAS.md`), and rebuilt `~/.local/bin/repo-memory` + `<data-dir>/<repo-id>/index.db`.
+
+### 2026-10-15 — Cold-Firewall PR Audit Round 2 APPROVED & Step 6B Graduation
+- Cold-Firewall PR Audit Reviewer verified `675c606` (`23f082d`) on [PR #19](https://github.com/cblabs-org/repo-memory-plugin/pull/19) with verdict `APPROVED (0 blocking, 0 major)`.
+- **Distilled Architectural Lessons:**
+  - **Mutual Idempotency Between Seeders & `ops gc`:** Any deterministic seeder (`SeedDocs`, `Seed`) must filter `scopeAnchors` (`strings.Contains(a, "/") && !strings.HasPrefix(a, ".")`) and guard derived scopes with `!isPollutedScope(scope)` before falling back to `"root"`, while keeping valid dot-prefixed or root-file anchors (`.memory/config.yaml`, `Makefile`) in `op.Fields["anchors"]`.
+  - **Zero-Entry Dossier & `ATLAS.md` Pruning on Retirement:** When all active entries in a dossier are retired (`len(d.Entries) == 0`, `len(d.History) > 0`), `dossiers.Writer.WriteAll` must remove `<scope>.md`, write only `<scope>.history.md`, omit `<scope>` from `ATLAS.md` (preventing `0`-entry `0001-01-01T00:00:00Z` rows), and sweep orphaned `.md` files from `.memory/dossiers/`.

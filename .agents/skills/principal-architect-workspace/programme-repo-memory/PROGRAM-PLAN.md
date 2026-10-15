@@ -4,8 +4,8 @@
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
 > **Release:** 1 (Antigravity)
 > **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review) · **v2.2:** 2026-10-15 (post-X6-lite & Stage 1 synthesis, session 21)
-> **Total PRs:** 22 (16 complete, 1 ready to resume at WO4/7, 5 planned).
-> **Base branch:** `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` (ahead of `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
+> **Total PRs:** 22 (17 complete, 1 ready to resume at WO4/7, 4 planned).
+> **Base branch:** `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` (ahead of `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` `4abdc55`, `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
 > **Dependency model:**
 > - **PR-10a-v2-2-docs-and-specs** upgrades `SPEC.md` (v1.0), `docs/design-v2-distillation-retrieval.md` (Rev 4), `docs/addendum-a-provenance-and-hardening.md` (Rev 3), `docs/antigravity-hooks-reference.md`, and `README.md` first.
 > - **PR-10b-delivery-and-storage-fixes** fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` persistence regression, wires `DetectRewind`, and resolves open storage/seeder issues (`#10`–`#13`, `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
@@ -92,10 +92,10 @@ PR-10a     v2.2 Specs, Design (Rev 4), Addendum A (Rev 3) & Info Docs  ✅ COMPL
   ▼
 PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#16 ✅ COMPLETE (PR #18)
   ├───► PR-10-eval-v2 (Resume WO4..WO7: Dry-Run, Stage 2a/2b, Report)  🔄 READY NEXT
-  └───► PR-11-v2      Doc-Seeded Dossiers, Lifecycles & {section?}     🔄 READY NEXT
+  └───► PR-11-v2      Doc-Seeded Dossiers, Lifecycles & {section?}     ✅ COMPLETE (PR #19)
           │
           ▼  (joins PR-10 + PR-11)
-        PR-12-v2      Two-Stage Warm-Cache Distillation                ☐
+        PR-12-v2      Two-Stage Warm-Cache Distillation                🔄 READY NEXT
           │
           ▼
         PR-13-v2      Warm Batch Consolidation & Scope Hierarchy       ☐
