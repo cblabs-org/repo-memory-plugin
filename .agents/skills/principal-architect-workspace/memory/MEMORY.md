@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10a-v2-2-docs-and-specs | **Active (3/5 WOs)** — WO1, WO2 & WO3 complete; WO4 (`antigravity-hooks-reference.md`, `README.md`, v1 cleanup) active next | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
+| pr-10a-v2-2-docs-and-specs | **Active (4/5 WOs)** — WO1–WO4 complete; WO5 (`wo5-verification-and-handover`) active next | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Resumes at WO4 (`wo4-dry-run`) after `pr-10a` and `pr-10b` land | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
