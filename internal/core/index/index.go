@@ -81,9 +81,17 @@ func (idx *Index) initSchema() error {
 	CREATE TABLE IF NOT EXISTS entries (
 		id TEXT PRIMARY KEY,
 		type TEXT NOT NULL,
+		kind TEXT DEFAULT '',
 		dossier_scope TEXT NOT NULL,
 		text TEXT NOT NULL,
 		source TEXT,
+		source_doc_path TEXT DEFAULT '',
+		source_doc_blob_sha TEXT DEFAULT '',
+		success_count INTEGER DEFAULT 0,
+		failure_count INTEGER DEFAULT 0,
+		last_succeeded_at TEXT DEFAULT '',
+		stale_suspect INTEGER DEFAULT 0,
+		render_as_skill TEXT DEFAULT '',
 		verified TEXT,
 		closes_when TEXT,
 		created_at TEXT,
@@ -148,6 +156,58 @@ func (idx *Index) initSchema() error {
 	_, err := idx.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("initializing schema: %w", err)
+	}
+	if err := idx.migrateEntriesColumns(); err != nil {
+		return fmt.Errorf("migrating entries columns: %w", err)
+	}
+	return nil
+}
+
+func (idx *Index) migrateEntriesColumns() error {
+	rows, err := idx.db.Query("PRAGMA table_info(entries)")
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	type colSpec struct {
+		name string
+		ddl  string
+	}
+	required := []colSpec{
+		{"kind", "TEXT DEFAULT ''"},
+		{"source_doc_path", "TEXT DEFAULT ''"},
+		{"source_doc_blob_sha", "TEXT DEFAULT ''"},
+		{"success_count", "INTEGER DEFAULT 0"},
+		{"failure_count", "INTEGER DEFAULT 0"},
+		{"last_succeeded_at", "TEXT DEFAULT ''"},
+		{"stale_suspect", "INTEGER DEFAULT 0"},
+		{"render_as_skill", "TEXT DEFAULT ''"},
+	}
+
+	for _, c := range required {
+		if !existing[c.name] {
+			alter := fmt.Sprintf("ALTER TABLE entries ADD COLUMN %s %s", c.name, c.ddl)
+			if _, err := idx.db.Exec(alter); err != nil {
+				return fmt.Errorf("adding column %s: %w", c.name, err)
+			}
+		}
 	}
 	return nil
 }
