@@ -26,11 +26,11 @@ type Ledger struct {
 	SeenAnchors               map[string]bool
 	AcknowledgedGates         map[string]bool
 	ExposureList              []ExposureRecord
-	LastHandledCheckpointStep int                 `json:"last_handled_checkpoint_step,omitempty"`
+	LastHandledCheckpointStep int                 `json:"last_handled_checkpoint_step"`
 	PendingGates              map[string][]string `json:"pending_gates,omitempty"`
 	LastProcessedStepIndex    int                 `json:"last_processed_step_index,omitempty"`
 	LastKnownStepCount        int                 `json:"last_known_step_count,omitempty"`
-	InjectedSet               map[string]bool     `json:"injected_set,omitempty"`
+	InjectedSet               map[string]bool     `json:"injected_set"`
 }
 
 func NewLedger(conversationID string) *Ledger {

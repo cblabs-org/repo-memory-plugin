@@ -345,6 +345,12 @@ func TestPreInvocation_CompactionAndReinjection(t *testing.T) {
 		Moment:    delivery.MomentTaskStart,
 		StepIndex: 2,
 	})
+	ledger.RecordInjection(delivery.InjectionRecord{
+		EntryID:   "summarized-1",
+		Channel:   delivery.ChannelUser,
+		Moment:    delivery.MomentTaskStart,
+		StepIndex: 1,
+	})
 	// Simulate seen dossiers to verify dedup is cleared
 	ledger.MarkDossierSeen("core")
 	if err := SaveLedger(dataDir, repoID, ledger); err != nil {
@@ -361,7 +367,7 @@ func TestPreInvocation_CompactionAndReinjection(t *testing.T) {
 	content := `{"step_index": 0, "type": "USER_INPUT", "content": "hello"}
 {"step_index": 1, "type": "PLANNER_RESPONSE", "content": "world"}
 CHECKPOINT
-{"step_index": 4, "type": "SYSTEM", "content": "compacted history summary"}
+{"step_index": 4, "type": "SYSTEM", "content": "compacted history summary mentioning [repo-memory summarized-1]"}
 `
 	if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -397,10 +403,13 @@ CHECKPOINT
 		t.Errorf("expected empty ephemeralMessage on reinjection, got: %s", resp.InjectSteps[0].EphemeralMessage)
 	}
 
-	// verify dedup is cleared
+	// verify dedup is cleared and non-reinjected pre-checkpoint entries are not resurrected
 	loaded, _ := LoadLedger(dataDir, repoID, convID)
 	if loaded.HasSeenDossier("core") {
 		t.Errorf("expected seen dossier to be cleared after compaction")
+	}
+	if loaded.HasInjected("summarized-1") {
+		t.Errorf("expected pre-checkpoint non-reinjected entry summarized-1 not to be resurrected into InjectedSet")
 	}
 }
 
@@ -943,6 +952,19 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 		t.Errorf("Phase 4 expected about-to-edit not to be re-injected, got: %s", reinjStep.UserMessage)
 	}
 
+	dataDir := os.Getenv("REPO_MEMORY_DATA_DIR")
+	repoID := "test-repo"
+	loadedPhase4, err := LoadLedger(dataDir, repoID, convID)
+	if err != nil {
+		t.Fatalf("Phase 4 LoadLedger error: %v", err)
+	}
+	if loadedPhase4.HasInjected("about-to-edit:internal/core/auth/token.go") {
+		t.Errorf("Phase 4 expected pre-checkpoint non-reinjected about-to-edit key not to be resurrected into InjectedSet")
+	}
+	if loadedPhase4.LastHandledCheckpointStep < 0 {
+		t.Errorf("Phase 4 expected LastHandledCheckpointStep >= 0, got %d", loadedPhase4.LastHandledCheckpointStep)
+	}
+
 	// Phase 5 (Turn 3, Transcript Rewind to 3 steps — DetectRewind Re-arms Dedup)
 	writeTranscript(step0, step1, step2)
 
@@ -976,6 +998,17 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 		if !strings.Contains(combinedPhase5User, wantID) {
 			t.Errorf("Phase 5 expected rewind re-injection of %q in UserMessage, got: %s", wantID, combinedPhase5User)
 		}
+	}
+
+	loadedPhase5, err := LoadLedger(dataDir, repoID, convID)
+	if err != nil {
+		t.Fatalf("Phase 5 LoadLedger error: %v", err)
+	}
+	if loadedPhase5.LastHandledCheckpointStep != -1 {
+		t.Errorf("Phase 5 expected LastHandledCheckpointStep reset to -1 after rewinding past checkpoint, got %d", loadedPhase5.LastHandledCheckpointStep)
+	}
+	if loadedPhase5.HasInjected("about-to-edit:internal/core/auth/token.go") {
+		t.Errorf("Phase 5 expected rewound about-to-edit key not to be resurrected into InjectedSet")
 	}
 }
 

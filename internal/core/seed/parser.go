@@ -53,17 +53,54 @@ var allowedSingleSegmentNames = map[string]bool{
 	"LICENSE":    true,
 }
 
-// IsValidAnchorPathSyntax returns true when p looks like a valid repository-relative
-// file or directory path rather than an arbitrary code token, glob, or external path.
-func IsValidAnchorPathSyntax(p string) bool {
-	p = strings.TrimSpace(p)
-	p = strings.TrimSuffix(p, "/")
-	if p == "" || p == "." || p == ".." || strings.Contains(p, " ") {
+func isValidAnchorSymbol(s string) bool {
+	if s == "" {
 		return false
 	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
 
+func stripAnchorSymbol(p string) (filePart string, ok bool) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", false
+	}
 	lower := strings.ToLower(p)
-	if strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:") {
+	if strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:") || strings.Contains(p, "://") {
+		return "", false
+	}
+	sepCount := strings.Count(p, "#") + strings.Count(p, ":")
+	if sepCount > 1 {
+		return "", false
+	}
+	if sepCount == 1 {
+		idx := strings.IndexAny(p, "#:")
+		filePart = strings.TrimSuffix(p[:idx], "/")
+		symPart := p[idx+1:]
+		if filePart == "" || symPart == "" || !isValidAnchorSymbol(symPart) {
+			return "", false
+		}
+		return filePart, true
+	}
+	return strings.TrimSuffix(p, "/"), true
+}
+
+// IsValidAnchorPathSyntax returns true when p looks like a valid repository-relative
+// file or directory path (optionally with a #symbol or :symbol suffix) rather than
+// an arbitrary code token, glob, or external path.
+func IsValidAnchorPathSyntax(p string) bool {
+	filePart, ok := stripAnchorSymbol(p)
+	if !ok {
+		return false
+	}
+	p = filePart
+	if p == "" || p == "." || p == ".." || strings.Contains(p, " ") {
 		return false
 	}
 
@@ -114,6 +151,9 @@ func extractBacktickPaths(s string) []string {
 	for _, match := range matches {
 		p := strings.TrimSuffix(strings.TrimSpace(match[1]), "/")
 		if isValidAnchorPathSyntax(p) {
+			if idx := strings.IndexAny(p, "#:"); idx >= 0 {
+				p = strings.TrimSuffix(p[:idx], "/") + p[idx:]
+			}
 			if !seen[p] {
 				seen[p] = true
 				paths = append(paths, p)

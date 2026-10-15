@@ -83,7 +83,11 @@ func buildRepoPathValidator(opts SeedOptions) func(string) bool {
 				}
 			}
 			return func(p string) bool {
-				clean := filepath.Clean(strings.TrimSuffix(p, "/"))
+				filePart, ok := stripAnchorSymbol(p)
+				if !ok {
+					return false
+				}
+				clean := filepath.Clean(strings.TrimSuffix(filePart, "/"))
 				if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
 					return false
 				}
@@ -93,7 +97,11 @@ func buildRepoPathValidator(opts SeedOptions) func(string) bool {
 	}
 
 	return func(p string) bool {
-		clean := filepath.Clean(strings.TrimSuffix(p, "/"))
+		filePart, ok := stripAnchorSymbol(p)
+		if !ok {
+			return false
+		}
+		clean := filepath.Clean(strings.TrimSuffix(filePart, "/"))
 		if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
 			return false
 		}

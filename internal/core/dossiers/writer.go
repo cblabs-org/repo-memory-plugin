@@ -49,6 +49,9 @@ func (w *Writer) WriteAll(dossiers map[string]*Dossier) error {
 	atlas := &Atlas{}
 	
 	for _, d := range dossiers {
+		if len(d.Entries) == 0 && len(d.History) == 0 {
+			continue
+		}
 		if err := w.WriteDossier(d); err != nil {
 			return err
 		}

@@ -199,12 +199,11 @@ func TestProjector_ReAddUnderDifferentScopeMovesEntry(t *testing.T) {
 		t.Fatalf("failed to project: %v", err)
 	}
 
-	modA, ok := dossiersMap["core/mod-a"]
-	if !ok {
-		t.Fatalf("expected core/mod-a dossier to exist")
-	}
-	if len(modA.Entries) != 0 {
+	if modA, ok := dossiersMap["core/mod-a"]; ok && len(modA.Entries) > 0 {
 		t.Errorf("expected 0 entries in core/mod-a after cross-scope re-add, got %d: %v", len(modA.Entries), modA.Entries)
+	}
+	if _, ok := dossiersMap["core/mod-a"]; ok {
+		t.Errorf("expected empty shell core/mod-a dossier to be removed from projected map")
 	}
 
 	modB, ok := dossiersMap["core/mod-b"]
@@ -234,5 +233,23 @@ func TestProjector_ReAddUnderDifferentScopeMovesEntry(t *testing.T) {
 	}
 	if totalOccurrences != 1 {
 		t.Errorf("expected exactly 1 occurrence of %s across all scopes, got %d", entryID, totalOccurrences)
+	}
+
+	writer := NewWriter(tempDir)
+	if err := writer.WriteAll(dossiersMap); err != nil {
+		t.Fatalf("WriteAll failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "dossiers", "core", "mod-a.md")); !os.IsNotExist(err) {
+		t.Errorf("expected no empty core/mod-a.md on disk, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "dossiers", "core", "mod-b.md")); err != nil {
+		t.Errorf("expected core/mod-b.md to exist on disk: %v", err)
+	}
+	atlasBytes, err := os.ReadFile(filepath.Join(tempDir, "ATLAS.md"))
+	if err != nil {
+		t.Fatalf("failed to read ATLAS.md: %v", err)
+	}
+	if strings.Contains(string(atlasBytes), "core/mod-a") {
+		t.Errorf("expected ATLAS.md not to contain 0-entry core/mod-a row, got:\n%s", string(atlasBytes))
 	}
 }

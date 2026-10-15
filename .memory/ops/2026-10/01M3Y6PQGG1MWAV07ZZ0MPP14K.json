@@ -51,23 +51,6 @@
         "entry_type": "ruled-out",
         "text": "Note that extraction requires `sync.Mutex` during payload combination; race conditions can appear if `ExtractionResult` arrays are joined outside the lock."
       }
-    },
-    {
-      "type": "add",
-      "entry_id": "seed-1c3bab6e",
-      "dossier_scope": "core/index",
-      "timestamp": "2026-10-02T12:41:30+01:00",
-      "source": "seed",
-      "fields": {
-        "anchors": [
-          "internal/core/index/index.go",
-          "internal/core/tick/tick.go",
-          "internal/core/tick/pipeline.go",
-          "internal/core/tick/pipeline_test.go"
-        ],
-        "entry_type": "open-issue",
-        "text": "(none)"
-      }
     }
   ],
   "created_at": "2026-10-02T11:41:30Z",

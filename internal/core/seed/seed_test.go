@@ -165,17 +165,22 @@ func TestReportToOps_JunkFiltered(t *testing.T) {
 		},
 		Decisions: []string{
 			"None.",
+			"(none)",
+			"(none).",
 			"Valid decision to keep",
 			"n/a",
+			"(n/a)",
 			"TBD",
 		},
 		DeadEnds: []string{
 			"(pending)",
+			"-",
 			"None encountered during implementation",
 			"Real dead end that failed",
 		},
 		Findings: []string{
 			"Pending",
+			"(none)",
 			"No issues found",
 			"Nothing to report",
 			"Important finding about concurrency",
@@ -210,6 +215,7 @@ func TestParseCompletionReport_FiltersNonPathTokens(t *testing.T) {
 - ` + "`internal/core/seed/parser.go`" + ` — tightened ` + "`*claims.Claim`" + `, ` + "`cand.EpisodeID`" + `, ` + "`Reader.IterateBefore`" + `, and ` + "`!config.IsEnrolledFast(cwd)`" + `
 - ` + "`.memory/config.yaml`" + ` — ignored ` + "`*_test.go`" + `, ` + "`<data-dir>/<repo-id>/metrics/*.jsonl`" + `, ` + "`~/.gemini/antigravity/hooks/hooks.json`" + `, and ` + "`modernc.org/sqlite`" + `
 - ` + "`SPEC.md`" + ` — documented specification
+- ` + "`internal/real/file.go#MyFunc`" + ` and ` + "`SPEC.md#Section`" + ` — accepted symbol anchors while rejecting ` + "`http://example.com/foo`" + ` and ` + "`foo:bar:baz`" + `
 `
 	report, err := seed.ParseCompletionReport(content)
 	if err != nil {
@@ -223,6 +229,8 @@ func TestParseCompletionReport_FiltersNonPathTokens(t *testing.T) {
 		"internal/core/seed/parser.go",
 		".memory/config.yaml",
 		"SPEC.md",
+		"internal/real/file.go#MyFunc",
+		"SPEC.md#Section",
 	}
 	if len(report.Changes) != len(wantPaths) {
 		var got []string
@@ -281,7 +289,10 @@ func TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp(t *testing.T) {
 
 ### Changes Made
 - ` + "`internal/real/file.go`" + ` — real tracked file
+- ` + "`internal/real/file.go#MyFunc`" + ` — real tracked file with symbol anchor
 - ` + "`internal/nonexistent/ghost.go`" + ` — nonexistent path that looks syntactic
+- ` + "`http://example.com/foo`" + ` — URL rejected
+- ` + "`foo:bar:baz`" + ` — multi-colon token rejected
 
 ### Decisions Made
 - Validated paths against repository tree
@@ -315,8 +326,8 @@ func TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp(t *testing.T) {
 	}
 
 	changes := parsed[0].Report.Changes
-	if len(changes) != 1 || changes[0].Path != "internal/real/file.go" {
-		t.Fatalf("got changes %+v, want only internal/real/file.go", changes)
+	if len(changes) != 2 || changes[0].Path != "internal/real/file.go" || changes[1].Path != "internal/real/file.go#MyFunc" {
+		t.Fatalf("got changes %+v, want [internal/real/file.go, internal/real/file.go#MyFunc]", changes)
 	}
 
 	wantTime, err := time.Parse(time.RFC3339, commit1TimeStr)

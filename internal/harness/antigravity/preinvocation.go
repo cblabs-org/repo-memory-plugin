@@ -127,10 +127,17 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		if DetectRewind(steps, ledger.LastKnownStepCount) {
 			ledger.RearmDedup()
 			ledger.LastProcessedStepIndex = 0
+			hasCheckpoint := false
 			for _, st := range steps {
+				if st.IsCheckpoint {
+					hasCheckpoint = true
+				}
 				if st.StepIndex > maxRemainingStepIdx {
 					maxRemainingStepIdx = st.StepIndex
 				}
+			}
+			if !hasCheckpoint || ledger.LastHandledCheckpointStep > maxRemainingStepIdx {
+				ledger.LastHandledCheckpointStep = -1
 			}
 			var surviving []delivery.InjectionRecord
 			for _, inj := range ledger.Injections {
@@ -426,12 +433,18 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 			l.Injections = surviving
 			l.LastProcessedStepIndex = ledger.LastProcessedStepIndex
+			l.LastHandledCheckpointStep = ledger.LastHandledCheckpointStep
 		}
 		// Replay only this invocation's new injection records.
 		for _, inj := range ledger.Injections[injectionBase:] {
 			l.RecordInjection(inj)
 		}
-		// Copy seen markers added by this invocation.
+		// Copy seen markers and injected set added by this invocation.
+		for k, v := range ledger.InjectedSet {
+			if v {
+				l.InjectedSet[k] = true
+			}
+		}
 		for k, v := range ledger.SeenDossiers {
 			if v {
 				l.SeenDossiers[k] = true
