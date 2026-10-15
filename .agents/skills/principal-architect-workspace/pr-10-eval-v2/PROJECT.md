@@ -106,3 +106,14 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 - `build_index.sh` repeatable automation with `--clean` flag.
 - `SEED_REPORT.md` complete.
 - **Stage 0b complete.** All 3 infrastructure WOs done. Next: WO4 (Stage 1, offline retrieval) — blocked on human task prompts.
+
+### 2026-10-12 — Stage 1: Offline Retrieval & Doc-Read-Rate Analysis
+- **Tasks frozen:** 2 forward tasks — (1) DS18B20 temperature module (module + U8G2 + portal + MCP), (2) Bitcoin price module (HTTP API + DataManager + U8G2 + portal + MCP).
+- **Retrieval quality:** FTS against seeded index shows 70-90% precision@10 for both tasks. DataManager entries fire via anchor-based injection on file touch. No ranker fixes needed.
+- **Instruction layer audit (critical finding):**
+  - esp32 ships ~30K lines of curated content: framework-expert skill (8,813), developer guides (8,749), design spec (3,022), sample/template apps (1,950), rules (439).
+  - Historical read rate across 77 non-PA sessions: **framework-expert 5%, developer guides 8%, creating-a-module 2%, docs/developer/README 1%**.
+  - Curated documentation is a pull system; agents almost never find it. Memory is a push system; it injects at the moment of relevance.
+  - **Decision: test real-world scenario.** No "read the docs" rule added to templates. This tests push vs pull, not memory vs docs.
+- **Product direction surfaced:** Doc-seeded dossiers (ingest curated docs as entries) + async freshness ("dreaming" — watch for doc changes, re-process dossiers). Gated on positive evaluation verdict. Added to programme plan backlog.
+- Stage 1 gate: PASS pending user confirmation.

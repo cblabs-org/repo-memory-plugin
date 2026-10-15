@@ -1,0 +1,1 @@
+Build a module to get bitcoin prices using https://pro-api.coinmarketcap.com/public-api/v1/simple/price?ids=1 once per hour. Display them on a u8g2 screen, in the portal and on the mcp server.

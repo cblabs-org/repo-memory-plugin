@@ -1,0 +1,1 @@
+Write a new module for a Waterproof DS18B20-Compatible Temperature Sensor. We need a new u8g2 screen for this added to the carousel and a new page on the portal to show the temperature status, and configure the update interval from between 1 sec to 15 mins. It should be a top-level icon. Write data from this module into the on-device mcp server too.
