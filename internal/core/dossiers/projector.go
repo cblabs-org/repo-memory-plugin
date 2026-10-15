@@ -80,6 +80,47 @@ func getOrCreateDossier(dossiers map[string]*Dossier, scope string) *Dossier {
 	return d
 }
 
+func extractIntField(fields map[string]any, key string) (int, bool) {
+	v, exists := fields[key]
+	if !exists {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func extractKinds(fields map[string]any) (ck CognitiveKind, hasCK bool, dk DossierKind, hasDK bool) {
+	if k, ok := fields["kind"].(string); ok {
+		if CognitiveKind(k).Valid() {
+			ck = CognitiveKind(k)
+			hasCK = true
+		} else {
+			switch DossierKind(k) {
+			case DossierKindModule, DossierKindTopic, DossierKindExternal, DossierKindProcedure:
+				dk = DossierKind(k)
+				hasDK = true
+			}
+		}
+	}
+	if k, ok := fields["cognitive_kind"].(string); ok && CognitiveKind(k).Valid() {
+		ck = CognitiveKind(k)
+		hasCK = true
+	}
+	if k, ok := fields["dossier_kind"].(string); ok && k != "" {
+		dk = DossierKind(k)
+		hasDK = true
+	}
+	return ck, hasCK, dk, hasDK
+}
+
 func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
 	// If entry already exists, treat as amend (or move if scope differs)
 	if existingScope, exists := entryIndex[op.EntryID]; exists {
@@ -93,8 +134,9 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 
 	d := getOrCreateDossier(dossiers, op.DossierScope)
 
-	if kind, ok := op.Fields["kind"].(string); ok {
-		d.Kind = DossierKind(kind)
+	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
+	if hasDK {
+		d.Kind = dk
 	}
 	if title, ok := op.Fields["title"].(string); ok {
 		d.Title = title
@@ -113,6 +155,12 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 
 	if t, ok := op.Fields["entry_type"].(string); ok {
 		entry.Type = EntryType(t)
+	}
+	if hasCK {
+		entry.Kind = ck
+	}
+	if entry.Kind == "" {
+		entry.Kind = DeriveCognitiveKind(entry.Type)
 	}
 	if text, ok := op.Fields["text"].(string); ok {
 		entry.Text = text
@@ -143,6 +191,27 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 	if closesWhen, ok := op.Fields["closes_when"].(string); ok {
 		entry.ClosesWhen = closesWhen
 	}
+	if sdp, ok := op.Fields["source_doc_path"].(string); ok {
+		entry.SourceDocPath = sdp
+	}
+	if sdsha, ok := op.Fields["source_doc_blob_sha"].(string); ok {
+		entry.SourceDocBlobSHA = sdsha
+	}
+	if sc, ok := extractIntField(op.Fields, "success_count"); ok {
+		entry.SuccessCount = sc
+	}
+	if fc, ok := extractIntField(op.Fields, "failure_count"); ok {
+		entry.FailureCount = fc
+	}
+	if lsa, ok := op.Fields["last_succeeded_at"].(string); ok {
+		entry.LastSucceededAt = lsa
+	}
+	if ss, ok := op.Fields["stale_suspect"].(bool); ok {
+		entry.StaleSuspect = ss
+	}
+	if ras, ok := op.Fields["render_as_skill"].(string); ok {
+		entry.RenderAsSkill = ras
+	}
 
 	for _, e := range d.Entries {
 		if e.ID == entry.ID {
@@ -167,8 +236,9 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 	
 	d := getOrCreateDossier(dossiers, scope)
 
-	if kind, ok := op.Fields["kind"].(string); ok {
-		d.Kind = DossierKind(kind)
+	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
+	if hasDK {
+		d.Kind = dk
 	}
 	if title, ok := op.Fields["title"].(string); ok {
 		d.Title = title
@@ -179,8 +249,15 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 
 	for i, e := range d.Entries {
 		if e.ID == op.EntryID {
+			typeAmended := false
 			if t, ok := op.Fields["entry_type"].(string); ok {
 				d.Entries[i].Type = EntryType(t)
+				typeAmended = true
+			}
+			if hasCK {
+				d.Entries[i].Kind = ck
+			} else if typeAmended || d.Entries[i].Kind == "" {
+				d.Entries[i].Kind = DeriveCognitiveKind(d.Entries[i].Type)
 			}
 			if text, ok := op.Fields["text"].(string); ok {
 				d.Entries[i].Text = text
@@ -213,6 +290,27 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 			if closesWhen, ok := op.Fields["closes_when"].(string); ok {
 				d.Entries[i].ClosesWhen = closesWhen
 			}
+			if sdp, ok := op.Fields["source_doc_path"].(string); ok {
+				d.Entries[i].SourceDocPath = sdp
+			}
+			if sdsha, ok := op.Fields["source_doc_blob_sha"].(string); ok {
+				d.Entries[i].SourceDocBlobSHA = sdsha
+			}
+			if sc, ok := extractIntField(op.Fields, "success_count"); ok {
+				d.Entries[i].SuccessCount = sc
+			}
+			if fc, ok := extractIntField(op.Fields, "failure_count"); ok {
+				d.Entries[i].FailureCount = fc
+			}
+			if lsa, ok := op.Fields["last_succeeded_at"].(string); ok {
+				d.Entries[i].LastSucceededAt = lsa
+			}
+			if ss, ok := op.Fields["stale_suspect"].(bool); ok {
+				d.Entries[i].StaleSuspect = ss
+			}
+			if ras, ok := op.Fields["render_as_skill"].(string); ok {
+				d.Entries[i].RenderAsSkill = ras
+			}
 			d.Entries[i].UpdatedAt = op.Timestamp
 			break
 		}
@@ -229,6 +327,10 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 	}
 	
 	d := getOrCreateDossier(dossiers, scope)
+	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
+	if hasDK {
+		d.Kind = dk
+	}
 	var newID string
 	if nid, ok := op.Fields["new_entry_id"].(string); ok {
 		newID = nid
@@ -265,10 +367,19 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 	if text, ok := op.Fields["text"].(string); ok {
 		newEntry.Text = text
 	}
+	typeOverridden := false
 	if t, ok := op.Fields["entry_type"].(string); ok {
 		newEntry.Type = EntryType(t)
+		typeOverridden = true
 	} else if found {
 		newEntry.Type = entryToMove.Type
+	}
+	if hasCK {
+		newEntry.Kind = ck
+	} else if !typeOverridden && found && entryToMove.Kind.Valid() {
+		newEntry.Kind = entryToMove.Kind
+	} else {
+		newEntry.Kind = DeriveCognitiveKind(newEntry.Type)
 	}
 	
 	if anchors, ok := op.Fields["anchors"].([]any); ok {
@@ -305,6 +416,34 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 		newEntry.ClosesWhen = closesWhen
 	} else if found {
 		newEntry.ClosesWhen = entryToMove.ClosesWhen
+	}
+
+	if sdp, ok := op.Fields["source_doc_path"].(string); ok {
+		newEntry.SourceDocPath = sdp
+	} else if found {
+		newEntry.SourceDocPath = entryToMove.SourceDocPath
+	}
+	if sdsha, ok := op.Fields["source_doc_blob_sha"].(string); ok {
+		newEntry.SourceDocBlobSHA = sdsha
+	} else if found {
+		newEntry.SourceDocBlobSHA = entryToMove.SourceDocBlobSHA
+	}
+	if sc, ok := extractIntField(op.Fields, "success_count"); ok {
+		newEntry.SuccessCount = sc
+	}
+	if fc, ok := extractIntField(op.Fields, "failure_count"); ok {
+		newEntry.FailureCount = fc
+	}
+	if lsa, ok := op.Fields["last_succeeded_at"].(string); ok {
+		newEntry.LastSucceededAt = lsa
+	}
+	if ss, ok := op.Fields["stale_suspect"].(bool); ok {
+		newEntry.StaleSuspect = ss
+	}
+	if ras, ok := op.Fields["render_as_skill"].(string); ok {
+		newEntry.RenderAsSkill = ras
+	} else if found {
+		newEntry.RenderAsSkill = entryToMove.RenderAsSkill
 	}
 
 	d.Entries = append(d.Entries, newEntry)
@@ -455,14 +594,18 @@ func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 }
 
 var typeOrder = map[EntryType]int{
-	EntryTypeInvariant:        1,
-	EntryTypeRuledOut:         2,
-	EntryTypeFailureSignature: 3,
-	EntryTypeGotcha:           4,
-	EntryTypeDecision:         5,
-	EntryTypeProcedure:        6,
-	EntryTypeInterface:        7,
-	EntryTypeOpenIssue:        8,
+	EntryTypeInvariant:         1,
+	EntryTypeContract:          1,
+	EntryTypeConvention:        1,
+	EntryTypeRuledOut:          2,
+	EntryTypeFailureSignature:  3,
+	EntryTypeGotcha:            4,
+	EntryTypeExternalBehaviour: 4,
+	EntryTypeDecision:          5,
+	EntryTypeProcedure:         6,
+	EntryTypeRecipe:            6,
+	EntryTypeInterface:         7,
+	EntryTypeOpenIssue:         8,
 }
 
 func sortDossier(d *Dossier) {

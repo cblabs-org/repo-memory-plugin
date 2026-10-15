@@ -40,13 +40,26 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 	_, _ = tx.ExecContext(ctx, "INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
 
 	insertEntryQuery := `
-		INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO entries (
+			id, type, kind, dossier_scope, text, source,
+			source_doc_path, source_doc_blob_sha, success_count, failure_count,
+			last_succeeded_at, stale_suspect, render_as_skill,
+			verified, closes_when, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			type = excluded.type,
+			kind = excluded.kind,
 			dossier_scope = excluded.dossier_scope,
 			text = excluded.text,
 			source = excluded.source,
+			source_doc_path = excluded.source_doc_path,
+			source_doc_blob_sha = excluded.source_doc_blob_sha,
+			success_count = excluded.success_count,
+			failure_count = excluded.failure_count,
+			last_succeeded_at = excluded.last_succeeded_at,
+			stale_suspect = excluded.stale_suspect,
+			render_as_skill = excluded.render_as_skill,
 			verified = excluded.verified,
 			closes_when = excluded.closes_when,
 			created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END,
@@ -68,8 +81,24 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 			}
 
 			_, err := tx.ExecContext(ctx, insertEntryQuery,
-				entry.ID, string(entry.Type), entry.DossierScope, entry.Text,
-				entry.Source, entry.Verified, entry.ClosesWhen, createdAt, updatedAt)
+				entry.ID,
+				string(entry.Type),
+				string(entry.EffectiveKind()),
+				entry.DossierScope,
+				entry.Text,
+				entry.Source,
+				entry.SourceDocPath,
+				entry.SourceDocBlobSHA,
+				entry.SuccessCount,
+				entry.FailureCount,
+				entry.LastSucceededAt,
+				boolToInt(entry.StaleSuspect),
+				entry.RenderAsSkill,
+				entry.Verified,
+				entry.ClosesWhen,
+				createdAt,
+				updatedAt,
+			)
 			if err != nil {
 				return fmt.Errorf("inserting entry %s: %w", entry.ID, err)
 			}

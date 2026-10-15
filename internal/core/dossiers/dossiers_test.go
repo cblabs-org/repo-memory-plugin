@@ -253,3 +253,164 @@ func TestProjector_ReAddUnderDifferentScopeMovesEntry(t *testing.T) {
 		t.Errorf("expected ATLAS.md not to contain 0-entry core/mod-a row, got:\n%s", string(atlasBytes))
 	}
 }
+
+func TestCognitiveKindAndEntryFields(t *testing.T) {
+	// 1. DeriveCognitiveKind & EffectiveKind
+	cases := []struct {
+		entryType EntryType
+		expected  CognitiveKind
+	}{
+		{EntryTypeInvariant, CognitiveKindSemantic},
+		{EntryTypeContract, CognitiveKindSemantic},
+		{EntryTypeConvention, CognitiveKindSemantic},
+		{EntryTypeInterface, CognitiveKindSemantic},
+		{EntryTypeGotcha, CognitiveKindSemantic},
+		{EntryTypeExternalBehaviour, CognitiveKindSemantic},
+		{EntryTypeOpenIssue, CognitiveKindSemantic},
+		{EntryType(""), CognitiveKindSemantic},
+		{EntryType("unknown"), CognitiveKindSemantic},
+		{EntryTypeRecipe, CognitiveKindProcedural},
+		{EntryTypeProcedure, CognitiveKindProcedural},
+		{EntryTypeFailureSignature, CognitiveKindProcedural},
+		{EntryTypeDecision, CognitiveKindEpisodic},
+		{EntryTypeRuledOut, CognitiveKindEpisodic},
+	}
+
+	for _, tc := range cases {
+		got := DeriveCognitiveKind(tc.entryType)
+		if got != tc.expected {
+			t.Errorf("DeriveCognitiveKind(%q) = %q, want %q", tc.entryType, got, tc.expected)
+		}
+		e := Entry{Type: tc.entryType}
+		if e.EffectiveKind() != tc.expected {
+			t.Errorf("Entry{Type: %q}.EffectiveKind() = %q, want %q", tc.entryType, e.EffectiveKind(), tc.expected)
+		}
+	}
+
+	explicitEntry := Entry{Type: EntryTypeInvariant, Kind: CognitiveKindProcedural}
+	if explicitEntry.EffectiveKind() != CognitiveKindProcedural {
+		t.Errorf("expected explicit valid Kind to take precedence, got %q", explicitEntry.EffectiveKind())
+	}
+
+	if CognitiveKind("invalid").Valid() {
+		t.Errorf("expected invalid CognitiveKind to return Valid() == false")
+	}
+
+	// 2. Projector add / amend / supersede with v2.2 fields and kind disambiguation
+	tempDir := t.TempDir()
+	opsWriter := ops.NewWriter(tempDir)
+	opsReader := ops.NewReader(tempDir)
+	now := time.Now().UTC()
+
+	conID := ops.NewEntryID(EntryTypePrefixes[EntryTypeContract])
+	recID := ops.NewEntryID(EntryTypePrefixes[EntryTypeRecipe])
+	recID2 := ops.NewEntryID(EntryTypePrefixes[EntryTypeRecipe])
+
+	batch := ops.NewBatch([]ops.Op{
+		{
+			Type:         ops.OpAdd,
+			EntryID:      conID,
+			DossierScope: "core/contracts",
+			Timestamp:    now,
+			Source:       ops.SourceDocSeed,
+			Fields: map[string]any{
+				"kind":                "module",
+				"entry_type":          string(EntryTypeContract),
+				"text":                "Contract invariant from docs",
+				"source_doc_path":     "docs/architecture.md",
+				"source_doc_blob_sha": "abc123def456",
+			},
+		},
+		{
+			Type:         ops.OpAdd,
+			EntryID:      recID,
+			DossierScope: "core/contracts",
+			Timestamp:    now.Add(time.Second),
+			Source:       ops.SourceDocSeed,
+			Fields: map[string]any{
+				"entry_type":          string(EntryTypeRecipe),
+				"text":                "Step 1: run go test",
+				"source_doc_path":     ".agents/skills/build/SKILL.md",
+				"source_doc_blob_sha": "111222333",
+				"success_count":       float64(3),
+				"failure_count":       1,
+				"last_succeeded_at":   "2026-10-15T12:00:00Z",
+				"stale_suspect":       true,
+				"render_as_skill":     "rm-build-recipe",
+			},
+		},
+		{
+			Type:         ops.OpAmend,
+			EntryID:      recID,
+			DossierScope: "core/contracts",
+			Timestamp:    now.Add(2 * time.Second),
+			Source:       ops.SourceConsolidation,
+			Fields: map[string]any{
+				"success_count":     int64(5),
+				"failure_count":     0,
+				"stale_suspect":     false,
+				"last_succeeded_at": "2026-10-15T13:00:00Z",
+			},
+		},
+		{
+			Type:         ops.OpSupersede,
+			EntryID:      recID,
+			DossierScope: "core/contracts",
+			Timestamp:    now.Add(3 * time.Second),
+			Source:       ops.SourceDocSeed,
+			Fields: map[string]any{
+				"new_entry_id":        recID2,
+				"text":                "Step 1: run go test -race",
+				"source_doc_blob_sha": "444555666",
+			},
+		},
+	})
+
+	if err := opsWriter.Write(batch); err != nil {
+		t.Fatalf("Write batch: %v", err)
+	}
+
+	dossiersMap, err := NewProjector(opsReader).Project(context.Background())
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	d := dossiersMap["core/contracts"]
+	if d == nil {
+		t.Fatalf("expected core/contracts dossier")
+	}
+	if d.Kind != DossierKindModule {
+		t.Errorf("expected dossier Kind %q, got %q", DossierKindModule, d.Kind)
+	}
+	if len(d.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(d.Entries))
+	}
+
+	// Entries are sorted by typeOrder: contract (1) before recipe (6)
+	gotCon := d.Entries[0]
+	if gotCon.ID != conID || gotCon.Type != EntryTypeContract || gotCon.Kind != CognitiveKindSemantic {
+		t.Errorf("unexpected contract entry: %+v", gotCon)
+	}
+	if gotCon.SourceDocPath != "docs/architecture.md" || gotCon.SourceDocBlobSHA != "abc123def456" {
+		t.Errorf("unexpected contract doc-seed provenance: path=%q sha=%q", gotCon.SourceDocPath, gotCon.SourceDocBlobSHA)
+	}
+
+	gotRec := d.Entries[1]
+	if gotRec.ID != recID2 || gotRec.Type != EntryTypeRecipe || gotRec.Kind != CognitiveKindProcedural {
+		t.Errorf("unexpected superseded recipe entry: %+v", gotRec)
+	}
+	// Inherited SourceDocPath and RenderAsSkill, overridden SourceDocBlobSHA, reset execution counters
+	if gotRec.SourceDocPath != ".agents/skills/build/SKILL.md" {
+		t.Errorf("expected inherited SourceDocPath, got %q", gotRec.SourceDocPath)
+	}
+	if gotRec.SourceDocBlobSHA != "444555666" {
+		t.Errorf("expected updated SourceDocBlobSHA, got %q", gotRec.SourceDocBlobSHA)
+	}
+	if gotRec.RenderAsSkill != "rm-build-recipe" {
+		t.Errorf("expected inherited RenderAsSkill, got %q", gotRec.RenderAsSkill)
+	}
+	if gotRec.SuccessCount != 0 || gotRec.FailureCount != 0 || gotRec.StaleSuspect || gotRec.LastSucceededAt != "" {
+		t.Errorf("expected execution counters reset on supersede when not specified, got %+v", gotRec)
+	}
+}
+
