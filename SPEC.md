@@ -96,10 +96,10 @@ This specification defines a memory system that provides that knowledge:
           EVENT PATH (hooks)                               TIME PATH (scheduled tick, every minute)
   ┌──────── Working agent (Antigravity / Claude Code) ─────────┐
   │  works normally — zero manual cooperation required          │
-  │  ▲ push: persistent userMessage (dossiers/atlas)            │
-  │  │       + 1-step ephemeralMessage (gates/alerts)           │
-  │  │       + Stop NO_TOOL_CALL milestone reflection           │
-  │  │ pull: memory_brief / memory_search / memory_history ────┼──▶ MCP server ──▶ SQLite index.db
+  │  ▲ push: persistent userMessage (dossiers/invariants)       │
+  │  │       + 1-step ephemeralMessage (hints/error-match)      │
+  │  │       + Stop NO_TOOL_CALL milestone note request         │
+  │  │ pull: memory_brief / memory_why / memory_search / … ─────┼──▶ MCP server ──▶ SQLite index.db
   └──┼───────────────┬─────────────────────────────────────────┘
      │ inline        │ Stop · PreInvocation · PreToolUse · PostToolUse
      │ (no LLM)      ▼ write spool files & session ledger
@@ -107,15 +107,15 @@ This specification defines a memory system that provides that knowledge:
      │        │   spool/    │──────▶ │ Tick: ingest spool → job table → next steps   │
      │        └─────────────┘        │  • mechanical work in-process                 │
      │                               │  • Stage 2 Consolidation: agy -p --agent      │
-     │                               │    repo-memory-distiller (stream-json, <5min) │
+     │                               │    repo-memory-distiller (stream-json, X8)    │
      │                               │  • Doc seeding & async doc freshness (dream)  │
      │                               │  • reports: agentapi (visible in the IDE)     │
      │                               └───────────────────────┬───────────────────────┘
      │                                                       ▼
-     │       Stage 1: Reflection & Harvest ──▶ Stage 2: Consolidation & Materialise
+     │       Stage 1: Turn Note & Harvest ──▶ Stage 2: Consolidation & Projection
      │             │                                         │
      │             ▼                                         ▼
-     │     Episode log (private)             Op Log (.memory/ops/) + Scope Dossiers
+     │     Evidence & Inbox (private)        Op Log (.memory/ops/) + Dossiers (.memory/dossiers/)
      │                                                       │
      └──────────── alerts/ + local index (index.db, rebuildable) ◀───────────────────┘
 
@@ -131,7 +131,7 @@ Nothing runs continuously. Two paths start all work, and each has a strictly sep
 | Fired by | Agent, model, tool and session events in the harness | Cron, every minute (Antigravity plugin sidecar, `builtin: schedule`, active while the IDE is running; see E6). In CLI-only environments, the OS scheduler running `repo-memory tick`. **[R2]** On Claude Code, harness-run `async: true` hooks also start it (§12.2). |
 | Knows | Exactly which conversation, transcript, workspace and step just changed | Discovers state from the spool, the job table, transcripts and git |
 | Constraint | Synchronous and blocking the agent loop, so it must finish in milliseconds | A time budget per tick (default 50 s); never overlaps itself (`tick.lock`) |
-| Does | Reads `index.db`, the session ledger, and `alerts/`; injects persistent `userMessage` dossiers and 1-step `ephemeralMessage` nudges; gates risky commands; triggers milestone-gated `Stop` reflection; writes spool files | All asynchronous work: ingest the spool, advance jobs, run Stage 2 consolidation (`repo-memory-distiller`), verify procedures, run async doc-freshness checks, materialise dossiers, rebuild `index.db` |
+| Does | Reads `index.db`, the session ledger, and `alerts/`; injects persistent `userMessage` dossiers and 1-step `ephemeralMessage` hints; gates risky commands; triggers milestone-gated `Stop` turn-note continuation and harvests the reply; writes spool files | All asynchronous work: ingest the spool, advance jobs, run Stage 2 consolidation (`repo-memory-distiller`), verify procedural recipes, run async doc-freshness checks, project `.memory/dossiers/` and `.memory/ATLAS.md`, rebuild `index.db` |
 | Never | Starts processes, calls a model directly, uses the network, or writes the job table | Leaves work running after it exits |
 
 **[R2]** On Claude Code, a hook registered with `async: true` is run in the background *by the harness*. That hook's command simply is `repo-memory tick`, so it is another time-path trigger, not a hook doing work, and the tick stays the only executor.
@@ -149,25 +149,25 @@ The cost is that asynchronous LLM results arrive at tick granularity: up to abou
 
 | Work | Event path | Time path |
 |---|---|---|
-| Capture a finished turn / session (Stage 1) | `Stop` (`stopReason == "NO_TOOL_CALL"`, `executionNum == 0`): when session passes the Milestone Gate (≥ 1 file edit, ≥ 1 non-zero command fixed, or ≥ 5 steps) and `memory_note` has not already fired, return `{"decision": "continue", "userMessage": "<reflection prompt>"}` so the warm-cache agent emits structured candidate notes before terminating (`executionNum == 1` allows stop and spools transcript; E8, X1) | Sweep catches sessions with no `Stop` (crash, kill, sessions from before install); harvests `CHECKPOINT` steps and `<appDataDir>/brain/<session-id>/*.md` artifacts at zero LLM cost; promotes episodes to Stage 2 |
-| Consolidate & materialise (Stage 2) | none | Tick runs multi-turn `--input-format stream-json` `repo-memory-distiller` within 5 minutes of Stage 1 to keep prefix cache warm; applies Pre-Consolidation Corroboration Gate; writes `.memory/ops/YYYY-MM.jsonl`; renders `.memory/scopes/<scope>.md`; updates `index.db` |
-| Atlas & Startup Dossiers | Loaded by `.memory/ATLAS.md` (`@` include in `GEMINI.md`) and pushed as persistent `userMessage` on `PreInvocation` when `InjectedSet` is empty or after `DetectCompaction` / `DetectRewind` | Regenerated deterministically by `repo-memory materialise` when ops change |
-| Task & Scope Dossiers | `PreInvocation` resolves scopes from prompt tokens, active files, and session ledger; injects top un-injected entries as persistent `userMessage`. On-demand refresh via MCP pull tool `memory_brief`. | Deterministic rendering + `index.db` update on op log mutation |
-| Touch, error & procedure delivery | `PreInvocation` inline (persistent `userMessage` for newly entered scopes/error signatures); `PostToolUse` tracks command exit codes (`success_count` / `failure_count`) for active `procedure` entries | Graduates validated procedures (`success_count >= 3`, `failure_count == 0` across ≥ 2 sessions) into `.agents/skills/rm-<slug>/SKILL.md` |
-| Risky action & Déjà-vu | `PreToolUse` `gate-once` (`{"decision": "deny"}` on 1st attempt per `(session, entry_id, args_hash)`, `"allow"` on retry); `PreInvocation` 1-step `ephemeralMessage` for immediate alerts (§7.2) | Tick checks semantic tier-2 alerts when queued |
-| Re-check & Async Doc Freshness ("Dreaming") | `PostToolUse` on `run_command`: if the step at `stepIdx` is a merge, checkout, pull, rebase or dependency update, spool a re-check | Tick compares `HEAD`, build manifests, and `source_sha` of doc-seeded entries (`source: doc-seed`); re-extracts mutated docs and flags stale procedures |
+| Capture a finished milestone turn / session (Stage 1) | `Stop` (`terminationReason == "NO_TOOL_CALL"`, `fullyIdle == true`, `executionNum == 0`): when steps since the conversation mark pass the Milestone Gate (§6.3.1: git commit, PR opened, work order completed, error/test resolved after ≥ 15 steps, or edits to ≥ 2 files followed by a build/test) and `memory_note` has not already advanced the mark over those steps, return `{"decision": "continue", "reason": "<request>"}` so the warm-cache agent emits a `repo-memory-note` block (`executionNum >= 1` harvests the note into the inbox, updates the mark, and allows stop; E8, X1) | Sweep catches sessions with no `Stop` (crash, kill, sessions from before install, or subagents); harvests `CHECKPOINT` steps and `<appDataDir>/brain/<conversation-id>/*.md` artifacts at zero LLM cost; queues `repo-memory-distiller` fallback for uncovered milestone work (§6.5) |
+| Consolidate & render dossiers (Stage 2) | none | Tick runs multi-turn `--input-format stream-json --output-format stream-json` `repo-memory-distiller` (X8); applies Echo Filter (P13) and Pre-Consolidation Corroboration Gate (§6.4); writes `.memory/ops/<yyyy-mm>/<ulid>.json`; deterministically renders `.memory/dossiers/<scope>.md` and `.memory/ATLAS.md`; updates `index.db` |
+| Atlas & Task-Start Dossiers | `.memory/ATLAS.md` is included via the managed `GEMINI.md` block (§5.4); `PreInvocation` (`initialNumSteps <= 1` or after `DetectCompaction` / `DetectRewind`) pushes matched task-start dossier entries as persistent `userMessage` | Regenerated deterministically by the dossier projector and `repo-memory reindex` when ops change |
+| First-Entry & First-Touch Dossiers | `PreInvocation` resolves scopes and anchors from newly read/edited files in the transcript; injects top un-injected entries (`InjectedSet`) as persistent `userMessage`. On-demand depth via MCP pull tools (`memory_brief`, `memory_why`, `memory_history`, `memory_search`). | Deterministic dossier projection + `index.db` update on op log mutation |
+| Error match, about-to-edit & procedural tracking | `PreInvocation` inline (1-step `ephemeralMessage` for `about-to-edit` pointers and `error-match` fixes); `PostToolUse` tracks command exit codes (`success_count` / `failure_count`) for active `recipe` (`procedure`) entries | Graduates verified recipes (`success_count >= 2` across ≥ 2 sessions, `failure_count == 0`) into `.agents/skills/rm-<slug>/SKILL.md` (§8, Addendum A §10) |
+| Risky action & Déjà-vu | `PreToolUse` `gate-once` (`{"decision": "deny", "reason": "..."}` on 1st attempt per `(session, entry_id)`, `{"decision": "allow"}` on retry); `PreInvocation` 1-step `ephemeralMessage` for immediate alerts (§7.2) | Tick checks semantic tier-2 alerts when queued |
+| Re-check & Async Doc Freshness ("Dreaming") | `PostToolUse` on `run_command`: if the step at `stepIdx` is a merge, checkout, pull, rebase or dependency update, spool a re-check | Tick compares `HEAD`, build manifests, and `source_doc_blob_sha` of doc-seeded entries (`source: doc-seed`); re-distills mutated docs ("dreaming") and flags stale recipes |
 | Publish the memory PR | none | Daily |
 | Review report (§4.4) | none | Weekly, only if there is something to review |
 | Metrics roll-up, coverage | none | Daily |
-| Index rebuild | `repo-memory reindex` (manual) | Automatically updated on `materialise`, `seed`, and `seed-docs`, or rebuilt if `index.db` is missing or its schema is outdated |
+| Index rebuild | `repo-memory reindex` (manual) | Automatically updated when dossiers/ops are projected, `seed`, or `seed-docs` runs, or rebuilt if `index.db` is missing or its schema is outdated |
 
 ### 4.3 Job table
 
-Asynchronous work is tracked in a private SQLite job table (`<data-dir>/<repo-id>/jobs.sqlite`). Hooks never write to it; they write spool files, which the tick ingests. The hot path therefore never waits on a database lock.
+Asynchronous work is tracked in a private SQLite job table (`<data-dir>/repos/<repo-id>/jobs.sqlite`). Hooks never write to it; they write spool files, which the tick ingests. The hot path therefore never waits on a database lock.
 
 | Field | Purpose |
 |---|---|
-| `id`, `kind`, `priority` | e.g. `harvest`, `consolidate`, `seed-docs`, `dream-freshness`, `materialise`, `publish`, `dejavu`, `recheck`, `report` |
+| `id`, `kind`, `priority` | e.g. `harvest`, `fallback`, `consolidate`, `seed-docs`, `dream-freshness`, `reindex`, `publish`, `dejavu`, `recheck`, `report` |
 | `idempotency_key` | Hash of inputs + stage + pipeline version, so duplicates are no-ops |
 | `state` | `queued` → `running` → `done`, or `failed` → retried with backoff → `dead` after N attempts. Reports: `submitted(conversation_id)` → `done` when the conversation goes idle. |
 | `lease_expires`, `attempts`, `next_attempt_at` | Recovery after a crashed or killed tick |
@@ -179,12 +179,12 @@ Asynchronous work is tracked in a private SQLite job table (`<data-dir>/<repo-id
 3. Reclaim expired leases.
 4. Sweep transcripts, harvest `CHECKPOINT` / `brain/` artifacts, and check git hashes (cheap, mechanical).
 5. Poll report conversations.
-6. Run Stage 2 `consolidate` jobs within the 5-minute warm-cache window of Stage 1 capture.
-7. Run batch jobs (`seed-docs`, `dream-freshness`, `recheck`, `materialise`) until the time budget is spent.
+6. Run Stage 2 `consolidate` jobs over pending inbox notes.
+7. Run batch jobs (`fallback`, `seed-docs`, `dream-freshness`, `recheck`, `reindex`) until the time budget is spent.
 8. Run due calendar jobs.
 9. Exit.
 
-**Concurrency rules.** Consolidation and materialisation are single-writer on `.memory/ops/` and `.memory/scopes/`, so op IDs cannot collide and git operations cannot race.
+**Concurrency rules.** Consolidation and dossier projection are single-writer on `.memory/ops/` and `.memory/dossiers/`, so op ULIDs cannot collide and git operations cannot race.
 
 **Back-pressure:**
 - time budget per tick;
@@ -196,22 +196,22 @@ Asynchronous work is tracked in a private SQLite job table (`<data-dir>/<repo-id
 
 | Class | Surface | Executor | Used for |
 |---|---|---|---|
-| **Repo work** | IDE | Human sessions, PA workers, the bug-fixer loop | The memory system never changes the repository's application code. It *proposes* such work in reports or graduates validated procedures into `.agents/skills/rm-<slug>/SKILL.md`. |
+| **Repo work** | IDE | Human sessions, PA workers, the bug-fixer loop | The memory system never changes the repository's application code. It *proposes* such work in reports or graduates validated recipes into `.agents/skills/rm-<slug>/SKILL.md`. |
 | **Reports** | IDE | Antigravity: `agentapi new-conversation`, title prefix `[repo-memory]`, started by the tick. **[R2]** Claude Code: a Desktop local scheduled task (visible under **Scheduled**). | Weekly memory review (entries awaiting review, gap questions, coverage and health, proposed work); one-off notices. Only started when there is something to review. |
-| **Housekeeping** | Headless | `agy -p --agent repo-memory-distiller` with `--model gemini-3.6-flash`, `--output-format json`, `--input-format stream-json` (multi-turn stdin session keeping the prefix cache warm across batches), `--print-timeout`. **[R2]** On Claude Code-only machines: `claude -p --safe-mode --tools "" --system-prompt-file … --json-schema … --no-session-persistence` (§12.2). | Stage 2 Consolidation, `seed-docs` initial extraction, and async doc freshness |
-| **Mechanical** | No session | The `repo-memory` Go binary in the tick and hooks (§18) | Stage 1 milestone gating & `CHECKPOINT`/`brain/` harvest, Pre-Consolidation Corroboration Gate, deterministic dossier materialisation, `index.db` maintenance, git worktree publishing |
+| **Housekeeping** | Headless | `agy -p --agent repo-memory-distiller` with `--model flash`, `--output-format stream-json`, `--input-format stream-json` (multi-turn stdin session keeping the prefix cache warm across batches; X8), `--print-timeout`. **[R2]** On Claude Code-only machines: `claude -p --safe-mode --tools "" --system-prompt-file … --json-schema … --no-session-persistence` (§12.2). | Stage 2 Consolidation, sidecar fallback, `seed-docs` initial extraction, and async doc freshness |
+| **Mechanical** | No session | The `repo-memory` Go binary in the tick and hooks (§18) | Stage 1 milestone gating & `CHECKPOINT`/`brain/` harvest, Pre-Consolidation Corroboration Gate, deterministic dossier & `ATLAS.md` projection, `index.db` maintenance (`reindex`), git worktree publishing |
 
 Everything runs on the user's subscriptions, with no API key and no pay-as-you-go billing:
 
 - **Executor setting.** `housekeeping.executor` is set per machine. In Release 1 it is always `agy`. **[R2]** `claude` becomes available for Claude Code-only machines (decision D2, §17).
 - **Optional `api` backend.** It exists for other deployments and is off by default.
 
-**Cost of a housekeeping run** (measured in E10 & X5):
+**Cost of a housekeeping run** (measured in E10 & X8):
 
-| Metric | Single-call `gemini-3.8-flash-low` | Single-call `gemini-3.6-flash-low` (E10) | Multi-turn `stream-json` `repo-memory-distiller` (X5) |
+| Metric | Single-call `gemini-3.8-flash-low` | Single-call `gemini-3.6-flash-low` (E10) | Multi-turn `stream-json` `repo-memory-distiller` (X8) |
 |---|---|---|---|
 | Time | 12.8 s end to end | ~10.5 s end to end | ~8–11 s per turn |
-| Input tokens (turn 1) | 16,813 | 9,920 (41% reduction) | ~3,200 (minimal custom agent prompt) |
+| Fixed input overhead (turn 1) | 16,813 | 9,920 (41% reduction) | ~10,590 (38.4% reduction via lean custom agent frontmatter) |
 | Cached tokens (turns 2..N) | `0` (`cache_read_tokens = 0` across processes) | `0` across processes | **85%+ `cache_read_tokens`** within the same `stream-json` process |
 | Where recorded | Only in the CLI store (`~/.gemini/antigravity-cli/`, project `default-cli-project`); not in the IDE history | Same | Same |
 
@@ -219,8 +219,8 @@ Everything runs on the user's subscriptions, with no API key and no pay-as-you-g
 
 Housekeeping cost has two parts: **fixed overhead** and **payload**. Two architectural mechanisms minimize both:
 
-1. **Stage 1 Warm-Cache Reflection (`Stop` `NO_TOOL_CALL` continuation):** Because the active coding agent already holds the entire session transcript in its warm prompt cache at the end of a turn, returning `{"decision": "continue"}` on `Stop` reuses 95%+ of the session tokens as `cache_read_tokens` rather than re-reading a 52k–120k token transcript cold in a new process.
-2. **Stage 2 Multi-Turn `stream-json` Consolidation (`repo-memory-distiller`):** Rather than spawning a separate `agy -p` child process per scope or candidate (which pays the full fixed overhead every time because prefix caching is not shared across separate CLI processes; E10), the tick opens a single `agy -p --agent repo-memory-distiller --input-format stream-json` process within 5 minutes of Stage 1 and streams all candidate batches and existing scope dossiers as sequential turns in one warm-cache session (X5).
+1. **Stage 1 Warm-Cache Turn Note (`Stop` `NO_TOOL_CALL` continuation):** Because the active coding agent already holds the entire session transcript in its 5-minute warm prompt cache at the end of a turn, returning `{"decision": "continue", "reason": "<request>"}` on `Stop` reuses 94–99% of the session tokens as `cache_read_tokens` (~90% discount) rather than re-reading a 55k–135k token transcript cold in a new process (X1, X3).
+2. **Stage 2 Multi-Turn `stream-json` Consolidation (`repo-memory-distiller`):** Rather than spawning a separate `agy -p` child process per dossier or note (which pays the full fixed overhead every time because prefix caching is not shared across separate CLI processes; E10), the tick opens a single `agy -p --agent repo-memory-distiller --input-format stream-json --output-format stream-json` process and streams target dossiers and pending notes as sequential turns in one warm-cache session (X8).
 
 **Isolating housekeeping runs:**
 - They run with the working directory `<data-dir>/runs/<repo-id>/`, not the repository, so workspace rules and hooks don't load. (Note: `--project` is silently ignored by `agy -p`, so isolation relies strictly on the isolated working directory and environment variables; E7).
@@ -235,11 +235,11 @@ Housekeeping cost has two parts: **fixed overhead** and **payload**. Two archite
 
 | Component | Responsibility | Invoked by |
 |---|---|---|
-| **Hook entry point** (`repo-memory hook <harness> <event>`) | Deterministic delivery (persistent `userMessage` dossiers + 1-step `ephemeralMessage` alerts); `PreToolUse` `gate-once` enforcement; `PostToolUse` command exit-code tracking; `Stop` milestone-gated reflection continuation; spool writing (§7, §6). No child processes, network, or job-table writes. | Event path |
-| **Tick** (`repo-memory tick`) | Spool ingestion, the job table, sweep, `CHECKPOINT`/`brain/` harvest, Stage 2 consolidation (`repo-memory-distiller`), async doc freshness, procedure skill graduation, reports, calendar jobs | Antigravity scheduled sidecar; OS scheduler; CLI (`repo-memory run` is an alias) |
-| **Materialiser** (`repo-memory materialise`) | Deterministically replays `.memory/ops/YYYY-MM.jsonl`, resolves 5-tier scope inheritance and `{section?}` rules, writes `.memory/scopes/<scope>.md` and `.memory/ATLAS.md`, and updates `<data-dir>/<repo-id>/index.db`. No LLM. | Tick, `seed`, `seed-docs`, or CLI |
-| **Seeder** (`repo-memory seed` & `repo-memory seed-docs`) | Bootstraps `.memory/ops/` from pluggable historical sources (`PAWorkOrderSource`, `GitCommitSource`, `DocSeedSource`) and runs `materialise` + `index.db` build (§6.6, §14) | `repo-memory init` or CLI |
-| **Pull tools (MCP)** | `memory_brief`, `memory_search`, `memory_history`, `memory_note`, `memory_feedback`, `memory_stats`. Exposed by a stdio MCP server (`repo-memory mcp`) backed by `<data-dir>/<repo-id>/index.db`. | Spawned by the harness per session |
+| **Hook entry point** (`repo-memory hook <harness> <event>`) | Deterministic delivery (persistent `userMessage` dossiers + 1-step `ephemeralMessage` hints); `PreToolUse` `gate-once` enforcement; `PostToolUse` command exit-code tracking; `Stop` milestone-gated note continuation and harvest; spool writing (§7, §6). No child processes, network, or job-table writes. | Event path |
+| **Tick** (`repo-memory tick`) | Spool ingestion, the job table, sweep, `CHECKPOINT`/`brain/` harvest, Stage 2 consolidation (`repo-memory-distiller`), async doc freshness ("dreaming"), procedural skill graduation, reports, calendar jobs | Antigravity scheduled sidecar; OS scheduler; CLI (`repo-memory run` is an alias) |
+| **Dossier Projector & Indexer** (`repo-memory reindex`) | Deterministically replays `.memory/ops/<yyyy-mm>/<ulid>.json` (and `.memory/local/ops/`), resolves 5-tier scope inheritance and `{section?}` rules, writes `.memory/dossiers/<scope>.md`, `<scope>.history.md`, and `.memory/ATLAS.md`, and rebuilds `<data-dir>/repos/<repo-id>/index.db`. No LLM. | Tick, `seed`, `seed-docs`, or CLI |
+| **Seeder** (`repo-memory seed` & `repo-memory seed-docs`) | Bootstraps `.memory/ops/` from PA work orders (`source: pa`), curated repository documentation (`source: doc-seed`), or git history and renders `.memory/dossiers/` + `index.db` (§6.6, §14) | `repo-memory enroll` (`init`) or CLI |
+| **Pull tools (MCP)** | `memory_brief`, `memory_why`, `memory_history`, `memory_search`, `memory_note`, `memory_status` (alias `memory_stats`). Exposed by a stdio MCP server (`repo-memory mcp`) backed by `<data-dir>/repos/<repo-id>/index.db`. | Spawned by the harness per session |
 | **Review surface** | Weekly review report (IDE) and the batched memory PR (git host) | Tick |
 
 Processes communicate only through files and SQLite in WAL mode. There is no socket, no long-running process and nothing detached. Everything works on macOS, Linux and Windows.
@@ -256,13 +256,13 @@ Empirically (Phase 0 experiment `phase0-plugin-split`), Antigravity only spawns 
 1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Contains `plugin.json` and `sidecar.json` (`builtin: schedule`, every 1 minute running `repo-memory tick`), plus the nested workspace plugin bundle under `workspace-plugin/repo-memory/`. It declares **no global hooks**.
 2. **Per-Workspace Plugin (`.agents/plugins.json` -> `<absolute-path>/workspace-plugin/repo-memory`):** Activated per enrolled repository using a resolved **absolute path** (because `.agents/plugins.json` does not expand `~` or `$HOME`). Registers `hooks/hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), the `repo-memory mcp` server, the `repo-memory-distiller` custom agent, and skills exclusively for that workspace.
 
-**Enrolling a repository.** `repo-memory init`, run in the repository root:
+**Enrolling a repository.** `repo-memory enroll` (alias `init`), run in the repository root:
 
-1. creates `.memory/` (`config.yaml`, `ops/`, `scopes/`, `ATLAS.md`) and `.memory/.gitignore`;
+1. creates `.memory/` (`config.yaml`, `ops/`, `dossiers/`, `local/`, `ATLAS.md`) and `.memory/.gitignore`;
 2. writes or updates `.agents/plugins.json` with the resolved absolute path to `workspace-plugin/repo-memory`;
-3. updates the machine-managed `<!-- repo-memory:start v2 --> ... <!-- repo-memory:end -->` instruction block in `GEMINI.md` (creating `GEMINI.md` only if needed, and never leaving a stale v1 `@[memory map](.memory/views/MAP.md)` line; **[R2]** `CLAUDE.md`);
+3. updates the machine-managed `<!-- repo-memory:begin v2 — managed by repo-memory; edits inside are overwritten --> ... <!-- repo-memory:end -->` instruction block in `GEMINI.md` (creating `GEMINI.md` only if needed, and never leaving a stale v1 `@[memory map](.memory/views/MAP.md)` line; **[R2]** `CLAUDE.md`);
 4. registers the repository in `<data-dir>/registry.json`: repo ID, root path and known worktree paths. The repo ID is `sha256(root commit + ":" + canonical origin URL)`, or `sha256(root commit + ":" + real path of the main worktree)` when there is no remote;
-5. runs `repo-memory seed-docs` (and `repo-memory seed` if PA work orders are present) to bootstrap initial dossiers and `<data-dir>/<repo-id>/index.db` so Day-1 sessions have high-signal architectural context immediately.
+5. runs `repo-memory seed-docs` (and `repo-memory seed` if PA work orders are present) to bootstrap initial dossiers and `<data-dir>/repos/<repo-id>/index.db` so Day-1 sessions have high-signal architectural context immediately.
 
 **What enrolment controls:**
 

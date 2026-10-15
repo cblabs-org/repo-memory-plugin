@@ -691,7 +691,7 @@ Phase C
 3. Is git notes the right shared home for links, given that hosting UIs don't show notes? The alternative is evidence objects, keyed by commit.
 4. Is `evidence.share: none` the right default, or should `notes` be the default for the `team` review profile?
 5. Should gap lines ever be pushed (`gaps.push`), or should they stay pull-only?
-6. Are the A7 thresholds (3 steps, 3 outcomes, 2 conversations, 30 days) too strict or too loose?
+6. Are the A7 thresholds (2 steps, `success_count >= 2` across 2 conversations, 0 failures since last amendment) too strict or too loose?
 
 ---
 
