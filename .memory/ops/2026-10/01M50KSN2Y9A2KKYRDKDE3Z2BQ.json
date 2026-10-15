@@ -1,0 +1,1181 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "docseed-9a8b5521",
+      "dossier_scope": "core/pipeline/compact",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub",
+          "internal/core/pipeline/compact/compact.go"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**every UUID** is replaced, and that includes conversation IDs;"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-74431a96",
+      "dossier_scope": "core/pipeline/compact",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub",
+          "internal/core/pipeline/compact/compact.go"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**every hex string of 32 or more characters** is replaced, and that includes full git SHAs."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-7d83b4ee",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "input prepared for the lean agent (v2 §5.6);"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-6d01ea5d",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "op publish (the existing second scan, SPEC §11.3)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-4915d23b",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "1 — **Structural** — Private-key blocks; credentialed URLs (`scheme://user:pass@host`); database connection strings; `Authorization:` headers; assignments to secret-like names (`*_TOKEN`, `*_SECRET`, `*_KEY`, `PASSWORD`, …); provider key formats with fixed prefixes. The provider list is our own table, maintained in the package."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f9127884",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "2 — **Entropy** — Unlabelled tokens of 24 or more characters over base64 or hex alphabets, above an entropy threshold. **Allowed through:** UUIDs and ULIDs in the known-ID allow-set (conversations, steps, notes, entries); hex strings of 7–40 characters that resolve as commit objects in this repository (`git cat-file -e`, batched); content from files matched by `scrub.skip_paths` (for exam..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-4fc216d6",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "3 — **PII** (opt-in) — Email addresses and phone numbers"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-30433ad4",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "4 — **Repo rules** — Label-to-regex rules, plus allow patterns, from `.memory/scrub.yaml`"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-14f65441",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/core/scrub"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "5 — **Blobs** — Inline base64 images and binaries over 1 KiB, replaced by `«blob:image/png 23KiB sha256:ab12…»`"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-146631f6",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "go.sum"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`testdata/scrub/benign/` — Look-alikes that must survive: SHAs, conversation UUIDs, ULIDs, `go.sum` lines, ESP-IDF hex dumps, MAC addresses, partition tables and flash offsets"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f9386d51",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Updating:** only the text between the markers is ever rewritten. The version tag (`v1` $\\to$ `v2`) allows automatic in-place upgrades from `views/MAP.md` to `.memory/ATLAS.md`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-c7299f01",
+      "dossier_scope": "eval",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "internal/eval"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Tooling.** `repo-memory eval compare \u003ca.json\u003e \u003cb.json\u003e` in `internal/eval` does the pairing, tests and correction."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-b52782ec",
+      "dossier_scope": "Makefile",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "Makefile",
+          "go.mod"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-72185a3f",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Ingestion (`repo-memory seed-docs`):** Discovers curated markdown files configured under `doc_seeds` in `.memory/config.yaml` (defaulting to `docs/developer/**/*.md` and hand-written `.agents/skills/**/SKILL.md` files that do not have `generated_by: repo-memory`). Each file is passed through the preparation layer and `repo-memory-distiller` to extract concrete `invariant`, `contract`, `gotcha..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-26e58dd3",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Provenance metadata (`source: doc-seed`):** Every note and resulting op-log entry carries:"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-e667c215",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`source_doc_path`: repo-relative path to the markdown file (e.g., `docs/developer/build-and-flash.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-7e4f0110",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`source_doc_blob_sha`: git blob SHA (`git hash-object \u003cpath\u003e`) of the markdown file at distillation time"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-ef4ecdd7",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "**Async Doc Freshness (\"Dreaming\" in `tick`):** On each background `tick`, the daemon checks whether any `source_doc_path`'s current git blob SHA differs from `source_doc_blob_sha` (or if the file was deleted). When a seeded doc changes in `git diff`, `tick` queues a background re-distillation job (\"dreaming\") that reconciles the updated markdown against the existing `source: doc-seed` entries..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-7b6c90b6",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`none` — Nothing. This is today's behaviour. — ✅"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-57018a76",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "gotcha",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`notes` — Harvested notes, already scrubbed and linted (v2 §5.1), with their metadata: conversation ID, steps covered, model, harness version, branch, head commit, anchor check results, exposure list"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-d90ab3e3",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/addendum-a-provenance-and-hardening.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
+        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
+        "text": "`notes+summaries` — As `notes`, plus platform checkpoint summaries (v2 §5.3), after a second scrub"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-7e05295b",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/phase0-plugin-split.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Declares `plugin.json` and `sidecar.json` (`builtin: schedule`) so the scheduled tick runs while the IDE is open, and bundles the workspace plugin inside `workspace-plugin/repo-memory/`. It declares **no global hooks**, preventing hooks from firing in non-enrolled workspaces."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f66eb00e",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/phase0-plugin-split.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Per-Workspace Plugin (`\u003cworkspace\u003e/.agents/plugins.json`):** Enrolled repositories reference the nested `workspace-plugin/repo-memory` directory via a resolved **absolute path** (because `.agents/plugins.json` does not expand `~` or `$HOME`). This activates `hooks.json`, `mcp.json`, agents, and skills exclusively for that workspace."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-70521f15",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and newly entered scope entries that are tracked in a per-session `InjectedSet`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-dfdc29da",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "8784f570a29f729e581e3a0c8c5148f847c42d38",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/t..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-11db9bc8",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Five-Tier State Scope Hierarchy \u0026 Pre-Consolidation Corroboration Gate (`VD18`, §6, §7.1):** Formalizes `temp:`, `session:`, `user:` (gitignored `\u003cdata-dir\u003e/repos/\u003crepo-id\u003e/user-dossiers/`), `branch:` (`.memory/local/`), and `repo:` (`.memory/ops/` \u0026 `.memory/dossiers/`), and enforces a deterministic Pre-Consolidation Corroboration Gate requiring a passing `PostToolUse` build/test step, ver..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-bdc24763",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Doc-Seeded Dossiers \u0026 Async Doc Freshness (\"Dreaming\") (`VD16`, §7.6):** `repo-memory seed-docs` (`source: doc-seed`) distills curated repository documentation (`docs/developer/`, `.agents/skills/`) into code-anchored dossier entries delivered via `PreInvocation` push, paired with an async git-diff watcher in `tick` (`source_doc_path`, `source_doc_blob_sha`) that re-distills affected entries..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-3d67af0d",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "gotcha",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Optional Section Resolution (`{section?}`) \u0026 Five-Tier Scope Hierarchy:** Dossiers omit empty sections and separate ephemeral scratch (`temp:`), conversation state (`session:`), personal gitignored preferences (`user:`), branch-local unmerged work (`branch:` in `.memory/local/`), and git-tracked shared truth (`repo:` in `.memory/ops/` and `.memory/dossiers/`)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-bb4fb8dd",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Doc-Seeded Dossiers (`repo-memory seed-docs`) \u0026 Async Freshness (\"Dreaming\"):** Curated in-repo documentation (`docs/developer/`, `.agents/skills/`) is distilled into anchored dossier entries (`source: doc-seed`) and kept fresh asynchronously on `git diff` changes (§7.6)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-23493cf3",
+      "dossier_scope": ".agents/agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/agents"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "Markdown custom agents (`repo-memory-distiller`) shipped in `.agents/agents/` work with `agy -p --agent repo-memory-distiller` and cut fixed input overhead by ~38% (~6.6k tokens saved per invocation) by setting `model: flash`, `enable_write_tools: false`, `enable_mcp_tools: false`, and `enable_subagent_tools: false`. Multi-turn `--input-format stream-json --output-format stream-json` reuses the..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-3247f175",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "`agy -p \"/usage\" --output-format json` reports quota and spends zero tokens. Gemini Pro, Gemini Flash and Claude/GPT have **separate quota pools, each with a per-week and per-5-hour cap**. — Live call, X3 (`docs/experiments/spike-summary.md`, Q7, Q41)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-c9ca41b5",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/phase0-plugin-split.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "Splitting packaging into a global daemon plugin (`~/.gemini/config/plugins/repo-memory-daemon/`, sidecar only) and a workspace-scoped plugin (`workspace-plugin/repo-memory/`, hooks + MCP + skills enabled via `.agents/plugins.json` with resolved absolute paths) guarantees zero hook or MCP overhead in unenrolled repositories. — Phase 0 spike (`docs/experiments/phase0-plugin-split.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-b21de2cf",
+      "dossier_scope": "docs/evaluations",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/evaluations/x6-lite-verdict.md"
+        ],
+        "entry_type": "failure-signature",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**X6-lite B1 Replay (`docs/evaluations/x6-lite-verdict.md`):** Across 5 historical work orders replayed from their parent commits, the **No-Memory baseline already achieved 84.0% pass rate** (4.2/5 tasks passing `go test` on the first run) because work order prompts, nearby code comments, and compiler errors already specified the local task. In the single discriminating task (`T2: pr-01/wo4`),..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-dfbfa1dd",
+      "dossier_scope": "docs/evaluations",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/evaluations/pa-memory-retrieval-effectiveness.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**231-Transcript PA Memory Retrieval Study (`docs/evaluations/pa-memory-retrieval-effectiveness.md`):** Auditing 231 real multi-tier sessions (`19,586` steps) across two repositories revealed that **passive \"pull\" memory (`MEMORY.md`, `WORKORDER.md` archives, and MCP pull tools) goes 94–99% unread by implementation workers** (`1.3%` read rate for `MEMORY.md`, `0` MCP pull calls across 231 tra..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-1e145149",
+      "dossier_scope": "docs/evaluations",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/evaluations/memory-value-evaluation-proposal.md"
+        ],
+        "entry_type": "gotcha",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**77-Session `esp32` Static Doc Audit (`docs/evaluations/memory-value-evaluation-proposal.md`):** Even when rich human-authored documentation (`docs/developer/build-and-flash.md`, `.agents/skills/hil-Validation/SKILL.md`) exists in the repository, agents read it in only **1.3%–7.8% of sessions** unless prompted, repeatedly rediscovering build flags, flash partitions, and hardware traps from s..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-d843a19f",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Atlas** — A one-line-per-dossier index (`.memory/ATLAS.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-a5f09188",
+      "dossier_scope": "Makefile",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "Makefile"
+        ],
+        "entry_type": "failure-signature",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**`procedural`** *(Executable Workflows \u0026 Error Playbooks)* — `recipe` (alias `procedure`), `failure-signature` — Verified step-by-step commands/workflows and symptom → cause → fix patterns — **Execution-Outcome Coupled:** `PostToolUse` tracks command exit codes against active recipes (`success_count` / `failure_count`) and flags `stale_suspect` when build manifests (`Makefile`, `CMak..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-5f6e0bf1",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Lean agent.** `agy -p --agent repo-memory-distiller`. In experiment X8 (`docs/experiments/X8-lean-agent.md`), we verified the exact frontmatter keys supported by the custom agent loader (`name`, `description`, `mainAgent`, `subagent`, `hidden`, `model`, `enable_write_tools`, `enable_mcp_tools`, `enable_subagent_tools`), which cut fixed input token overhead by **38.4%** (~6.6k tokens saved per..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-e98c6ff1",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/phase0-plugin-split.md"
+        ],
+        "entry_type": "contract",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "Disabling write tools, MCP tools, and subagent tools strips all mutation, MCP server, and subagent schemas from the prompt. In addition, the workspace/daemon plugin split (`docs/experiments/phase0-plugin-split.md`) and the `REPO_MEMORY_INTERNAL=1` environment variable guard prevent hook recursion inside the distiller."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-ffeec42e",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops"
+        ],
+        "entry_type": "gotcha",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**4. Branch-Local (Unmerged)** — `branch:` — `.memory/local/ops/` \u0026 `.memory/local/dossiers/` (gitignored or branch-local lane) — Local lane until branch merge — Notes and ops collected on an unmerged feature branch. Usable immediately by delivery on that branch; promoted to `.memory/ops/` when the branch merges"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-09de490b",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/dossiers"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**5. Repository Shared** — `repo:` — `.memory/ops/\u003cyyyy-mm\u003e/\u003culid\u003e.json` \u0026 `.memory/dossiers/` — **Yes (Committed)** — Canonical team-wide truth reviewed via the memory PR"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-54e73d93",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/config.yaml"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Bootstrap (`repo-memory seed-docs`):** Scans configured markdown paths (`docs/developer/**/*.md`, `.agents/skills/**/SKILL.md`, or paths listed under `doc_seeds` in `.memory/config.yaml`) and runs `repo-memory-distiller` to extract concrete `invariant`, `gotcha`, `recipe`, and `failure-signature` entries anchored to the actual source files, build manifests, and symbols they govern."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-662eb7b0",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Provenance Tracking (`source: doc-seed`):** Every doc-seeded entry records `source: doc-seed`, `source_doc_path` (relative repo path), and `source_doc_blob_sha` (the git blob SHA of the markdown file at distillation time)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-301e242f",
+      "dossier_scope": ".agents",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/skills"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Async Doc Freshness (\"Dreaming\" in `tick`):** During background `tick` consolidation, the daemon compares each `source_doc_path`'s current git blob SHA against `source_doc_blob_sha`. Whenever a human edits a seeded doc in git, `tick` queues a background re-distillation pass (\"dreaming\") that emits `amend`, `supersede`, or `retire` ops for entries derived from that doc so dossiers never drift..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-393e2fc3",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Turn note (`Stop` continue, Stage 1)** — ~1–5k uncached, plus warm 5-min cached context (median 75k on Gemini, 130k on Opus; 94–99% cache hit rate, ~90% discount) — 300–1,000 — Milestones only: about 2–6 a day at esp32-app-foundation's session rates — The session's model"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-088fe7bf",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Harvest, `CHECKPOINT`/artifact capture, ledger, re-injection checks** — none (deterministic) — none — Per turn — none"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f4e23c70",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Sidecar fallback (`repo-memory-distiller`)** — ~10.6k fixed overhead (down 38.4% from 17.2k in X8), plus 5–15k per conversation (checkpoint plus tail), shared across `stream-json` turns — ~500 per conversation — Missed conversations only — Chosen by the `/usage` quota check"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-6326e025",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Warm Batch Consolidation (Stage 2, `stream-json`)** — ~10.6k fixed overhead once on Turn 1, plus ~0.5k per note and 1–3k per dossier across Turns $2..N$ (warm prefix cache) — ~1–2k — Daily, 1 multi-turn `stream-json` session — Chosen by the `/usage` quota check"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-c27dbb35",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "**Delivery** — none (deterministic) — none — Injects ≤ ~1–2.5k per session, including re-injection — n/a"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-77661109",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "v1 dogfood pipeline: ~112k per episode."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f4c6de9d",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md",
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "PA: ~5k per work order to produce, plus ~9k per session to load (and 94–99% unread when left to passive pull)."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-b23e8710",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "One file per claim (`.memory/claims/`) — An append-only op log (`.memory/ops/`) with deterministically rendered dossiers (`.memory/dossiers/`) across 3 cognitive lifecycles (`semantic`, `procedural`, `episodic`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-9d9196ea",
+      "dossier_scope": ".memory",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ops",
+          ".memory/dossiers"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "The 125 v1 claims and `.memory/views/`. They are replaced by `.memory/ops/` and `.memory/dossiers/`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-9226563d",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md"
+        ],
+        "entry_type": "recipe",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "procedural",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "X3 — **Quota accounting** (Q6, Q41). Read `/usage` before and after turn notes and lean-agent calls. — Confirms the gate and fallback budgets — **PASS** (`docs/experiments/spike-summary.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-a319591f",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/X5-channels.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "X5 — **Delivery channels** (Q2–Q4). Verify `systemMessage`, `userMessage`, and `ephemeralMessage` persistence across invocations, turns, and `CHECKPOINT`. — Channels confirmed as in §8.2 (`userMessage` persistent on `agy 1.3.3`; `ephemeralMessage` 1-step) — **PASS** (`docs/experiments/X5-channels.md`, `X5-injectSteps-investigation.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-c506a563",
+      "dossier_scope": "docs/evaluations",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/evaluations/x6-lite-verdict.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "X6 — **B1 replay (`X6-lite`) \u0026 Forward-Task Eval v2.** Re-run past work orders (`X6-lite`) and evaluate 2×2 forward-task design (`repo-memory` + `esp32`) where baseline is \u003c50%. — `X6-lite` identified 84% baseline ceiling, 31.6% step reduction on `T2`, and `ephemeralMessage` bug (`docs/evaluations/x6-lite-verdict.md`). Eval v2 (`PR-11`) tests fixed v2.2 stack on non-ceiling tasks. — **X6..."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-1e650408",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/X8-lean-agent.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "X8 — **Lean agent.** Measure `agy -p --agent repo-memory-distiller` input tokens, single-shot and over `stream-json`; verify hook isolation and frontmatter keys. — 38.4% fixed token reduction (~6.6k tokens saved); no hook recursion with plugin split — **PASS** (`docs/experiments/X8-lean-agent.md`, `phase0-plugin-split.md`)"
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-f1998a5d",
+      "dossier_scope": "docs/experiments",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          "docs/experiments/spike-summary.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/design-v2-distillation-retrieval.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "a45f3f3f26781a2ec498e66bf7f02f3faea2d263",
+        "source_doc_path": "docs/design-v2-distillation-retrieval.md",
+        "text": "X9 — **Hook exit codes** (Q27). Run `PreToolUse` with exit 1, exit 2, empty output and `{}`, and do the same for the other hook types. — `exit 1` fails open; `exit 2` and `{}` fail closed (deny) — **PASS** (`docs/experiments/spike-summary.md`)"
+      }
+    }
+  ],
+  "created_at": "2026-10-15T20:24:27.998425803Z",
+  "batch_id": "01M50KSN2Y9A2KKYRDKDE3Z2BQ"
+}
