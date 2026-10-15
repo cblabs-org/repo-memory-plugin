@@ -58,11 +58,57 @@ type ParsedWorkorder struct {
 	CommitTime time.Time
 }
 
+func buildRepoPathValidator(opts SeedOptions) func(string) bool {
+	if opts.RepoRoot == "" {
+		return func(string) bool { return true }
+	}
+
+	if opts.BeforeCommit != "" {
+		cmd := exec.Command("git", "ls-tree", "-r", "--name-only", opts.BeforeCommit)
+		cmd.Dir = opts.RepoRoot
+		if out, err := cmd.Output(); err == nil {
+			known := make(map[string]bool)
+			for _, line := range strings.Split(string(out), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				clean := filepath.Clean(line)
+				known[clean] = true
+				for dir := filepath.Dir(clean); dir != "." && dir != "/" && dir != ""; dir = filepath.Dir(dir) {
+					if known[dir] {
+						break
+					}
+					known[dir] = true
+				}
+			}
+			return func(p string) bool {
+				clean := filepath.Clean(strings.TrimSuffix(p, "/"))
+				if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
+					return false
+				}
+				return known[clean]
+			}
+		}
+	}
+
+	return func(p string) bool {
+		clean := filepath.Clean(strings.TrimSuffix(p, "/"))
+		if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(opts.RepoRoot, clean))
+		return err == nil
+	}
+}
+
 func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 	files, err := ScanWorkorders(paDir)
 	if err != nil {
 		return nil, err
 	}
+
+	isValidRepoPath := buildRepoPathValidator(opts)
 
 	var results []*ParsedWorkorder
 	for _, path := range files {
@@ -99,8 +145,23 @@ func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 			continue
 		}
 
+		if opts.RepoRoot != "" && len(report.Changes) > 0 {
+			filtered := report.Changes[:0]
+			for _, c := range report.Changes {
+				if isValidRepoPath(c.Path) {
+					filtered = append(filtered, c)
+				}
+			}
+			report.Changes = filtered
+		}
+
 		var commitTime time.Time
-		cmd := exec.Command("git", "log", "-1", "--format=%cI", "--", relPath)
+		var cmd *exec.Cmd
+		if opts.BeforeCommit != "" {
+			cmd = exec.Command("git", "log", "-1", "--format=%cI", opts.BeforeCommit, "--", relPath)
+		} else {
+			cmd = exec.Command("git", "log", "-1", "--format=%cI", "--", relPath)
+		}
 		if opts.RepoRoot != "" {
 			cmd.Dir = opts.RepoRoot
 		}
