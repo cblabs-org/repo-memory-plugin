@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
@@ -326,5 +327,41 @@ func TestSeedDocs_ModifyAndDelete(t *testing.T) {
 	}
 	if !foundUpdatedReason {
 		t.Errorf("expected retired entry with source_doc_updated reason, got %+v", retiredEntries)
+	}
+}
+
+func TestParseDocToOps_FiltersTablesFragmentsAndExcludedAnchors(t *testing.T) {
+	repoRoot := t.TempDir()
+	writeTestFile(t, repoRoot, "internal/core/scrub/scrub.go", "package scrub\n")
+	writeTestFile(t, repoRoot, "docs/experiments/spike-summary.md", "# Spike\n")
+	writeTestFile(t, repoRoot, "docs/evaluations/x6-lite-verdict.md", "# Verdict\n")
+	writeTestFile(t, repoRoot, ".agents/skills/principal-architect-workspace/pr-1/WORKORDER.md", "# WO\n")
+
+	docContent := `# Hardening Guide
+
+## Scrubber Rules (` + "`internal/core/scrub/scrub.go`" + `)
+
+| Stage | Description |
+|---|---|
+| 1 | **Structural** — Private-key blocks in ` + "`internal/core/scrub/scrub.go`" + ` |
+
+Paragraph mentioning ` + "`internal/core/scrub/scrub.go`" + ` before a sentence-fragment list:
+- every UUID is replaced, and that includes conversation IDs;
+- input prepared for the lean agent (v2 §5.6);
+- Short fragment.
+- **Valid Invariant**: Every scrubber rule in ` + "`internal/core/scrub/scrub.go`" + ` must run deterministically before persistence.
+
+## Experiment Citations
+- **Experiment Citation**: Validated in ` + "`docs/experiments/spike-summary.md`" + ` and ` + "`docs/evaluations/x6-lite-verdict.md`" + ` and ` + "`.agents/skills/principal-architect-workspace/pr-1/WORKORDER.md`" + `.
+`
+	isValid := buildRepoPathValidator(SeedOptions{RepoRoot: repoRoot})
+	opsList := ParseDocToOps("docs/hardening.md", docContent, "abc12345", time.Now().UTC(), nil, isValid)
+
+	if len(opsList) != 1 {
+		t.Fatalf("expected exactly 1 high-signal op, got %d: %+v", len(opsList), opsList)
+	}
+	gotText, _ := opsList[0].Fields["text"].(string)
+	if !strings.Contains(gotText, "Valid Invariant") {
+		t.Errorf("unexpected op text: %q", gotText)
 	}
 }
