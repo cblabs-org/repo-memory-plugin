@@ -36,18 +36,18 @@ Fix GitHub Issue **#13** (prevent orphan FTS5 documents and duplicate child rows
 
 ## Line-Item Instructions
 
-- [ ] `internal/core/index/index.go` (GitHub Issue **#13**):
+- [x] `internal/core/index/index.go` (GitHub Issue **#13**):
   - In `NewIndex(dbPath string)`, append `&_pragma=recursive_triggers(1)&_pragma=foreign_keys(1)` to the SQLite DSN (`file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=recursive_triggers(1)&_pragma=foreign_keys(1)`) so SQLite fires `entries_ad` and `ON DELETE CASCADE` even if `INSERT OR REPLACE` is ever executed.
 
-- [ ] `internal/core/index/rebuild.go` (GitHub Issue **#13**):
+- [x] `internal/core/index/rebuild.go` (GitHub Issue **#13**):
   - Replace `insertEntryQuery` (`INSERT OR REPLACE INTO entries ...`) with `INSERT INTO entries (id, type, dossier_scope, text, source, verified, closes_when, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET type = excluded.type, dossier_scope = excluded.dossier_scope, text = excluded.text, source = excluded.source, verified = excluded.verified, closes_when = excluded.closes_when, created_at = CASE WHEN excluded.created_at != '' THEN excluded.created_at ELSE entries.created_at END, updated_at = excluded.updated_at` so `entries_au` fires cleanly.
   - Before inserting into `entry_anchors` and `error_patterns` for `entry.ID` inside the `RebuildFromOpLog` loop, execute `DELETE FROM entry_anchors WHERE entry_id = ?` and `DELETE FROM error_patterns WHERE entry_id = ?` so any duplicate entry IDs across dossier scopes can never duplicate anchor or error-pattern rows.
 
-- [ ] `internal/core/index/entries.go` (GitHub Issue **#13**):
+- [x] `internal/core/index/entries.go` (GitHub Issue **#13**):
   - Add an `InsertEntry(ctx context.Context, entry dossiers.Entry) error` method (or update `UpsertEntry`) that deletes existing child rows in `entry_anchors` (when `len(entry.Anchors) > 0` in `UpsertEntry`, or unconditionally in `InsertEntry`) and `error_patterns` (and removes any existing FTS row via `ON CONFLICT(id) DO UPDATE` trigger `entries_au`), and if `entry.Type == dossiers.EntryTypeFailureSignature` in `InsertEntry`, populates `error_patterns`.
   - In `InsertErrorPattern(ctx, entryID, commandPrefix, pattern, scope)`, delete any existing identical row (`DELETE FROM error_patterns WHERE entry_id = ? AND COALESCE(command_prefix, '') = ? AND pattern = ?`) before inserting so repeated calls are idempotent.
 
-- [ ] `internal/core/dossiers/projector.go` (GitHub Issue **#11**):
+- [x] `internal/core/dossiers/projector.go` (GitHub Issue **#11**):
   - Extract a helper `moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entryID, fromScope, toScope string, ts time.Time)` that:
     1. Returns immediately if `fromScope == "" || toScope == "" || fromScope == toScope`.
     2. Finds `entryID` in `fromD := getOrCreateDossier(dossiers, fromScope)`, removes it from `fromD.Entries`, updates its `DossierScope = toScope` and `UpdatedAt = ts`, removes any pre-existing duplicate with `ID == entryID` in `toD := getOrCreateDossier(dossiers, toScope)`, appends the moved entry to `toD.Entries`, and updates `entryIndex[entryID] = toScope`.
@@ -57,7 +57,7 @@ Fix GitHub Issue **#13** (prevent orphan FTS5 documents and duplicate child rows
     - Then call `applyAmend(dossiers, entryIndex, op)` and return.
     - Also, before appending a brand-new `entry` to `d.Entries` at the bottom of `applyAdd`, ensure no entry with `e.ID == entry.ID` already exists in `d.Entries`.
 
-- [ ] `internal/core/index/v2_test.go` and `internal/core/dossiers/dossiers_test.go`:
+- [x] `internal/core/index/v2_test.go` and `internal/core/dossiers/dossiers_test.go`:
   - In `internal/core/index/v2_test.go`, add `TestUpsertAndReplaceEntry_NoOrphanFTSOrDuplicateChildren` verifying:
     1. Inserting an entry with unique FTS token `"orphancheckalpha"`, anchors, and error pattern, then replacing/updating it with `"orphancheckbeta"` leaves **zero** FTS matches for `"orphancheckalpha"` (no orphan rowids in `entries_fts`), 1 match for `"orphancheckbeta"`, and no duplicate rows in `entry_anchors` or `error_patterns`.
     2. Calling `InsertEntry` twice with updated text/anchors/error patterns replaces child rows cleanly without duplicates or orphan FTS rows.
@@ -74,4 +74,16 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+- **Status:** Complete
+- **Files Modified:**
+  - `internal/core/index/index.go`: Enabled `_pragma=recursive_triggers(1)&_pragma=foreign_keys(1)` on the SQLite DSN in `NewIndex`.
+  - `internal/core/index/rebuild.go`: Switched `insertEntryQuery` from `INSERT OR REPLACE` to `INSERT INTO entries ... ON CONFLICT(id) DO UPDATE SET ...` and cleared existing `entry_anchors` and `error_patterns` rows per entry before re-inserting child rows during `RebuildFromOpLog`.
+  - `internal/core/index/entries.go`: Added `InsertEntry` (clearing `entry_anchors` and `error_patterns` unconditionally, upserting `entries` via `ON CONFLICT(id) DO UPDATE`, inserting deduplicated anchors, and populating `error_patterns` for `failure-signature` entries), updated `UpsertEntry` to deduplicate anchors and synchronize `error_patterns`, and made `InsertErrorPattern` idempotent by deleting pre-existing matching rows before inserting.
+  - `internal/core/dossiers/projector.go`: Extracted `moveEntry` to move entries across dossier scopes and deduplicate destination entries, wired `moveEntry` into `applyMove` and `applyAdd` (on cross-scope re-add), and guarded `applyAdd` against duplicate entry IDs in `d.Entries`.
+  - `internal/core/index/v2_test.go`: Added `TestUpsertAndReplaceEntry_NoOrphanFTSOrDuplicateChildren`.
+  - `internal/core/dossiers/dossiers_test.go`: Added `TestProjector_ReAddUnderDifferentScopeMovesEntry`.
+- **Verification:**
+  - `go test -v ./internal/core/index/... ./internal/core/dossiers/...` — PASS
+  - `go vet ./cmd/... ./internal/...` — PASS (0 warnings/errors)
+- **Out-of-Scope Issues Surfaced:** None.

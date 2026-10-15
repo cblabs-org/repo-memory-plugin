@@ -25,7 +25,7 @@ type Index struct {
 // NewIndex opens or creates a new Index backed by SQLite at dbPath.
 // It configures WAL mode for better concurrency.
 func NewIndex(dbPath string) (*Index, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=recursive_triggers(1)&_pragma=foreign_keys(1)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening index database: %w", err)

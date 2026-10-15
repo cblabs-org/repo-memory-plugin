@@ -5,6 +5,7 @@ import (
 	"iter"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
@@ -83,8 +84,8 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 	// If entry already exists, treat as amend (or move if scope differs)
 	if existingScope, exists := entryIndex[op.EntryID]; exists {
 		if existingScope != op.DossierScope && op.DossierScope != "" {
-			// Scope changed — treat as move + amend
-			applyMove(dossiers, entryIndex, op)
+			// Scope changed — move entry across scopes before amending
+			moveEntry(dossiers, entryIndex, op.EntryID, existingScope, op.DossierScope, op.Timestamp)
 		}
 		applyAmend(dossiers, entryIndex, op)
 		return
@@ -141,6 +142,14 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 	}
 	if closesWhen, ok := op.Fields["closes_when"].(string); ok {
 		entry.ClosesWhen = closesWhen
+	}
+
+	for _, e := range d.Entries {
+		if e.ID == entry.ID {
+			entryIndex[op.EntryID] = op.DossierScope
+			applyAmend(dossiers, entryIndex, op)
+			return
+		}
 	}
 
 	d.Entries = append(d.Entries, entry)
@@ -337,20 +346,11 @@ func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op 
 	}
 }
 
-func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
-	toScope, _ := op.Fields["to_dossier"].(string)
-	if toScope == "" {
+func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entryID, fromScope, toScope string, ts time.Time) {
+	if fromScope == "" || toScope == "" || fromScope == toScope {
 		return
 	}
-	
-	fromScope := entryIndex[op.EntryID]
-	if fromScope == "" {
-		fromScope = op.DossierScope
-	}
-	if fromScope == "" {
-		return
-	}
-	
+
 	fromD := getOrCreateDossier(dossiers, fromScope)
 	toD := getOrCreateDossier(dossiers, toScope)
 
@@ -358,9 +358,9 @@ func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op op
 	found := false
 	var keep []Entry
 	for _, e := range fromD.Entries {
-		if e.ID == op.EntryID {
+		if e.ID == entryID {
 			e.DossierScope = toScope
-			e.UpdatedAt = op.Timestamp
+			e.UpdatedAt = ts
 			entryToMove = e
 			found = true
 		} else {
@@ -369,9 +369,24 @@ func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op op
 	}
 	if found {
 		fromD.Entries = keep
-		toD.Entries = append(toD.Entries, entryToMove)
-		entryIndex[op.EntryID] = toScope
+		var destKeep []Entry
+		for _, e := range toD.Entries {
+			if e.ID != entryID {
+				destKeep = append(destKeep, e)
+			}
+		}
+		toD.Entries = append(destKeep, entryToMove)
+		entryIndex[entryID] = toScope
 	}
+}
+
+func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	toScope, _ := op.Fields["to_dossier"].(string)
+	fromScope := entryIndex[op.EntryID]
+	if fromScope == "" {
+		fromScope = op.DossierScope
+	}
+	moveEntry(dossiers, entryIndex, op.EntryID, fromScope, toScope, op.Timestamp)
 }
 
 func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
