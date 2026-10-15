@@ -23,14 +23,91 @@ type CompletionReport struct {
 
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
+var allowedSingleSegmentExts = map[string]bool{
+	".go":        true,
+	".md":        true,
+	".yaml":      true,
+	".yml":       true,
+	".json":      true,
+	".toml":      true,
+	".sh":        true,
+	".txt":       true,
+	".mod":       true,
+	".sum":       true,
+	".sql":       true,
+	".py":        true,
+	".js":        true,
+	".ts":        true,
+	".c":         true,
+	".h":         true,
+	".cpp":       true,
+	".rs":        true,
+	".proto":     true,
+	".mk":        true,
+	".gitignore": true,
+}
+
+var allowedSingleSegmentNames = map[string]bool{
+	"Makefile":   true,
+	"Dockerfile": true,
+	"LICENSE":    true,
+}
+
+func isValidAnchorPathSyntax(p string) bool {
+	p = strings.TrimSpace(p)
+	p = strings.TrimSuffix(p, "/")
+	if p == "" || p == "." || p == ".." || strings.Contains(p, " ") {
+		return false
+	}
+
+	lower := strings.ToLower(p)
+	if strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:") {
+		return false
+	}
+
+	switch p[0] {
+	case '~', '/', '*', '!', '<', '>', '-', '$':
+		return false
+	}
+
+	if strings.ContainsAny(p, "<>*?()[]{}=;:\\\"'$|&") {
+		return false
+	}
+	if strings.Contains(p, "...") || strings.Contains(p, "//") {
+		return false
+	}
+
+	segments := strings.Split(p, "/")
+	for _, seg := range segments {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+
+	if len(segments) == 1 {
+		if allowedSingleSegmentNames[p] {
+			return true
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		return allowedSingleSegmentExts[ext]
+	}
+
+	firstSeg := segments[0]
+	if idx := strings.IndexByte(firstSeg, '.'); idx > 0 {
+		return false
+	}
+
+	return true
+}
+
 func extractBacktickPaths(s string) []string {
 	var paths []string
 	matches := backtickRe.FindAllStringSubmatch(s, -1)
-	
+
 	seen := make(map[string]bool)
 	for _, match := range matches {
-		p := match[1]
-		if (strings.Contains(p, "/") || strings.Contains(p, ".")) && !strings.Contains(p, " ") {
+		p := strings.TrimSuffix(strings.TrimSpace(match[1]), "/")
+		if isValidAnchorPathSyntax(p) {
 			if !seen[p] {
 				seen[p] = true
 				paths = append(paths, p)

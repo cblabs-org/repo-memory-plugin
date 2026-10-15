@@ -61,13 +61,13 @@ Fix GitHub Issue **#10** (seeder extracts arbitrary backticked code tokens, glob
 
 ## Atomic Implementation Checklist
 
-- [ ] **Step 1: Syntactic path validation in `internal/core/seed/parser.go` (`#10`)**
+- [x] **Step 1: Syntactic path validation in `internal/core/seed/parser.go` (`#10`)**
   - Implement `isValidAnchorPathSyntax(p string) bool` and apply it in `extractBacktickPaths(s string)` (normalizing a trailing `/` if present, or keeping clean relative paths) so that:
     - Tokens starting with `~`, `/`, `*`, `!`, `<`, `>`, `-`, `$` are rejected.
     - Tokens containing `<`, `>`, `*`, `?`, `(`, `)`, `[`, `]`, `{`, `}`, `=`, `;`, `:`, `\`, `"`, `'`, `$`, `|`, `&`, `...`, `//`, or `..` segments are rejected.
     - Single-segment tokens (no `/`) are accepted only if they match `Makefile`, `Dockerfile`, `LICENSE`, or have a lowercase file extension in the allowed set (`.go`, `.md`, `.yaml`, `.yml`, `.json`, `.toml`, `.sh`, `.txt`, `.mod`, `.sum`, `.sql`, `.py`, `.js`, `.ts`, `.c`, `.h`, `.cpp`, `.rs`, `.proto`, `.mk`, `.gitignore`), rejecting `cand.EpisodeID`, `Reader.IterateBefore`, `*claims.Claim`, `v1.0`, etc.
     - Multi-segment tokens (containing `/`) whose first segment contains a `.` after index 0 (e.g. `modernc.org/sqlite`, `github.com/foo/bar`) are rejected, while leading-dot repo directories (`.memory/...`, `.agents/...`, `.github/...`) are accepted.
-- [ ] **Step 2: Repository path validation & `--before` timestamp fix in `internal/core/seed/scanner.go` (`#10`, `#12`)**
+- [x] **Step 2: Repository path validation & `--before` timestamp fix in `internal/core/seed/scanner.go` (`#10`, `#12`)**
   - In `ScanAndParse(paDir string, opts SeedOptions)`:
     - When `opts.RepoRoot != ""`, build a path validator:
       - If `opts.BeforeCommit != ""`, run `git ls-tree -r --name-only <opts.BeforeCommit>` (with `cmd.Dir = opts.RepoRoot`) to build a `map[string]bool` containing every file path and every ancestor directory path (`filepath.Dir` loop up to `.`) present in `<opts.BeforeCommit>`.
@@ -75,7 +75,7 @@ Fix GitHub Issue **#10** (seeder extracts arbitrary backticked code tokens, glob
     - When querying `commitTime` for `relPath`:
       - If `opts.BeforeCommit != ""`, execute `exec.Command("git", "log", "-1", "--format=%cI", opts.BeforeCommit, "--", relPath)`.
       - Otherwise, execute `exec.Command("git", "log", "-1", "--format=%cI", "--", relPath)`.
-- [ ] **Step 3: Unit tests in `internal/core/seed/seed_test.go` (`#10`, `#12`)**
+- [x] **Step 3: Unit tests in `internal/core/seed/seed_test.go` (`#10`, `#12`)**
   - Add `TestParseCompletionReport_FiltersNonPathTokens` testing that `*claims.Claim`, `cand.EpisodeID`, `Reader.IterateBefore`, `!config.IsEnrolledFast(cwd)`, `*_test.go`, `<data-dir>/<repo-id>/metrics/*.jsonl`, `~/.gemini/antigravity/hooks/hooks.json`, and `modernc.org/sqlite` are rejected while `internal/core/seed/parser.go`, `.memory/config.yaml`, and `SPEC.md` are retained.
   - Add `TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp` creating a temporary git repo (`git init` + `-c user.name=test -c user.email=test@example.com`):
     - Commit 1 at `2026-01-10T10:00:00Z` (`GIT_AUTHOR_DATE` & `GIT_COMMITTER_DATE`): creates `internal/real/file.go` and `.agents/p1/wo1/WORKORDER.md` whose `### Changes Made` mentions both `` `internal/real/file.go` `` and `` `internal/nonexistent/ghost.go` ``.
@@ -87,9 +87,9 @@ Fix GitHub Issue **#10** (seeder extracts arbitrary backticked code tokens, glob
 
 ## Verification Criteria
 
-- [ ] `go test -v ./internal/core/seed/...` passes all existing and new tests.
-- [ ] `go test ./cmd/... ./internal/...` passes with 0 failures.
-- [ ] `go vet ./cmd/... ./internal/...` passes cleanly.
+- [x] `go test -v ./internal/core/seed/...` passes all existing and new tests.
+- [x] `go test ./cmd/... ./internal/...` passes with 0 failures.
+- [x] `go vet ./cmd/... ./internal/...` passes cleanly.
 
 ## Anti-Patterns — Do NOT
 
@@ -101,19 +101,19 @@ Fix GitHub Issue **#10** (seeder extracts arbitrary backticked code tokens, glob
 
 ## Completion Report
 
-*(To be filled in by the Worker after PA approval)*
-
 ### Status
-(pending)
+✅ Complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/seed/parser.go` — Added `isValidAnchorPathSyntax` and updated `extractBacktickPaths` to filter out Go expressions, symbol references, globs, template placeholders, home-directory paths, and external module import paths while retaining valid repository paths and dot-prefixed repository directories (`#10`).
+- `internal/core/seed/scanner.go` — Added `buildRepoPathValidator` to validate candidate `report.Changes` paths against the repository tree (`git ls-tree` at `BeforeCommit` or `os.Stat` under `RepoRoot`) when `opts.RepoRoot != ""` (`#10`), and passed `opts.BeforeCommit` to `git log -1 --format=%cI` when `opts.BeforeCommit != ""` so `--before` seeding uses cutoff-relative commit timestamps (`#12`).
+- `internal/core/seed/seed_test.go` — Added `TestParseCompletionReport_FiltersNonPathTokens` and `TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp` covering both `#10` and `#12`.
 
 ### Decisions Made
-- Decision description and rationale
+- Implemented two-layer anchor path filtering: syntactic validation in `extractBacktickPaths` so pure parser callers reject code expressions and external/home paths without requiring a filesystem root, paired with repository-tree validation (`git ls-tree` at `BeforeCommit` or `os.Stat`) in `ScanAndParse` when `RepoRoot` is provided.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+- None
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+- None
