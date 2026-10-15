@@ -25,7 +25,7 @@
 | pr-08-v2-delivery ✅ | Antigravity hook codec (`PreInvocation`, `PreToolUse`, `PostToolUse`), delivery moments | [PROJECT.md](../pr-08-v2-delivery/PROJECT.md) |
 | pr-09b-product-fixes ✅ | Canonical `IndexPath`, native tool-call parser, ranker bm25 + `InjectedSet` dedup | [PROJECT.md](../pr-09b-product-fixes/PROJECT.md) |
 | pr-10a-v2-2-docs-and-specs ✅ | `docs/antigravity-hooks-reference.md` updated for `v2.2` (`userMessage` vs `ephemeralMessage`, `Stop` `NO_TOOL_CALL`, `invoke_subagent`) | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
-| pr-10b-delivery-and-storage-fixes (planned) | `UserMessage` persistence fix, `DetectRewind` wiring, issues `#10`–`#13` & `#16` | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
+| pr-10b-delivery-and-storage-fixes ✅ | `UserMessage` persistence fix, `DetectRewind` wiring, cross-process `InjectedSet` persistence, issues `#10`–`#13` & `#16` (`repo-memory ops gc`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-12-v2-distillation (planned) | Production `Stop` gate and harvest, turn-note settings, milestone signals | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
 
 ## Pipeline (Capture → Publish)
@@ -52,7 +52,7 @@
 | Project | Scope | Context |
 |---|---|---|
 | pr-07-v2-storage ✅ | `internal/core/ops/` (op log), `internal/core/dossiers/` (schema, renderer), `.memory/ops/`, `.memory/dossiers/`, `ATLAS.md`, `.memory/config.yaml` scopes, `internal/core/seed/` | [PROJECT.md](../pr-07-v2-storage/PROJECT.md) |
-| pr-10b-delivery-and-storage-fixes (planned) | Index orphan row delete (`#13`), cross-scope projector dedup (`#11`), seeder real path anchors (`#10`) & `--before` timestamp/SHA (`#12`), ops cleanup (`#16`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
+| pr-10b-delivery-and-storage-fixes ✅ | Index orphan row delete (`#13`), cross-scope projector dedup & empty dossier pruning (`#11`), seeder real path + `#symbol`/`:symbol` anchors (`#10`) & `--before` timestamp/SHA (`#12`), ops cleanup (`#16`, `repo-memory ops gc`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-11-v2-doc-seeding-and-lifecycles (planned) | `DocSeedSource` (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming"), `semantic`/`procedural`/`episodic` lifecycles, `{section?}` rendering | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
 | pr-12-v2-distillation (planned) | `internal/core/state/` (marks, exposure lists, subagent registry), `internal/core/pipeline/prepare/` (preparation layer), `internal/core/pipeline/fallback/` (sidecar fallback) | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
 | pr-13-v2-consolidation (planned) | `internal/core/consolidate/` (echo filter, Pre-Consolidation Corroboration Gate, `stream-json` `repo-memory-distiller`, `user:`/`branch:`/`repo:` scopes, publish) | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
@@ -63,6 +63,7 @@
 | pr-03-episode-search ✅ | `search` CLI, `memory.ask` episode fallback | [PROJECT.md](../pr-03-episode-search/PROJECT.md) |
 | pr-08-v2-delivery ✅ | `internal/core/delivery/` (ledger, engine, ranking), `internal/mcpserver/` (v2 pull tools), injection ledger, compaction re-injection | [PROJECT.md](../pr-08-v2-delivery/PROJECT.md) |
 | pr-09b-product-fixes ✅ | Canonical `IndexPath`, bm25 ranking, relevance threshold, per-session `InjectedSet` deduplication | [PROJECT.md](../pr-09b-product-fixes/PROJECT.md) |
+| pr-10b-delivery-and-storage-fixes ✅ | Persistent `UserMessage` (`ChannelUser`) vs 1-step `EphemeralMessage` (`ChannelEphemeral`), `DetectRewind` wiring, cross-process `InjectedSet` persistence after `RearmDedup()` | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 
 ## Observability & Measurement
 | Project | Scope | Context |

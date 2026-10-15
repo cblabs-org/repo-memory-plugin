@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-10b-delivery-and-storage-fixes
 > **Base branch:** `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` (`69a4cba`)
-> **Status:** ✅ Complete (6/6 WOs complete — pending Chief Architect PR #18 re-verification)
+> **Status:** ✅ Complete (6/6 WOs complete — PR #18 APPROVED)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`).
 
 ## Objective
@@ -72,3 +72,11 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" bug (`EphemeralM
 - Updated `moveEntry` (`internal/core/dossiers/projector.go`) and `Writer.WriteAll` (`writer.go`) to drop empty source dossiers when the last entry moves out (`[MINOR-1]`).
 - Added `stripAnchorSymbol` and `isValidAnchorSymbol` in `internal/core/seed/parser.go` and `scanner.go` to preserve `path#symbol` and `path:symbol` anchors (`[MINOR-2]`).
 - Added `_pragma=foreign_keys(1)` to `NewReadOnlyIndex` DSN in `internal/core/index/index.go` (`[MINOR-3]`).
+
+### 2026-10-15 — Project Wrap-Up & Cold-Firewall PR #18 Approval (`30123f3`)
+- **GitHub PR:** [PR #18](https://github.com/cblabs-org/repo-memory-plugin/pull/18) (`pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` -> `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover`).
+- **Audit Verdict:** `APPROVED (0 blocking, 0 major)` after Round 1 remediation (`bcdfae0`, head `30123f33ef93fc38d10c64a521759cec957de303`).
+- **Architectural & Audit Lessons Distilled:**
+  1. **Delivery Channel Persistence & Ledger Rehydration (`[MAJOR-2]`):** Switching `MomentTaskStart`, `MomentFirstTouch`, `MomentFirstEntry`, and `BuildReinjection` to `UserMessage` (`ChannelUser`) ensures injected memory persists across tool calls until `CHECKPOINT`. When `RearmDedup()` clears `InjectedSet` on compaction or rewind, `InjectedSet` must NOT use `,omitempty` on `delivery.Ledger`, and `loadLedgerLocked` must preserve the unmarshaled `InjectedSet` map as-is across process boundaries (only backfilling from `Injections` for legacy JSON files missing `"injected_set"`).
+  2. **Parenthesized Placeholder Filtering (`[MAJOR-1]`):** Historical workorder bullets like `- (none)` strip `- ` before `IsJunkText`, leaving `"(none)"`. `IsJunkText` now strips surrounding parentheses and trailing punctuation before matching placeholder tokens (`(none)`, `(n/a)`, `(tbd)`, `(todo)`, `-`), and `repo-memory ops gc` cleaned all remaining `(none)` entries across `.memory/` and `evaluation/data/*/`.
+  3. **Dossier Projector & Anchor Hygiene (`[MINOR-1]`, `[MINOR-2]`, `[MINOR-3]`):** Cross-scope `moveEntry` removes empty source `*Dossier` structs and `Writer.WriteAll` skips empty dossiers so no orphan shell files or `ATLAS.md` rows remain; `IsValidAnchorPathSyntax` and `buildRepoPathValidator` strip and validate `#symbol` / `:symbol` suffixes (`SPEC.md` §5.3) while validating the base file path on disk; `NewReadOnlyIndex` sets `_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)`.
