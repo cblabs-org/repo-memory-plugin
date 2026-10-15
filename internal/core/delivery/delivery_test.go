@@ -56,10 +56,21 @@ func TestLedger(t *testing.T) {
 	if !l.HasInjected("inv-01") {
 		t.Errorf("expected inv-01 to be marked as injected")
 	}
+
+	eng := NewEngine(nil, "", WithInjectedSet(l.InjectedSet))
+	if !eng.IsInjected("inv-01") {
+		t.Errorf("expected engine sharing InjectedSet to see inv-01")
+	}
 	
 	l.RearmDedup()
 	if l.HasSeenDossier("scope-A") || l.HasSeenAnchor("anchor-B") || l.HasInjected("inv-01") {
 		t.Errorf("expected seen lists and injected set to be cleared")
+	}
+	if eng.IsInjected("inv-01") {
+		t.Errorf("expected engine sharing InjectedSet to see cleared map after RearmDedup")
+	}
+	if ChannelUser != "userMessage" {
+		t.Errorf("expected ChannelUser to be userMessage, got %s", ChannelUser)
 	}
 	
 	after := l.FindInjectionAfterStep(5)

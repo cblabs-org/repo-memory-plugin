@@ -39,17 +39,17 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" regression by sw
 
 ## Line-Item Instructions
 
-- [ ] `internal/core/delivery/types.go`:
+- [x] `internal/core/delivery/types.go`:
   - Add `ChannelUser Channel = "userMessage"` alongside `ChannelSystem`, `ChannelEphemeral`, and `ChannelDeny`.
 
-- [ ] `internal/core/delivery/ledger.go`:
+- [x] `internal/core/delivery/ledger.go`:
   - Add `LastKnownStepCount int `json:"last_known_step_count,omitempty"`` to `Ledger`.
   - In `RearmDedup()`, clear existing keys from `l.SeenDossiers`, `l.SeenAnchors`, and `l.InjectedSet` (or reinitialize them cleanly, and ensure any `Engine` referencing `l.InjectedSet` sees the cleared map—for example by deleting keys in-place `clear(l.InjectedSet)` before/instead of replacing the map header, so an `Engine` holding the map reference stays synchronized).
 
-- [ ] `internal/harness/antigravity/compaction.go`:
+- [x] `internal/harness/antigravity/compaction.go`:
   - In `BuildReinjection`, return `&InjectStep{UserMessage: formatted}, nil` instead of `&InjectStep{EphemeralMessage: formatted}, nil` so post-compaction re-injected entries persist across turns until the next `CHECKPOINT`.
 
-- [ ] `internal/harness/antigravity/preinvocation.go`:
+- [x] `internal/harness/antigravity/preinvocation.go`:
   - After parsing `steps` from `input.TranscriptPath` (around line 125) and **before** scanning `steps` against `hwm := ledger.LastProcessedStepIndex`:
     - Check `if DetectRewind(steps, ledger.LastKnownStepCount)`:
       - Call `ledger.RearmDedup()`
@@ -65,10 +65,10 @@ Fix the `8d7ad7b` + `d3ab994` "One-Invocation Vanishing Memory" regression by sw
     - When `rearmed` (or `rewound`) is true, if `rewound`, also prune `l.Injections` down to the surviving prefix before replaying `ledger.Injections[injectionBase:]`, and set `l.LastProcessedStepIndex = ledger.LastProcessedStepIndex` unconditionally (since on a rewind the new step index is smaller than the old high-water mark).
     - Persist `l.LastKnownStepCount = ledger.LastKnownStepCount`.
 
-- [ ] `internal/harness/antigravity/hooks_test.go`:
+- [x] `internal/harness/antigravity/hooks_test.go`:
   - In `runGitInDir` (line 17), prepend `-c`, `user.name=test`, `-c`, `user.email=test@example.com` to the `git` command arguments so `git commit` inside `setupEnrolledRepo` (and `TestStopHook_CompletePipeline`) succeeds hermetically even in environments without global git user config.
 
-- [ ] `internal/harness/antigravity/compaction_test.go`, `internal/harness/antigravity/preinvocation_test.go`, and `internal/core/delivery/delivery_test.go`:
+- [x] `internal/harness/antigravity/compaction_test.go`, `internal/harness/antigravity/preinvocation_test.go`, and `internal/core/delivery/delivery_test.go`:
   - Update `TestBuildReinjection` in `compaction_test.go` to assert `step.UserMessage` contains `"Some test data"` and `step.EphemeralMessage == ""`.
   - Update `TestPreInvocation_TaskStart_And_Empty`, `TestPreInvocation_AboutToEdit`, `TestPreInvocation_CompactionAndReinjection`, and `TestPreInvocation_AntigravityNativeToolCalls` in `preinvocation_test.go` so that:
     - `task-start`, `first-touch`, `first-entry`, and compaction `re-injection` assert `step.UserMessage` (and `step.EphemeralMessage == ""`).
@@ -87,4 +87,18 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+- **Status:** Completed & Approved (2026-10-15)
+- **Files Modified:**
+  - `internal/core/delivery/types.go`: Added `ChannelUser Channel = "userMessage"`.
+  - `internal/core/delivery/ledger.go`: Added `LastKnownStepCount` to `Ledger`; updated `RearmDedup()` to clear `SeenDossiers`, `SeenAnchors`, and `InjectedSet` in-place via `clear(...)`.
+  - `internal/core/delivery/delivery_test.go`: Added assertions verifying `ChannelUser` and in-place `InjectedSet` clearing across `Engine` references.
+  - `internal/harness/antigravity/compaction.go`: Switched `BuildReinjection` to return `UserMessage` instead of `EphemeralMessage`.
+  - `internal/harness/antigravity/preinvocation.go`: Wired `DetectRewind(steps, ledger.LastKnownStepCount)` before high-water-mark step scanning (rearming dedup, resetting `LastProcessedStepIndex`, and pruning rewound `Injections`), moved `engine` construction after rewind/compaction handling, switched `MomentTaskStart`, `MomentFirstTouch`, and `MomentFirstEntry` to `UserMessage` (`ChannelUser`) while keeping search error warnings and `MomentAboutToEdit` on `EphemeralMessage` (`ChannelEphemeral`), and persisted rewind pruning and `LastKnownStepCount` in `ModifyLedger`.
+  - `internal/harness/antigravity/hooks_test.go`: Prepended `-c user.name=test -c user.email=test@example.com` in `runGitInDir` for hermetic test commits.
+  - `internal/harness/antigravity/compaction_test.go`: Updated `TestBuildReinjection` to assert `UserMessage` and empty `EphemeralMessage`.
+  - `internal/harness/antigravity/preinvocation_test.go`: Updated existing tests to assert `UserMessage` for persistent moments and `EphemeralMessage` for `about-to-edit`, and added `TestPreInvocation_RewindRearmsDedup`.
+- **Verification:**
+  - `go test -v ./internal/core/delivery/... ./internal/harness/antigravity/...` — PASS
+  - `go vet ./cmd/... ./internal/...` — PASS
+- **Issues Surfaced Outside Boundary Box:** None.

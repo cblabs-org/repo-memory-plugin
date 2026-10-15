@@ -110,11 +110,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		ledger = delivery.NewLedger(input.ConversationID)
 	}
 
-	engine := delivery.NewEngine(idx, workspaceRoot, delivery.WithInjectedSet(ledger.InjectedSet))
 	// Snapshot the injection count at load time. Only records added *after*
 	// this point belong to this invocation and must be replayed under the lock.
 	injectionBase := len(ledger.Injections)
-	rearmed := false // set to true if compaction triggers RearmDedup
+	rearmed := false // set to true if compaction or rewind triggers RearmDedup
+	rewound := false
+	maxRemainingStepIdx := 0
 
 	var injectSteps []InjectStep
 
@@ -123,6 +124,26 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	var steps []Step
 	if input.TranscriptPath != "" {
 		steps, _ = ParseTranscript(filepath.Dir(input.TranscriptPath))
+		if DetectRewind(steps, ledger.LastKnownStepCount) {
+			ledger.RearmDedup()
+			ledger.LastProcessedStepIndex = 0
+			for _, st := range steps {
+				if st.StepIndex > maxRemainingStepIdx {
+					maxRemainingStepIdx = st.StepIndex
+				}
+			}
+			var surviving []delivery.InjectionRecord
+			for _, inj := range ledger.Injections {
+				if inj.StepIndex <= maxRemainingStepIdx {
+					surviving = append(surviving, inj)
+				}
+			}
+			ledger.Injections = surviving
+			injectionBase = len(ledger.Injections)
+			rearmed = true
+			rewound = true
+		}
+		ledger.LastKnownStepCount = len(steps)
 		if len(steps) > 0 {
 			seenPaths := make(map[string]bool)
 			// Only scan steps newer than our high-water mark to keep cost
@@ -208,6 +229,8 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
+	engine := delivery.NewEngine(idx, workspaceRoot, delivery.WithInjectedSet(ledger.InjectedSet))
+
 	// Task start moment — only on the first invocation of a new user turn.
 	if input.InvocationNum == 0 && input.InitialNumSteps <= 1 {
 		var promptTerms []string
@@ -241,12 +264,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		} else if len(entries) > 0 {
 			formatted := delivery.FormatEntries(entries)
 			injectSteps = append(injectSteps, InjectStep{
-				EphemeralMessage: formatted,
+				UserMessage: formatted,
 			})
 			for _, ent := range entries {
 				ledger.RecordInjection(delivery.InjectionRecord{
 					EntryID:   ent.Entry.ID,
-					Channel:   delivery.ChannelEphemeral,
+					Channel:   delivery.ChannelUser,
 					Moment:    delivery.MomentTaskStart,
 					StepIndex: input.InitialNumSteps,
 				})
@@ -271,12 +294,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			if err == nil && len(entries) > 0 {
 				formatted := delivery.FormatEntries(entries)
 				injectSteps = append(injectSteps, InjectStep{
-					EphemeralMessage: formatted,
+					UserMessage: formatted,
 				})
 				for _, ent := range entries {
 					ledger.RecordInjection(delivery.InjectionRecord{
 						EntryID:   ent.Entry.ID,
-						Channel:   delivery.ChannelEphemeral,
+						Channel:   delivery.ChannelUser,
 						Moment:    delivery.MomentFirstTouch,
 						StepIndex: input.InitialNumSteps,
 					})
@@ -297,12 +320,12 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				if err == nil && len(entries) > 0 {
 					formatted := delivery.FormatEntries(entries)
 					injectSteps = append(injectSteps, InjectStep{
-						EphemeralMessage: formatted,
+						UserMessage: formatted,
 					})
 					for _, ent := range entries {
 						ledger.RecordInjection(delivery.InjectionRecord{
 							EntryID:   ent.Entry.ID,
-							Channel:   delivery.ChannelEphemeral,
+							Channel:   delivery.ChannelUser,
 							Moment:    delivery.MomentFirstEntry,
 							StepIndex: input.InitialNumSteps,
 						})
@@ -368,9 +391,19 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	// We replay only this invocation's new records (from injectionBase onwards)
 	// into a freshly loaded ledger so concurrent writes are not lost.
 	_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
-		// If compaction cleared the seen markers, rearm before applying new ones.
+		// If compaction or rewind cleared the seen markers, rearm before applying new ones.
 		if rearmed {
 			l.RearmDedup()
+		}
+		if rewound {
+			var surviving []delivery.InjectionRecord
+			for _, inj := range l.Injections {
+				if inj.StepIndex <= maxRemainingStepIdx {
+					surviving = append(surviving, inj)
+				}
+			}
+			l.Injections = surviving
+			l.LastProcessedStepIndex = ledger.LastProcessedStepIndex
 		}
 		// Replay only this invocation's new injection records.
 		for _, inj := range ledger.Injections[injectionBase:] {
@@ -394,6 +427,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		if ledger.LastProcessedStepIndex > l.LastProcessedStepIndex {
 			l.LastProcessedStepIndex = ledger.LastProcessedStepIndex
 		}
+		l.LastKnownStepCount = ledger.LastKnownStepCount
 	})
 
 	if len(injectSteps) == 0 {
