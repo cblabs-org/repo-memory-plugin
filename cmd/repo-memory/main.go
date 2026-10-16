@@ -46,5 +46,6 @@ func init() {
 	rootCmd.AddCommand(opsCmd)
 	rootCmd.AddCommand(consolidateCmd)
 	rootCmd.AddCommand(promoteSkillsCmd)
+	rootCmd.AddCommand(gardenCmd)
 }
 

@@ -18,6 +18,7 @@ type BudgetsConfig struct {
 	MaxHookLatencyMs  int            `json:"max_hook_latency_ms,omitempty" yaml:"max_hook_latency_ms,omitempty"`
 	DailyHousekeeping int            `json:"daily_housekeeping,omitempty" yaml:"daily_housekeeping,omitempty"`
 	DailyTokens       int            `json:"daily_tokens,omitempty" yaml:"daily_tokens,omitempty"`
+	DossierCapTokens  int            `json:"dossier_cap_tokens,omitempty" yaml:"dossier_cap_tokens,omitempty"`
 	Extra             map[string]any `json:"extra,omitempty" yaml:",inline"`
 }
 

@@ -184,6 +184,10 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
+	if _, err := p.EvaluateClosesWhen(ctx); err != nil {
+		return fmt.Errorf("evaluating closes_when conditions: %w", err)
+	}
+
 	if p.repoRoot != "" {
 		if _, err := skills.CheckBuildManifestFreshness(ctx, p.repoRoot, p.dataDir, p.repoID, p.idx); err != nil {
 			return fmt.Errorf("checking build manifest freshness: %w", err)
