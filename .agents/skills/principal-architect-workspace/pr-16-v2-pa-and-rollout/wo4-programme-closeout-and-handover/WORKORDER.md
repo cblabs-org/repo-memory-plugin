@@ -18,12 +18,28 @@ As the final work order (`WO4`) of `PR-16-v2-pa-and-rollout` (`22/22`), this wor
 
 ### Permitted Mutable Files
 - `README.md`
+- `internal/core/delivery/workorder_brief.go`
+- `internal/core/delivery/workorder_brief_test.go`
+- `internal/core/dossiers/reproject.go`
+- `internal/core/dossiers/reproject_test.go`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo1-cognitive-lifecycles-schema/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo2-optional-section-rendering/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo3-doc-seed-source/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo4-async-doc-freshness-dreaming/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/wo6-review-remediation/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo1-marks-inbox-and-subagent-registry/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo2-stop-milestone-gate-and-harvest/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo3-free-harvest-checkpoint-and-artifacts/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo4-preparation-layer-and-scrubber/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo5-sidecar-fallback/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-12-v2-distillation/wo6-managed-instruction-block-and-verification/WORKORDER.md`
+- `.agents/skills/principal-architect-workspace/pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md`
 - `.agents/skills/principal-architect-workspace/pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover/WORKORDER.md` *(append Worker Completion Report only)*
 
 ### Forbidden Files (Read-Only Context)
 - `SPEC.md`
 - `cmd/repo-memory/**`
-- `internal/**`
 - `.memory/**`
 
 ---
@@ -72,6 +88,23 @@ As the final work order (`WO4`) of `PR-16-v2-pa-and-rollout` (`22/22`), this wor
    go build -o ~/.local/bin/repo-memory ./cmd/repo-memory
    ```
 2. Run all verification commands in Section 5 and record results in Section 6 (`Worker Completion Report`).
+
+### C. Cold-Firewall PR Audit Polish Remediation (`[POLISH-1]` through `[POLISH-5]`)
+Apply all 5 polish items from the Step 6A Cold-Firewall PR Audit on PR #24:
+1. **`[POLISH-1]` Repo-Wide Workorder Hygiene**:
+   - In `.agents/skills/principal-architect-workspace/pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md` and the 12 `WORKORDER.md` files under `pr-11-v2-doc-seeding-and-lifecycles/` and `pr-12-v2-distillation/`, replace any negative-instruction example strings containing internal keywords or local home directory prefixes with generic terms (`proprietary internal references` and `/home/<user>/...`) so a repo-wide grep across `.agents/skills/principal-architect-workspace/` returns `0` matches.
+2. **`[POLISH-2]` `README.md:78` Quickstart Test Command**:
+   - Update `go test ./...` in `README.md:78` to `go test ./cmd/... ./internal/... ./packaging/...` (matching `.github/workflows/ci.yml`).
+3. **`[POLISH-3]` & `[POLISH-4]` `internal/core/delivery/workorder_brief.go` Path Normalization & Graduated Skill Pointer**:
+   - In `normalizeWorkorderCandidatePath`: call `path.Clean` on the candidate and reject (`return ""`) any path where `strings.Contains(s, "..")` is true.
+   - In `renderWorkorderBriefMarkdown` (and `formatBriefEntryLine`): pass `repoRoot` and when rendering a `recipe` or `procedure` entry that has a graduated skill (`slug := skills.GraduatedSkillSlug(e, repoRoot); slug != ""` or `strings.TrimSpace(e.RenderAsSkill) != ""`), render the compact 1-line pointer (`fmt.Sprintf("- [%s] (%s, %s) skill %s covers this procedure: %s", e.ID, kindLabel, scopeLabel, slug, skills.EntryTitleLine(e))`) instead of the full multi-step body. Add a unit test in `internal/core/delivery/workorder_brief_test.go` verifying both `..` path rejection and graduated skill 1-line pointer rendering in workorder briefs.
+4. **`[POLISH-5]` `internal/core/dossiers/reproject.go` Hand-Edit Capture Before Re-Render**:
+   - In `Reproject` (`internal/core/dossiers/reproject.go`), before overwriting existing `.memory/dossiers/*.md` files, compare each projected dossier's rendered markdown (`RenderDossier(d)`) against the existing on-disk `<scope>.md` file using `DetectHandEdits(rendered, string(existingBytes), scope)`.
+   - If `DetectHandEdits` returns `OpAmend` (or `OpAdd`) operations for human prose edits on disk:
+     - Record the count in `ReprojectResult` (`HandEditsCaptured int` `json:"hand_edits_captured,omitempty"`).
+     - Apply those hand-edit ops to the in-memory `dossiersMap` (`applyBatch(dossiersMap, entryIndex, &ops.OpBatch{Ops: handOps})` and `sortDossier`) so the re-rendered dossier preserves the human prose edit!
+     - When `!opts.DryRun` and `len(opts.OpsDirs) > 0`, also persist the `ops.NewBatch(handOps)` to `opts.OpsDirs[0]` via `ops.NewWriter(opts.OpsDirs[0]).Write(batch)` so the op-log stays in sync with the captured hand edit.
+   - Add a unit test in `internal/core/dossiers/reproject_test.go` verifying that a human prose edit to an existing entry in `.memory/dossiers/<scope>.md` is captured into `.memory/ops/` and preserved across `Reproject` instead of being silently overwritten.
 
 ---
 
