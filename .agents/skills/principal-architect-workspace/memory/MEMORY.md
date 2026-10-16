@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-13-v2-consolidation | **Active (WO2/6 in progress — WO1 complete)** — Stage 2 Warm Batch Consolidation, Echo Filter, Corroboration Gate & Five-Tier Scope Hierarchy | Consolidate (`filter`, `route`, `llm`, `record`, `publish`), GitOps (`worktree`), Tick (`consolidate`) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
+| pr-13-v2-consolidation | **Active (WO3/6 in progress — WO1..WO2 complete)** — Stage 2 Warm Batch Consolidation, Echo Filter, Corroboration Gate & Five-Tier Scope Hierarchy | Consolidate (`filter`, `route`, `llm`, `record`, `publish`), GitOps (`worktree`), Tick (`consolidate`) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Ready to resume at WO4 (`wo4-dry-run`) | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)

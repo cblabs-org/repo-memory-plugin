@@ -219,4 +219,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+complete
+
+### Changes Made
+- `internal/core/consolidate/route.go` — Implemented Five-Tier State Scope Classification (`ScopeTier`, `StripTierPrefix`, `IsDefaultBranch`, `ClassifyTier`), Deterministic Dossier Routing (`RoutedItem`, `RouteItem`, `RouteItems`), Deterministic Exact-Duplicate Merging (`DedupResult`, `CanonicalEntryTypeGroup`, `MergeExactDuplicates`), and Existing Dossier Anchor Verification (`BrokenAnchorReport`, `CheckDossierAnchors`).
+- `internal/core/consolidate/route_test.go` — Added unit tests covering `ClassifyTier` (`user:`, `branch:`, `repo:`, unmerged vs merged feature branch), `RouteItem` (alias resolution, matched existing module scope, `DeriveModuleScopes` roll-up with `DerivedNew: true`, and keyword routing to `topic`, `external`, and `procedure` scopes + fallbacks), `MergeExactDuplicates` (coalesced `OpAmend` preserving existing evidence and batch-internal candidate deduplication across alias-equivalent types), and `CheckDossierAnchors` (partial vs 100% missing file/symbol anchors).
+
+### Decisions Made
+- When `MergeExactDuplicates` generates an `ops.OpAmend` for an existing entry, `op.Fields["evidence"]` and `op.Fields["anchors"]` are populated with the merged deduplicated slices of the existing entry's values plus the new candidate's values, matching `dossiers.Projector`'s replacement semantics on `applyAmend`.
+- Multiple duplicate candidates in the same batch targeting the same existing `EntryID` are coalesced into a single `OpAmend` per `EntryID`.
+
+### Dead Ends & Warnings
+- In `extractRoutingKeywords`, preserve full multi-word command strings (e.g. `"git tag"`, `"make release"`) before splitting into tokens so multi-word `DeclaredScope.Commands` match with full weight (`+20`).
+
+### Out-of-Scope Findings
+(none)
+
+### Blockers
+(none)
