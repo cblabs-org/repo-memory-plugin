@@ -9,7 +9,7 @@ complexity: standard
 >
 > **Authorization & Governance:** Read `.agents/rules/00-operating-model.md`. This `WORKORDER.md` belongs to parent project `pr-11-v2-doc-seeding-and-lifecycles`, whose 5-WO decomposition is explicitly approved by the human in `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md`. You are authorized to implement and commit directly on the current branch (`pr-11-v2-doc-seeding-and-lifecycles/wo2-optional-section-rendering`).
 >
-> **External GitHub Hygiene:** Never include any Google-internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
+> **External GitHub Hygiene:** Never include any proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
 
 ## Objective
 Update `internal/core/dossiers/renderer.go` and `internal/core/dossiers/handedit.go` to implement `SPEC.md` §5.4 and `docs/design-v2-distillation-retrieval.md` §7.3 Optional Section Resolution (`{section?}`), render `kind: <semantic|procedural|episodic>` and `source_doc: <path>` in the backtick metadata line, group `v2.2` entry types under their canonical headings, and ensure deterministic prefix inference in `DetectHandEdits`.

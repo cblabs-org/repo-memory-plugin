@@ -11,7 +11,7 @@ Dogfood `repo-memory seed-docs` and `{section?}` / `kind:` dossier rendering on 
 
 ## Context & Architectural Constraints
 
-- **Strictly zero internal references:** Never include `google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths in any files, comments, or commit messages.
+- **Strictly zero internal references:** Never include proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any files, comments, or commit messages.
 - **Curated `doc_seeds` in `.memory/config.yaml`:**
   Configure `doc_seeds` at the top of `.memory/config.yaml` to seed from the repository's canonical architecture and reference docs (excluding literature surveys and evaluation reports):
   ```yaml
@@ -57,7 +57,7 @@ Dogfood `repo-memory seed-docs` and `{section?}` / `kind:` dossier rendering on 
     - `go vet ./...`
     - `GOOS=windows go build ./...`
     - `go test -race ./cmd/... ./internal/...`
-  - Verify zero hygiene leaks (`google3`, `jetski`, `/usr/local/google`, `@google.com`) in any tracked files (`git diff pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification..HEAD`).
+  - Verify zero hygiene leaks (proprietary internal references or `/home/<user>/...` paths) in any tracked files (`git diff pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification..HEAD`).
 
 ## Verification Criteria
 

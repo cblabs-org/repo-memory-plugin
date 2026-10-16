@@ -231,3 +231,70 @@ func TestBuildWorkorderBrief_ScopeOnlyAndBudgetEnforcement(t *testing.T) {
 		t.Errorf("b110.TokenCount = %d, want in (0, 110]", b110.TokenCount)
 	}
 }
+
+func TestExtractWorkorderPaths_RejectsDotDotTraversal(t *testing.T) {
+	md := `# WORKORDER: Path Security Test
+### Permitted Mutable Files
+- ` + "`internal/core/delivery/workorder_brief.go`" + `
+- ` + "`../secret.go`" + `
+- ` + "`internal/../../etc/passwd.go`" + `
+- ` + "`internal/core/../delivery/other.go`" + `
+`
+	got := ExtractWorkorderPaths(md)
+	if len(got) != 1 || got[0] != "internal/core/delivery/workorder_brief.go" {
+		t.Fatalf("ExtractWorkorderPaths = %v, want only [internal/core/delivery/workorder_brief.go]", got)
+	}
+}
+
+func TestBuildWorkorderBrief_GraduatedSkillPointer(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	dataDir := t.TempDir()
+	repoID := "test-repo-skill-pointer"
+
+	idxPath := filepath.Join(dataDir, repoID, "index.db")
+	if err := os.MkdirAll(filepath.Dir(idxPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatalf("NewIndex failed: %v", err)
+	}
+	defer idx.Close()
+
+	procEntry := dossiers.Entry{
+		ID:           "rec-deliv-010",
+		Type:         dossiers.EntryTypeRecipe,
+		DossierScope: "internal/core/delivery",
+		Text:         "Run delivery package verification\n1. go vet ./internal/core/delivery/...\n2. go test -race ./internal/core/delivery/...",
+		Anchors:      []string{"internal/core/delivery/workorder_brief.go"},
+		Verified:     "2026-04-16",
+		SuccessCount: 3,
+	}
+	if err := idx.InsertEntry(ctx, procEntry); err != nil {
+		t.Fatalf("InsertEntry failed: %v", err)
+	}
+
+	// Write a graduated SKILL.md under .agents/skills/rm-run-delivery-package-verification/SKILL.md
+	skillDir := filepath.Join(repoRoot, ".agents", "skills", "rm-run-delivery-package-verification")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillContent := "---\nname: rm-run-delivery-package-verification\ngenerated_by: repo-memory\nsource_entry_id: rec-deliv-010\n---\n# Run delivery package verification\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	brief, err := BuildWorkorderBrief(ctx, idx, repoRoot, dataDir, repoID, "", "internal/core/delivery", 600)
+	if err != nil {
+		t.Fatalf("BuildWorkorderBrief failed: %v", err)
+	}
+
+	wantPointer := "- [rec-deliv-010] (recipe, internal/core/delivery) skill rm-run-delivery-package-verification covers this procedure: Run delivery package verification"
+	if !strings.Contains(brief.BriefMarkdown, wantPointer) {
+		t.Errorf("BriefMarkdown missing graduated skill pointer %q;\ngot:\n%s", wantPointer, brief.BriefMarkdown)
+	}
+	if strings.Contains(brief.BriefMarkdown, "go test -race ./internal/core/delivery/...") {
+		t.Errorf("BriefMarkdown should omit multi-step recipe body when graduated skill exists;\ngot:\n%s", brief.BriefMarkdown)
+	}
+}

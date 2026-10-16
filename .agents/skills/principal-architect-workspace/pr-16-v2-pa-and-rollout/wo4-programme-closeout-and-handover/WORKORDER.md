@@ -126,14 +126,19 @@ Run and verify all of the following commands:
 - **Summary of Changes:**
   - Updated `README.md` (`## Architecture & Storage Layout`) to document `.memory/QUESTIONS.md` (`# Unresolved open issues, suspect entries, and coverage gaps`) alongside `.memory/ATLAS.md`.
   - Updated `README.md` (`## CLI Reference`) with the complete `v2.2` CLI reference covering Installation & Repository Enrolment (`install`, `uninstall`, `enroll`/`init`, `unenroll`/`leave`), Seeding & Op-Log Maintenance (`seed-docs`, `seed`, `ops gc`), Consolidation, Skill Graduation & Gardening (`consolidate`, `promote-skills`, `garden`), Principal Architect Integration (`summary`, `brief`), Backfill, Reprojection & Indexing (`backfill`/`backfill-captures`, `reproject`, `reindex`), and Background Tick, Observability & Diagnostics (`tick`/`run`, `status`, `search`, `usage`, `report`, `snapshot`, `doctor`, `disable`, `enable`).
+  - Applied Step 6A Cold-Firewall PR Audit polish items (`[POLISH-1]` through `[POLISH-5]`):
+    - `[POLISH-1]`: Replaced negative-instruction example strings across the 13 `WORKORDER.md` files under `pr-11-v2-doc-seeding-and-lifecycles/`, `pr-12-v2-distillation/`, and `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging/` with generic terms (`proprietary internal references` and `/home/<user>/...`).
+    - `[POLISH-2]`: Updated `README.md:78` quickstart test command to `go test ./cmd/... ./internal/... ./packaging/...`.
+    - `[POLISH-3]` & `[POLISH-4]`: Hardened `normalizeWorkorderCandidatePath` in `internal/core/delivery/workorder_brief.go` with `path.Clean` and `..` rejection, and updated `renderWorkorderBriefMarkdown` (`formatBriefEntryLine`) to render compact 1-line graduated skill pointers (`skill <slug> covers this procedure: <title>`), with unit tests in `internal/core/delivery/workorder_brief_test.go` (`TestExtractWorkorderPaths_RejectsDotDotTraversal` and `TestBuildWorkorderBrief_GraduatedSkillPointer`).
+    - `[POLISH-5]`: Updated `Reproject` in `internal/core/dossiers/reproject.go` to run `DetectHandEdits` against existing on-disk `<scope>.md` files before overwriting, applying captured `OpAmend`/`OpAdd` operations to `dossiersMap`, persisting the `OpBatch` to `opts.OpsDirs[0]` when `!opts.DryRun`, and recording `HandEditsCaptured` in `ReprojectResult`, with unit test `TestReproject_CapturesAndPreservesHumanProseHandEdits` in `internal/core/dossiers/reproject_test.go`.
   - Rebuilt `~/.local/bin/repo-memory` from `cmd/repo-memory`.
 - **Verification Results:**
   - `go build ./cmd/... ./internal/... ./packaging/...`: **PASS**
   - `go vet ./cmd/... ./internal/... ./packaging/...`: **PASS**
   - `GOOS=windows GOARCH=amd64 go build ./cmd/... ./internal/... ./packaging/...`: **PASS**
-  - `go test -race ./cmd/... ./internal/... ./packaging/...`: **PASS** (all packages passed with `-race`, including `cmd/repo-memory` in `17.16s` and `internal/harness/antigravity` in `294.91s`)
+  - `go test -race ./cmd/... ./internal/... ./packaging/...`: **PASS** (all packages passed with `-race`, including `cmd/repo-memory` in `20.41s`, `internal/core/delivery` in `2.60s`, `internal/core/dossiers` in `1.29s`, and `internal/harness/antigravity` in `295.77s`)
   - `go run ./cmd/repo-memory doctor .`: **PASS** (`0` errors)
-  - `go run ./cmd/repo-memory reproject --dry-run --json`: **PASS** (`30` dossiers projected, `259` active entries, `225` human decisions preserved, `30` files unchanged)
+  - `go run ./cmd/repo-memory reproject --dry-run --json`: **PASS** (`30` dossiers projected, `259` active entries, `225` human decisions preserved, `31` files unchanged)
   - `~/.local/bin/repo-memory --help`: **PASS** (verified all `v2.2` subcommands registered and available)
-  - `git status --short`: **PASS** (strictly limited to `README.md` and `WORKORDER.md`)
+  - `git status --short`: **PASS** (strictly limited to permitted files in `WORKORDER.md`)
 - **Out-of-Scope Findings / Dead Ends:** None.

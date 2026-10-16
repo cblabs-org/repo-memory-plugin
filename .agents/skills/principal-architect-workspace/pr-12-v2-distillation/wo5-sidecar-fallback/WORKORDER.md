@@ -134,7 +134,7 @@ Write comprehensive unit tests in `internal/core/tick/fallback_test.go` covering
 - [x] `go test ./internal/core/tick/... ./internal/harness/... ./cmd/repo-memory/... ./packaging/...` passes.
 - [x] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
 - [x] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
-- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] Zero proprietary internal references (`cl/`, `b/`, `go/`, `/home/<user>/...`) in any file or commit message.
 
 ## Completion Report
 - **Status:** Completed

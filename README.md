@@ -75,7 +75,7 @@ Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedu
 ```bash
 # Build and test
 go build ./cmd/repo-memory
-go test ./...
+go test ./cmd/... ./internal/... ./packaging/...
 
 # Installation & Repository Enrolment
 repo-memory install --harness <antigravity|claude>

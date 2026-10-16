@@ -9,7 +9,7 @@ complexity: standard
 >
 > **Authorization & Governance:** Read `.agents/rules/00-operating-model.md`. This `WORKORDER.md` belongs to parent project `pr-11-v2-doc-seeding-and-lifecycles`, whose 5-WO decomposition is explicitly approved by the human in `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md`. You are authorized to implement and commit directly on the current branch (`pr-11-v2-doc-seeding-and-lifecycles/wo1-cognitive-lifecycles-schema`).
 >
-> **External GitHub Hygiene:** Never include any Google-internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
+> **External GitHub Hygiene:** Never include any proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
 
 ## Objective
 Add the `v2.2` Three Cognitive Memory Lifecycles (`semantic`, `procedural`, `episodic`), canonical `EntryType` constants and prefixes (`contract`, `convention`, `external-behaviour`, `recipe`), `doc-seed` provenance fields (`SourceDocPath`, `SourceDocBlobSHA`), and `procedural` execution-tracking fields (`SuccessCount`, `FailureCount`, `LastSucceededAt`, `StaleSuspect`, `RenderAsSkill`) across `internal/core/dossiers`, `internal/core/ops`, `internal/core/index`, `internal/core/delivery`, and `internal/core/jobs`.

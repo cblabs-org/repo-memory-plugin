@@ -169,7 +169,7 @@ Create package `prepare` in `internal/core/pipeline/prepare/prepare.go` and `val
 - [x] `go test ./internal/core/scrub/... ./internal/core/pipeline/... ./internal/harness/antigravity/...` passes.
 - [x] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
 - [x] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
-- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] Zero proprietary internal references (`cl/`, `b/`, `go/`, `/home/<user>/...`) in any file or commit message.
 
 ## Completion Report
 
