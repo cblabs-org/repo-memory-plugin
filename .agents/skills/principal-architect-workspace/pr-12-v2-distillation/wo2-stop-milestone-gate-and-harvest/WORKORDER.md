@@ -32,7 +32,7 @@ Implement the `v2.2` Stage 1 Primary Warm-Cache Distillation mechanism in the An
 
 ## Line-Item Instructions
 
-- [ ] **1. `internal/core/config/config.go` — Add `TurnNotes` and `TurnNotesRoleOptOut` to `RepoConfig`**
+- [x] **1. `internal/core/config/config.go` — Add `TurnNotes` and `TurnNotesRoleOptOut` to `RepoConfig`**
   - Add fields to `RepoConfig`:
     ```go
     TurnNotes           string   `json:"turn_notes,omitempty" yaml:"turn_notes,omitempty"`
@@ -45,7 +45,7 @@ Implement the `v2.2` Stage 1 Primary Warm-Cache Distillation mechanism in the An
     - Otherwise return `"on"` (the default).
   - Add unit tests in `internal/core/config/config_test.go` verifying YAML round-trip and `TurnNotesMode()` defaults and overrides.
 
-- [ ] **2. `internal/harness/antigravity/hooks.go` — Wire `REPO_MEMORY_INTERNAL`, `Decision: "continue"`, and Stop Distillation**
+- [x] **2. `internal/harness/antigravity/hooks.go` — Wire `REPO_MEMORY_INTERNAL`, `Decision: "continue"`, and Stop Distillation**
   - Add fields to `StopResult`:
     ```go
     Decision       string `json:"decision,omitempty"`
@@ -61,7 +61,7 @@ Implement the `v2.2` Stage 1 Primary Warm-Cache Distillation mechanism in the An
     - If `res != nil && res.Decision == "continue" && res.ContinueReason != ""`, return `json.Marshal(map[string]string{"decision": "continue", "reason": res.ContinueReason})`.
     - Otherwise return `[]byte("{}"), nil`.
 
-- [ ] **3. `internal/harness/antigravity/stop_distill.go` — Stage 1 Milestone Gate (`executionNum == 0`) & Harvest (`executionNum >= 1`)**
+- [x] **3. `internal/harness/antigravity/stop_distill.go` — Stage 1 Milestone Gate (`executionNum == 0`) & Harvest (`executionNum >= 1`)**
   - Create `internal/harness/antigravity/stop_distill.go`.
   - Define constants:
     - `TurnNoteCooldown = 30 * time.Minute`
@@ -126,7 +126,7 @@ Implement the `v2.2` Stage 1 Primary Warm-Cache Distillation mechanism in the An
        - Update `mark.LastNoteAt = time.Now().UTC()`, `mark.NoteCount++`, and append each item's `Title` to `mark.NoteTitles`.
        - Save `mark` and set `res.NoteID = noteID`.
 
-- [ ] **4. `internal/harness/antigravity/stop_distill_test.go` — Comprehensive Unit Tests**
+- [x] **4. `internal/harness/antigravity/stop_distill_test.go` — Comprehensive Unit Tests**
   - Test all 5 milestone signals on `executionNum == 0` returning `{"decision": "continue", "reason": "..."}`:
     1. `git commit` milestone;
     2. `gh pr create` milestone;
@@ -160,4 +160,13 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+- **Status:** Complete (`f053df6`)
+- **Changes Made:**
+  1. Added `TurnNotes` and `TurnNotesRoleOptOut` to `config.RepoConfig` along with `(c RepoConfig) TurnNotesMode() string` in `internal/core/config/config.go` and round-trip unit tests in `internal/core/config/config_test.go`.
+  2. Extended `StopResult` (`Decision`, `ContinueReason`, `NoteID`), added the `REPO_MEMORY_INTERNAL` skip guard, wired `evaluateStopDistillation` into `HandleStopEvent`, and returned `{"decision": "continue", "reason": "..."}` from `HandleStop` in `internal/harness/antigravity/hooks.go`.
+  3. Implemented `internal/harness/antigravity/stop_distill.go` with the `executionNum == 0` Milestone Gate (`TurnNotesMode`, subagent exclusion, `NO_TOOL_CALL` + `fullyIdle`, `ClampIfRewound`, `/goal` and `TurnNotesRoleOptOut` checks, 5-signal `DetectMilestones`, 30m cooldown waived for commits/PRs, 20/day cap, `BuildTurnNoteRequestPrompt`) and the `executionNum >= 1` Harvest Pass (`advanceMarkAndClearPending` loop protection, tool-call rejection, `ParseRepoMemoryNoteBlock`, `LintNoteItems`, secret scrubbing, `inbox.CheckAnchors`, `ExposureList` attachment, and inbox note persistence).
+  4. Added comprehensive unit tests in `internal/harness/antigravity/stop_distill_test.go` covering all 5 milestone signals, gate rejections, harvest paths, rewind clamping, and lint rules.
+- **Verification:** `go vet ./cmd/... ./internal/...` and `go test -race ./cmd/... ./internal/...` passed 100%.
+- **Issues Surfaced:** None.
+
