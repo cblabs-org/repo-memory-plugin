@@ -5,7 +5,7 @@
 - **Work Order Slug:** `wo1-pa-summaries-and-workorder-briefs`
 - **Target Branch:** `pr-16-v2-pa-and-rollout/wo1-pa-summaries-and-workorder-briefs`
 - **Base Branch:** `pr-15-v2-learning/wo5-verification-and-skill-lint`
-- **Status:** `IN_PROGRESS`
+- **Status:** `COMPLETED`
 
 ---
 
@@ -161,4 +161,23 @@ Run and verify all of the following commands:
 ---
 
 ## 6. Worker Completion Report
-*(To be filled in by the Tier 3 Worker before returning control to the Principal Architect)*
+
+### Summary of Changes
+1. **`internal/core/dossiers/lint.go`**:
+   - Exported `EstimateTokens(text string) int` returning `0` when `text == ""` and `(len(text) + 3) / 4` otherwise, and kept `estimateTokens(text string) int` delegating to `EstimateTokens`.
+2. **`internal/core/episode/summary.go` & `internal/core/episode/summary_test.go`**:
+   - Implemented `SessionSummary`, `SummaryNote`, `SummaryNoteItem`, `BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *SessionSummary`, and `SummarizeSessionInput(dataDir, repoID, repoRoot, target string, maxTokens int) (*SessionSummary, error)` without importing `internal/core/evidence` or `internal/core/inbox` (avoiding cyclic dependencies across `episode -> inbox -> delivery -> index -> episode`).
+   - Added resolution for stored `.jsonl.zst` episodes, flat `.json` episodes under `evidence/episodes/`, and raw Antigravity / Claude Code `.jsonl` transcript files and conversation directories, with strict token budget enforcement (`<= 400` tokens by default).
+3. **`internal/core/delivery/workorder_brief.go` & `internal/core/delivery/workorder_brief_test.go`**:
+   - Implemented `WorkorderBrief`, `BriefNoteSummary`, `ExtractWorkorderPaths(markdown string) []string`, and `BuildWorkorderBrief(ctx context.Context, idx *index.Index, repoRoot, dataDir, repoID, workorderPath, explicitScope string, maxTokens int) (*WorkorderBrief, error)` without importing `internal/core/inbox`, `internal/core/coverage`, or `internal/core/tick`.
+   - Extracts paths deterministically from `WORKORDER.md` (`### Permitted Mutable Files`, `### Forbidden Files`, backticked relative paths, and `file://` links), resolves target scopes, builds the 1-line A6 freshness status line, computes scope coverage gaps, ranks active dossier entries (across SQLite index, projected op-logs, and `.memory/dossiers/`), pairs unconsolidated notes, and enforces `TokenCount <= 600` (or custom `maxTokens`).
+4. **`cmd/repo-memory/cmd_summary.go`, `cmd/repo-memory/cmd_brief.go`, `cmd/repo-memory/main.go`**:
+   - Implemented `summaryCmd` (`repo-memory summary <session-id-or-path> [--session <id>] [--max-tokens <n>] [--json]`) and `briefCmd` (`repo-memory brief [--workorder <path>] [--scope <scope>] [--max-tokens <n>] [--json]`) and registered both commands on `rootCmd` in `cmd/repo-memory/main.go`.
+
+### Verification Results
+- `go build ./cmd/repo-memory`: **PASS**
+- `GOOS=windows GOARCH=amd64 go build ./cmd/repo-memory`: **PASS**
+- `go vet ./cmd/... ./internal/...`: **PASS**
+- `go test -race ./internal/core/episode/... ./internal/core/delivery/... ./cmd/repo-memory/...`: **PASS**
+- `go test ./cmd/... ./internal/...`: **PASS**
+
