@@ -39,11 +39,11 @@ Build and execute the deterministic Read-Side Multi-Invocation Micro-Probe again
 
 ## Line-Item Instructions
 
-- [ ] **1. Inspect Prompt Term Tokenization in `internal/harness/antigravity/preinvocation.go`:**
+- [x] **1. Inspect Prompt Term Tokenization in `internal/harness/antigravity/preinvocation.go`:**
   - Check lines 242–249 of `internal/harness/antigravity/preinvocation.go`, where `strings.Fields(input.UserPrompt)` extracts `promptTerms`. Notice that punctuation attached to words in natural prompts (e.g. `"Sensor."`, `"carousel,"`, `"mcp"`, `"u8g2"`, `"https://pro-api.coinmarketcap.com/public-api/v1/simple/price?ids=1"`) can remain attached if not trimmed/split on punctuation.
   - Sanitize `promptTerms` in `preinvocation.go` (splitting/trimming punctuation and filtering common English stopwords like `the`, `and`, `for`, `with`, `from`, `into`, `this`, `that`, `should`, `write`, `build`, `using`, `once`, `per`, `between`, `need`, `added`, `show`, `them`) so domain terms (`temperature`, `sensor`, `ds18b20`, `u8g2`, `screen`, `carousel`, `portal`, `mcp`, `server`, `bitcoin`, `price`, `coinmarketcap`, `api`, `module`, etc.) match FTS5 and dossier scopes with high precision on `MomentTaskStart`.
 
-- [ ] **2. Implement `internal/harness/antigravity/eval_v2_probe_test.go`:**
+- [x] **2. Implement `internal/harness/antigravity/eval_v2_probe_test.go`:**
   - Create `TestEvalV2ReadSideMicroProbe` in `internal/harness/antigravity/eval_v2_probe_test.go` that exercises both frozen tasks from `evaluation/eval-v2/tasks/task-1-temperature-module.txt` and `evaluation/eval-v2/tasks/task-2-bitcoin-price-module.txt` against the `v2.2` combined index (`evaluation/eval-v2/seed/index.db` + `evaluation/eval-v2/template`, with a deterministic synthetic fallback if those gitignored directories are absent in CI).
   - For **both Task 1 (DS18B20 Temperature Module)** and **Task 2 (Bitcoin Price Ticker Module)**, simulate a realistic 5-phase multi-invocation trajectory and verify/measure:
     1. **Phase 1 — Invocation 0 (`MomentTaskStart`, `invocationNum == 0`, `initialNumSteps == 1`):**
@@ -69,10 +69,10 @@ Build and execute the deterministic Read-Side Multi-Invocation Micro-Probe again
     - **`v2.1` Baseline (PA-only `source: seed` + `EphemeralMessage`):** 256 PA entries only (0 `doc-seed` entries from `framework-expert` / `creating-a-module` / `docs/developer/`), and `EphemeralMessage` vanishing after 1 invocation (0 entries surviving in context at the moment of code edit in Invocation 2+).
     - **`v2.2` Combined (`source: seed` + `source: doc-seed` + persistent `UserMessage`):** 1,283 entries (`256` `seed` + `1,027` `doc-seed`), persistent `UserMessage` retaining 100% of injected `task-start`, `first-entry`, and `first-touch` rules in `transcript_full.jsonl` across tool calls until `CHECKPOINT`, and automatic `BuildReinjection` restoring them after `CHECKPOINT`.
 
-- [ ] **3. Create `evaluation/eval-v2/scripts/run_read_probe.sh`:**
+- [x] **3. Create `evaluation/eval-v2/scripts/run_read_probe.sh`:**
   - Create an executable script `evaluation/eval-v2/scripts/run_read_probe.sh` (`chmod +x`) that runs `go test -v -run TestEvalV2ReadSideMicroProbe ./internal/harness/antigravity/...` and exits 0 on pass.
 
-- [ ] **4. Write `docs/evaluations/v2-2-read-side-micro-probe.md`:**
+- [x] **4. Write `docs/evaluations/v2-2-read-side-micro-probe.md`:**
   - Write a comprehensive empirical evaluation report in `docs/evaluations/v2-2-read-side-micro-probe.md` covering:
     1. **Executive Summary & Verdict:** How `v2.2` resolves the two root findings from `PR-09`/`PR-10` Stage 1 (the `8d7ad7b`+`d3ab994` One-Invocation Vanishing Memory bug and the 1–8% pull rate on `esp32-app-foundation` skills/developer guides).
     2. **Corpus & Coverage Comparison (`v2.1` PA-Only vs. `v2.2` PA + Doc-Seed):** Exact table comparing entry counts (`256` vs. `1,283`), anchor coverage (`2,206` vs. `3,190`), cognitive lifecycles (`semantic: 957`, `episodic: 214`, `procedural: 112`), and subsystem dossier coverage for the 6 subsystems touched by Task 1 and Task 2 (`modules/Application`, `modules/DataManager`, `modules/U8G2Display`, `modules/WebServer`, `modules/MCPServer`, `modules/EventBus`).
@@ -97,4 +97,20 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Summary of Changes
+1. **Prompt Tokenization & Dossier Contract Eligibility (`internal/harness/antigravity/preinvocation.go`, `internal/core/delivery/engine.go`):**
+   - Added `ExtractPromptTerms(prompt string) []string` in `internal/harness/antigravity/preinvocation.go` to split natural-language prompts on non-word characters (stripping trailing punctuation and splitting URL tokens) and filter common English stopwords and URL/prompt boilerplate (`https`, `com`, `write`, `build`, `using`, `once`, `per`, `between`, `need`, `added`, `show`, `top`, `level`, `hour`, `sec`, `mins`, `public`, `simple`, `ids`, `pro`, `waterproof`, `compatible`, `device`).
+   - Synchronized `stopWords` in `internal/core/delivery/engine.go` and included `dossiers.EntryTypeContract` alongside `EntryTypeInvariant`, `EntryTypeFailureSignature`, and `EntryTypeRuledOut` in `Engine.DossierEntries` so `v2.2` `doc-seed` C++ interface contracts (`IDataSource`, `IDisplayBoard`, `IMCPContributor`, `IWebContributor`) are eligible during `MomentFirstEntry`.
+2. **Deterministic Read-Side Multi-Invocation Micro-Probe (`internal/harness/antigravity/eval_v2_probe_test.go`, `evaluation/eval-v2/scripts/run_read_probe.sh`):**
+   - Implemented `TestEvalV2ReadSideMicroProbe` exercising both frozen forward tasks (`task-1-temperature-module.txt` and `task-2-bitcoin-price-module.txt`) against the combined `v2.2` `esp32-app-foundation` seed index (`1,283` entries: `256` `seed` + `1,027` `doc-seed`), with a self-contained synthetic fallback for clean CI environments where gitignored `evaluation/eval-v2/seed/` is absent.
+   - Verified all 5 lifecycle phases: Phase 1 (`MomentTaskStart` persistent `UserMessage`, 14 entries, 492–493 entry tokens $\le 500$ budget, 90%–100% Precision@10), Phase 2 (`MomentFirstTouch` + `MomentFirstEntry` persistent `UserMessage`, 57–72 entries, 0 duplicates of Phase 1, plus Invocation 2 mid-turn dedup returning `{}` while retaining 71–86 entries in `transcript_full.jsonl`), Phase 3 (`MomentAboutToEdit` 1-line `EphemeralMessage` pointer + `PreToolUse` `gate: edit` returning `force_ask` on first edit and `allow` after `PostToolUse` acknowledgment), Phase 4 (post-`CHECKPOINT` `BuildReinjection` restoring 30–39 entries within the 1,000-token budget via persistent `UserMessage` and re-arming dedup), and Phase 5 (`DetectRewind` pruning rewound records, resetting `LastHandledCheckpointStep = -1`, and re-delivering 54–68 entries via `UserMessage`).
+   - Added `BaselineComparison_v2_1_vs_v2_2` quantifying active rules surviving in model context at code-edit time (Invocation $\ge 2$): `0` entries in `v2.1` vs. `67–86` persistent rules in `v2.2`.
+   - Created executable script `evaluation/eval-v2/scripts/run_read_probe.sh`.
+3. **Empirical Evaluation Report (`docs/evaluations/v2-2-read-side-micro-probe.md`):**
+   - Published the complete `v2.2` Read-Side Micro-Probe evaluation report covering executive verdict, corpus & subsystem coverage (`v2.1` vs. `v2.2`), per-phase trajectory tables and injected entry inventories for Task 1 and Task 2, context persistence proof across invocations $0 \dots N$, and hand-graded Precision@10 and architectural requirement coverage.
+
+### Verification Results
+- `./evaluation/eval-v2/scripts/run_read_probe.sh`: **PASS** (`0` failures).
+- `go test -race ./cmd/... ./internal/... ./packaging/...`: **PASS** (`0` failures across all packages).
+- External hygiene scan on `docs/evaluations/v2-2-read-side-micro-probe.md` and modified files: **PASS** (zero internal references or absolute local paths).
