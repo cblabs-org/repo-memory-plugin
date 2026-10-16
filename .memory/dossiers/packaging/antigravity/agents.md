@@ -10,6 +10,9 @@
 
 ## Decisions
 
+### [seed-45ddb20f] Removed flat `title` from `op.Fields` after synthesizing `text` via `FormatCandidateEntryText` so `dossiers.Projector.applyAdd` does not overwrite the dossier's top-level `Title` with an individual entry's title.
+`decision · kind: episodic · anchors: internal/harness/interfaces.go, internal/harness/antigravity/executor.go, internal/harness/antigravity/executor_test.go, packaging/antigravity/agents/repo-memory-distiller/agent.md, internal/core/consolidate/llm.go, internal/core/consolidate/llm_test.go`
+
 ### [seed-ca0efc16] Documented that dynamic file-based resolution fails without daemon restart or correct allowlisting.
 `decision · kind: episodic · anchors: packaging/antigravity/agents/repo-memory-distiller/agent.md, docs/experiments/X8-lean-agent.md`
 

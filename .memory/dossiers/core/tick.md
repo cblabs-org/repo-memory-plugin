@@ -13,6 +13,9 @@
 
 ## Decisions
 
+### [seed-06453cc8] When `LastConsolidationAt` is empty on a non-forced tick with `< 10` waiting notes, cadence checks the age of the oldest unconsolidated note (`now.Sub(notes[0].CreatedAt) >= 24h`) so freshly harvested single notes wait for either 10 notes or the 24h window before triggering consolidation.
+`decision · kind: episodic · anchors: internal/core/tick/consolidate.go, internal/core/tick/pipeline.go, cmd/repo-memory/cmd_consolidate.go, cmd/repo-memory/main.go, internal/core/tick/consolidate_test.go`
+
 ### [seed-0c419ff6] Subagents with empty or missing `workspace_uris` recursively inherit their enrolled repository attribution from their parent conversation up the hierarchy tree.
 `decision · kind: episodic · anchors: internal/core/tick/sweep.go, internal/core/tick/sweep.go, internal/core/tick/tick.go, cmd/repo-memory/cmd_tick.go`
 

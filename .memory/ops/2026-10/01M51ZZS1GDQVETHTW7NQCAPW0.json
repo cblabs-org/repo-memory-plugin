@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-483a4548",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/layout.go",
+          ".memory/.gitignore",
+          "internal/core/index/rebuild.go",
+          "internal/core/gitops/worktree.go",
+          "internal/core/gitops/worktree_test.go",
+          "internal/core/consolidate/publish.go",
+          "internal/core/consolidate/publish_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `RecordBranchTier`, rendered `.md` and `.history.md` files both under `\u003cbranchDossiersDir\u003e/dossiers/` (via `dossiers.NewWriter`) and directly at `\u003cbranchDossiersDir\u003e/\u003cscope\u003e.md` so both `SPEC.md` §5.4 direct inspection and `dossiers.NewWriter` conventions succeed."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T09:16:46Z",
+  "batch_id": "01M51ZZS1GDQVETHTW7NQCAPW0"
+}

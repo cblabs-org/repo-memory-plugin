@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-71a4a73a",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-16T07:09:37Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/inbox/free_harvest.go",
+          "internal/core/tick/pipeline.go",
+          "internal/core/inbox/free_harvest_test.go",
+          "internal/core/tick/pipeline_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Combined `seed.ParseDocToOps` with keyword classification overrides (`classifyBulletType`) and a fallback anchored bullet extractor in `extractItemsFromArtifact` so both structured multi-section docs and free-form markdown artifacts in `evidence/artifacts/\u003cconvID\u003e/` produce properly typed, repo-anchored `NoteItem` records capped at 6 items per note."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-81f5d9db",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-16T07:09:37Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/inbox/free_harvest.go",
+          "internal/core/tick/pipeline.go",
+          "internal/core/inbox/free_harvest_test.go",
+          "internal/core/tick/pipeline_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Computed deterministic SHA-256 content prefixes (`sha256Hex[:16]`) over ordered non-empty checkpoint sections (`checkpoint:\u003csessionID\u003e:\u003chash16\u003e`) and artifact file contents (`artifact:\u003cconvID\u003e:\u003crelPath\u003e:\u003chash16\u003e`) so unchanged checkpoints and artifacts are skipped in $O(1)$ via `inboxStore.HasDedupKey`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-29440817",
+      "dossier_scope": "core",
+      "timestamp": "2026-10-16T07:09:37Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/inbox/free_harvest.go",
+          "internal/core/tick/pipeline.go",
+          "internal/core/inbox/free_harvest_test.go",
+          "internal/core/tick/pipeline_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "Legacy v1 oracle test suites under `evaluation/oracle/wo1-op-log`, `wo2-dossier-schema-renderer`, `wo4-index-migration`, `wo1-ledger-engine`, and `wo4-gates` reference removed `internal/core/claims` or unexported package symbols when running unscoped `go test ./...` across `evaluation/oracle/...`; all production and test packages under `./cmd/...`, `./internal/...`, and `./packaging/...` pass 100%."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T07:09:37Z",
+  "batch_id": "01M51RPYV8Z352KHDC6CP0T0W6"
+}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-45ddb20f",
+      "dossier_scope": "packaging/antigravity/agents",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/interfaces.go",
+          "internal/harness/antigravity/executor.go",
+          "internal/harness/antigravity/executor_test.go",
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
+          "internal/core/consolidate/llm.go",
+          "internal/core/consolidate/llm_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Removed flat `title` from `op.Fields` after synthesizing `text` via `FormatCandidateEntryText` so `dossiers.Projector.applyAdd` does not overwrite the dossier's top-level `Title` with an individual entry's title."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T09:16:46Z",
+  "batch_id": "01M51ZZS1GDQVETHTW7GS8XY16"
+}

@@ -5,7 +5,7 @@
 - **Work Order Slug:** `wo3-dogfood-rollout-and-ci-packaging`
 - **Target Branch:** `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging`
 - **Base Branch:** `pr-16-v2-pa-and-rollout/wo2-backfill-and-reproject-cli`
-- **Status:** `IN_PROGRESS`
+- **Status:** `COMPLETED`
 
 ---
 
@@ -100,4 +100,31 @@ Run and verify all of the following commands:
 ---
 
 ## 6. Worker Completion Report
-*(To be filled in by the Tier 3 Worker before returning control to the Principal Architect)*
+
+### Summary of Changes
+1. **Deterministic Reproject Default (`cmd/repo-memory/cmd_reproject.go`)**:
+   - Added `--include-local` (`reprojectIncludeLocal`, default `false`) to `reprojectCmd` so `repo-memory reproject` replays `<repoRoot>/.memory/ops` deterministically by default across developer machines and CI runners without host `<dataDir>` overlay drift, while allowing callers to opt in to overlaying `ops-local` and `user/ops`.
+2. **Full Dogfood Rollout on `repo-memory-plugin` (`.memory/**`)**:
+   - Executed `seed`, `seed-docs`, `ops gc --dossiers-dir .memory`, `reproject`, `promote-skills`, `reindex`, and `doctor .` across the full `v2.2` repository (`PR-10a` through `PR-16`).
+   - Seeded 37 new entries across 16 workorders (`PR-12` through `PR-16`), repaired 7 polluted scopes via `ops gc`, reprojected 30 dossiers (259 active entries, 225 human decisions preserved), and generated `.memory/ATLAS.md` and `.memory/QUESTIONS.md`.
+   - Verified zero second-run churn (`diff -u` of `git status --short` and `git diff` sha256 identical between run 1 and run 2; `reproject --dry-run --json` reports `0` added/updated/removed files and `"questions_updated": false`).
+   - Verified 0 hygiene hits across `.memory/ops/`, `.memory/dossiers/`, `.memory/ATLAS.md`, and `.memory/QUESTIONS.md`.
+   - Smoke-tested `repo-memory brief --workorder .agents/skills/principal-architect-workspace/pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md`.
+3. **GitHub Actions CI Upgrade (`.github/workflows/ci.yml`)**:
+   - Updated `.github/workflows/ci.yml` to run `go vet ./cmd/... ./internal/... ./packaging/...`, `go build ./cmd/repo-memory`, `go test -race ./cmd/... ./internal/... ./packaging/...` on Linux/macOS (`go test` on Windows), `go run ./cmd/repo-memory doctor .`, and `go run ./cmd/repo-memory reproject --dry-run .`.
+
+### Files Modified / Created
+- `cmd/repo-memory/cmd_reproject.go`: Added `--include-local` flag so default `reproject` only replays `.memory/ops`.
+- `.github/workflows/ci.yml`: Upgraded CI workflow steps (`go vet`, `go build`, `go test -race`, `doctor .`, and `reproject --dry-run .`).
+- `.memory/ATLAS.md`: Regenerated repository memory atlas across 30 dossiers.
+- `.memory/QUESTIONS.md`: Generated open-issues and coverage gaps report.
+- `.memory/dossiers/**`: Updated and added projected module dossiers (`core/consolidate.md`, `evaluation/eval-v2.md`, `evaluation/eval-v2/rubrics.md`, etc.).
+- `.memory/ops/2026-10/*.json`: Added seeded workorder op batches and cleaned stale/polluted scopes via `ops gc`.
+
+### Verification Results
+- `go build ./cmd/repo-memory`: **PASS**
+- `go vet ./cmd/... ./internal/... ./packaging/...`: **PASS**
+- `GOOS=windows GOARCH=amd64 go build ./cmd/repo-memory`: **PASS**
+- `go run ./cmd/repo-memory reproject --dry-run --json`: **PASS** (`30` dossiers projected, `259` active entries, `225` human decisions preserved, `31` files unchanged, `0` added/updated/removed, `questions_updated: false`)
+- `go run ./cmd/repo-memory doctor .`: **PASS** (0 errors)
+- `go test -race ./cmd/... ./internal/... ./packaging/...`: **PASS** (all packages passed)

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-06453cc8",
+      "dossier_scope": "core/tick",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/tick/consolidate.go",
+          "internal/core/tick/pipeline.go",
+          "cmd/repo-memory/cmd_consolidate.go",
+          "cmd/repo-memory/main.go",
+          "internal/core/tick/consolidate_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "When `LastConsolidationAt` is empty on a non-forced tick with `\u003c 10` waiting notes, cadence checks the age of the oldest unconsolidated note (`now.Sub(notes[0].CreatedAt) \u003e= 24h`) so freshly harvested single notes wait for either 10 notes or the 24h window before triggering consolidation."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T09:16:46Z",
+  "batch_id": "01M51ZZS1GDQVETHTW7RAG45F7"
+}
