@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// EstimateTokens returns a deterministic token estimate (~4 chars per token) for text.
+func EstimateTokens(text string) int {
+	if text == "" {
+		return 0
+	}
+	return (len(text) + 3) / 4
+}
+
+func estimateTokens(text string) int {
+	return EstimateTokens(text)
+}
+
 func LintDossier(d *Dossier) []string {
 	var warnings []string
 
