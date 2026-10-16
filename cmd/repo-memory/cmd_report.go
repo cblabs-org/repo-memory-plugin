@@ -86,7 +86,7 @@ func RunReport(cmd *cobra.Command, targetDir string, asJSON bool) error {
 	enrolled := config.IsEnrolledFast(repoRoot)
 	freshness := coverage.FormatFreshnessHeader(repoRoot, dataDir, repoID)
 
-	activeDossiers, activeEntries := loadProjectedActiveEntries(ctx, repoRoot)
+	activeDossiers, activeEntries := loadProjectedActiveEntries(ctx, repoRoot, dataDir, repoID)
 
 	semanticCount := 0
 	proceduralCount := 0

@@ -35,7 +35,7 @@ func TestFormatEntriesForMoment_GraduatedSkillPointer(t *testing.T) {
 
 	ranked := []RankedEntry{{Entry: recipe}}
 
-	// At MomentFirstTouch, a graduated recipe renders as a 1-line pointer.
+	// At MomentFirstTouch and MomentFirstEntry, a graduated recipe with SKILL.md on disk renders as a 1-line pointer.
 	firstTouchOut := FormatEntriesForMoment(ranked, MomentFirstTouch, workspace)
 	wantPointer := "[repo-memory rec-build-01] skill " + slug + " covers this procedure: Build and flash ESP32 firmware"
 	if !strings.Contains(firstTouchOut, wantPointer) {
@@ -43,6 +43,26 @@ func TestFormatEntriesForMoment_GraduatedSkillPointer(t *testing.T) {
 	}
 	if strings.Contains(firstTouchOut, "pio run -t upload") {
 		t.Errorf("expected MomentFirstTouch pointer to omit full multi-step body, got:\n%s", firstTouchOut)
+	}
+
+	firstEntryOut := FormatEntriesForMoment(ranked, MomentFirstEntry, workspace)
+	if !strings.Contains(firstEntryOut, wantPointer) {
+		t.Errorf("expected 1-line pointer %q in MomentFirstEntry output, got:\n%s", wantPointer, firstEntryOut)
+	}
+	if strings.Contains(firstEntryOut, "pio run -t upload") {
+		t.Errorf("expected MomentFirstEntry pointer to omit full multi-step body, got:\n%s", firstEntryOut)
+	}
+
+	// When workspaceRoot has no .agents/skills/rm-<slug>/SKILL.md on disk, FormatEntryForMoment
+	// must deliver the full recipe body rather than a phantom 1-line skill pointer.
+	emptyWorkspace := t.TempDir()
+	noSkillTouchOut := FormatEntryForMoment(recipe, MomentFirstTouch, emptyWorkspace)
+	if strings.Contains(noSkillTouchOut, "covers this procedure:") || !strings.Contains(noSkillTouchOut, "pio run -t upload") {
+		t.Errorf("expected full recipe text when SKILL.md is absent under workspaceRoot, got:\n%s", noSkillTouchOut)
+	}
+	noSkillEntryOut := FormatEntryForMoment(recipe, MomentFirstEntry, emptyWorkspace)
+	if strings.Contains(noSkillEntryOut, "covers this procedure:") || !strings.Contains(noSkillEntryOut, "pio run -t upload") {
+		t.Errorf("expected full recipe text at MomentFirstEntry when SKILL.md is absent under workspaceRoot, got:\n%s", noSkillEntryOut)
 	}
 
 	// At MomentTaskStart, full entry formatting is preserved.

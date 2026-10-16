@@ -135,6 +135,36 @@ func TestEvaluateClosesWhenCondition_FileAndSymbolPredicates(t *testing.T) {
 			closesWhen: "path_exists:internal/svc/missing.go || file_contains:internal/svc/handler.go:HandleV2",
 			want:       true,
 		},
+		{
+			name:       "file_contains rejects parent traversal",
+			closesWhen: "file_contains:../outside.txt:secret",
+			want:       false,
+		},
+		{
+			name:       "file_contains rejects absolute path",
+			closesWhen: "file_contains:/etc/passwd:root",
+			want:       false,
+		},
+		{
+			name:       "file_not_contains rejects parent traversal",
+			closesWhen: "file_not_contains:../outside.txt:secret",
+			want:       false,
+		},
+		{
+			name:       "file_not_contains rejects absolute path",
+			closesWhen: "file_not_contains:/etc/passwd:nonexistent_token",
+			want:       false,
+		},
+		{
+			name:       "workorder_complete rejects parent traversal",
+			closesWhen: "workorder_complete:../outside.txt",
+			want:       false,
+		},
+		{
+			name:       "workorder_complete rejects absolute path",
+			closesWhen: "workorder_complete:/etc/passwd",
+			want:       false,
+		},
 	}
 
 	for _, tc := range cases {

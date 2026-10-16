@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -82,7 +83,7 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 	enrolled := config.IsEnrolledFast(repoRoot)
 	freshness := coverage.FormatFreshnessHeader(repoRoot, dataDir, repoID)
 
-	activeDossiers, activeEntries := loadProjectedActiveEntries(ctx, repoRoot)
+	activeDossiers, activeEntries := loadProjectedActiveEntries(ctx, repoRoot, dataDir, repoID)
 
 	var graduated []string
 	if gradRes, err := skills.SyncGraduatedSkills(ctx, repoRoot, dataDir, repoID, true); err == nil && gradRes != nil {
@@ -117,35 +118,92 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 	return nil
 }
 
-func loadProjectedActiveEntries(ctx context.Context, repoRoot string) (int, []dossiers.Entry) {
-	if strings.TrimSpace(repoRoot) == "" {
-		return 0, nil
-	}
-	opsDir := filepath.Join(repoRoot, ".memory", "ops")
-	info, err := os.Stat(opsDir)
-	if err != nil || !info.IsDir() {
-		return 0, nil
-	}
-	projected, err := dossiers.NewProjector(ops.NewReader(opsDir)).Project(ctx)
-	if err != nil {
-		return 0, nil
-	}
-	activeDossiers := 0
-	var activeEntries []dossiers.Entry
-	for _, d := range projected {
-		if d == nil {
-			continue
+func loadProjectedActiveEntries(ctx context.Context, repoRoot, dataDir, repoID string) (int, []dossiers.Entry) {
+	byID := make(map[string]dossiers.Entry)
+	retiredIDs := make(map[string]bool)
+	var orderedIDs []string
+
+	projectOpsDir := func(opsDir string) {
+		info, err := os.Stat(opsDir)
+		if err != nil || !info.IsDir() {
+			return
 		}
-		hasActive := false
-		for _, e := range d.Entries {
-			if !e.Retired && strings.TrimSpace(e.SupersededBy) == "" {
-				hasActive = true
-				activeEntries = append(activeEntries, e)
+		projected, err := dossiers.NewProjector(ops.NewReader(opsDir)).Project(ctx)
+		if err != nil {
+			return
+		}
+		for scopeKey, d := range projected {
+			if d == nil {
+				continue
+			}
+			for _, h := range d.History {
+				retiredIDs[h.ID] = true
+				delete(byID, h.ID)
+			}
+			for _, e := range d.Entries {
+				if e.Retired || strings.TrimSpace(e.SupersededBy) != "" {
+					retiredIDs[e.ID] = true
+					delete(byID, e.ID)
+					continue
+				}
+				if retiredIDs[e.ID] {
+					continue
+				}
+				if strings.TrimSpace(e.DossierScope) == "" {
+					if strings.TrimSpace(d.Scope) != "" {
+						e.DossierScope = strings.TrimSpace(d.Scope)
+					} else {
+						e.DossierScope = strings.TrimSpace(scopeKey)
+					}
+				}
+				if _, exists := byID[e.ID]; !exists {
+					orderedIDs = append(orderedIDs, e.ID)
+				}
+				byID[e.ID] = e
 			}
 		}
-		if hasActive {
-			activeDossiers++
+	}
+
+	if strings.TrimSpace(repoRoot) != "" {
+		// Tier 5: Repo-shared ops (.memory/ops)
+		projectOpsDir(filepath.Join(repoRoot, ".memory", "ops"))
+
+		// Tier 4: Branch-local ops (.memory/local/ops and .memory/local/ops/<branch>)
+		localOpsRoot := filepath.Join(repoRoot, ".memory", "local", "ops")
+		projectOpsDir(localOpsRoot)
+		if dirEntries, err := os.ReadDir(localOpsRoot); err == nil {
+			for _, de := range dirEntries {
+				if !de.IsDir() {
+					continue
+				}
+				if _, parseErr := time.Parse("2006-01", de.Name()); parseErr == nil {
+					continue
+				}
+				projectOpsDir(filepath.Join(localOpsRoot, de.Name()))
+			}
 		}
 	}
-	return activeDossiers, activeEntries
+
+	if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
+		// Tier 3: User-local ops
+		projectOpsDir(filepath.Join(dataDir, "repos", repoID, "user-dossiers", "ops"))
+		projectOpsDir(filepath.Join(dataDir, repoID, "user-dossiers", "ops"))
+	}
+
+	activeScopes := make(map[string]bool)
+	activeEntries := make([]dossiers.Entry, 0, len(byID))
+	for _, id := range orderedIDs {
+		e, ok := byID[id]
+		if !ok {
+			continue
+		}
+		activeEntries = append(activeEntries, e)
+		scope := strings.TrimSpace(e.DossierScope)
+		if scope == "" {
+			scope = "_default"
+		}
+		activeScopes[scope] = true
+	}
+
+	return len(activeScopes), activeEntries
 }
