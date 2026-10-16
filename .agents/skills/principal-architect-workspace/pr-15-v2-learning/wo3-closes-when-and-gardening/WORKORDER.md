@@ -4,7 +4,7 @@
 > **Branch:** `pr-15-v2-learning/wo3-closes-when-and-gardening`
 > **Base Branch:** `pr-15-v2-learning/wo2-procedural-validation-and-skill-graduation`
 > **Complexity:** `standard`
-> **Status:** 🔄 Active
+> **Status:** ✅ Complete
 
 ---
 
@@ -48,12 +48,12 @@ Implement **SPEC §5.3.2 & `design-v2` §5.2 (`closes_when` deterministic evalua
 
 ## 2. Checklist
 
-- [ ] Implement `internal/core/tick/closes_when.go` (`EvaluateClosesWhenCondition`, `EvaluateClosesWhen`) and wire into `PipelineExecutor.Run(ctx)` in `internal/core/tick/pipeline.go`.
-- [ ] Enforce pull-only delivery for `open-issue` entries without `closes_when` in `internal/core/delivery/engine.go` (`filterAndVerify`).
-- [ ] Implement `internal/core/tick/gardening.go` (`GardeningOptions`, `GardeningResult`, `RunGardening`).
-- [ ] Create `cmd/repo-memory/cmd_garden.go` and register `gardenCmd` in `cmd/repo-memory/main.go`.
-- [ ] Write unit tests in `internal/core/tick/closes_when_test.go`, `internal/core/tick/gardening_test.go`, and `internal/core/delivery/engine_test.go`.
-- [ ] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/tick/... ./internal/core/delivery/... ./cmd/repo-memory/...`.
+- [x] Implement `internal/core/tick/closes_when.go` (`EvaluateClosesWhenCondition`, `EvaluateClosesWhen`) and wire into `PipelineExecutor.Run(ctx)` in `internal/core/tick/pipeline.go`.
+- [x] Enforce pull-only delivery for `open-issue` entries without `closes_when` in `internal/core/delivery/engine.go` (`filterAndVerify`).
+- [x] Implement `internal/core/tick/gardening.go` (`GardeningOptions`, `GardeningResult`, `RunGardening`).
+- [x] Create `cmd/repo-memory/cmd_garden.go` and register `gardenCmd` in `cmd/repo-memory/main.go`.
+- [x] Write unit tests in `internal/core/tick/closes_when_test.go`, `internal/core/tick/gardening_test.go`, and `internal/core/delivery/engine_test.go`.
+- [x] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/tick/... ./internal/core/delivery/... ./cmd/repo-memory/...`.
 
 ---
 
@@ -74,3 +74,29 @@ Implement **SPEC §5.3.2 & `design-v2` §5.2 (`closes_when` deterministic evalua
 - **Verification Output:**
   - `go test -race ...`
 ```
+
+---
+
+## Completion Report (`wo3-closes-when-and-gardening`)
+- **Commit(s):** `765b42b`
+- **Files Created / Modified:**
+  - `internal/core/tick/closes_when.go` (created)
+  - `internal/core/tick/closes_when_test.go` (created)
+  - `internal/core/tick/gardening.go` (created)
+  - `internal/core/tick/gardening_test.go` (created)
+  - `internal/core/tick/pipeline.go` (modified)
+  - `internal/core/delivery/engine.go` (modified)
+  - `internal/core/delivery/engine_test.go` (created)
+  - `internal/core/consolidate/publish.go` (modified)
+  - `internal/core/consolidate/record.go` (modified)
+  - `internal/core/consolidate/route.go` (modified)
+  - `internal/core/config/config.go` (modified)
+  - `internal/core/ops/op.go` (modified)
+  - `cmd/repo-memory/cmd_garden.go` (created)
+  - `cmd/repo-memory/garden_test.go` (created)
+  - `cmd/repo-memory/main.go` (modified)
+- **Verification Output:**
+  - `go build ./...` -> PASS (0 errors)
+  - `go vet ./internal/... ./cmd/...` -> PASS (0 warnings)
+  - `go test -race ./internal/core/tick/... ./internal/core/delivery/... ./cmd/repo-memory/... ./internal/core/consolidate/...` -> PASS (`ok github.com/cblabs-org/repo-memory-plugin/internal/core/tick 18.794s`, `ok github.com/cblabs-org/repo-memory-plugin/internal/core/delivery 1.603s`, `ok github.com/cblabs-org/repo-memory-plugin/cmd/repo-memory 16.291s`, `ok github.com/cblabs-org/repo-memory-plugin/internal/core/consolidate 2.923s`)
+
