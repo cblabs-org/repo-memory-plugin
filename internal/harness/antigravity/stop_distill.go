@@ -14,6 +14,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/scrub"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
 	"gopkg.in/yaml.v3"
 )
@@ -204,11 +205,43 @@ func harvestTurnNote(
 		return
 	}
 
+	allowedIDs := map[string]bool{}
+	if strings.TrimSpace(convID) != "" {
+		allowedIDs[strings.TrimSpace(convID)] = true
+	}
+	if strings.TrimSpace(res.Head) != "" {
+		allowedIDs[strings.TrimSpace(res.Head)] = true
+	}
+	scrubCtx := scrub.Context{
+		Boundary:   "note",
+		RepoID:     repoID,
+		RepoRoot:   repoRoot,
+		DataDir:    dataDir,
+		AllowedIDs: allowedIDs,
+	}
+
 	for i := range validItems {
-		validItems[i].Title = scrubNoteText(validItems[i].Title)
-		validItems[i].Why = scrubNoteText(validItems[i].Why)
-		validItems[i].Do = scrubNoteText(validItems[i].Do)
-		validItems[i].Evidence = scrubNoteText(validItems[i].Evidence)
+		var scrubErr error
+		if validItems[i].Title, scrubErr = scrubNoteField(validItems[i].Title, scrubCtx); scrubErr != nil {
+			_, _ = scrub.QuarantinePayload(dataDir, repoID, "note", scrubErr.Error(), []byte(replyStep.Content))
+			_ = state.SaveMark(dataDir, repoID, mark)
+			return
+		}
+		if validItems[i].Why, scrubErr = scrubNoteField(validItems[i].Why, scrubCtx); scrubErr != nil {
+			_, _ = scrub.QuarantinePayload(dataDir, repoID, "note", scrubErr.Error(), []byte(replyStep.Content))
+			_ = state.SaveMark(dataDir, repoID, mark)
+			return
+		}
+		if validItems[i].Do, scrubErr = scrubNoteField(validItems[i].Do, scrubCtx); scrubErr != nil {
+			_, _ = scrub.QuarantinePayload(dataDir, repoID, "note", scrubErr.Error(), []byte(replyStep.Content))
+			_ = state.SaveMark(dataDir, repoID, mark)
+			return
+		}
+		if validItems[i].Evidence, scrubErr = scrubNoteField(validItems[i].Evidence, scrubCtx); scrubErr != nil {
+			_, _ = scrub.QuarantinePayload(dataDir, repoID, "note", scrubErr.Error(), []byte(replyStep.Content))
+			_ = state.SaveMark(dataDir, repoID, mark)
+			return
+		}
 		validItems[i].AnchorChecks = inbox.CheckAnchors(repoRoot, validItems[i].Anchors)
 	}
 
@@ -850,14 +883,25 @@ func LintNoteItems(items []inbox.NoteItem) []inbox.NoteItem {
 	return valid
 }
 
+func scrubNoteField(s string, scrubCtx scrub.Context) (string, error) {
+	res, err := scrub.Scrub(s, scrubCtx)
+	if err != nil {
+		return "", err
+	}
+	return res.Text, nil
+}
+
 func scrubNoteText(s string) string {
 	if s == "" {
 		return ""
 	}
+	if res, err := scrub.Scrub(s, scrub.Context{Boundary: "note"}); err == nil {
+		return res.Text
+	}
 	out := privateKeyBlockRe.ReplaceAllString(s, "«secret:private_key»")
 	out = privateKeyHeaderRe.ReplaceAllString(out, "«secret:private_key»")
-	out = awsAccessKeyRe.ReplaceAllString(out, "«secret:aws_key»")
-	out = githubTokenRe.ReplaceAllString(out, "«secret:github_token»")
+	out = awsAccessKeyRe.ReplaceAllString(out, "«secret:aws»")
+	out = githubTokenRe.ReplaceAllString(out, "«secret:github»")
 	out = bearerOrTokenRe.ReplaceAllString(out, "$1 «secret:token»")
 	return out
 }

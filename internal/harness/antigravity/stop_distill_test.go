@@ -604,7 +604,7 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 			t.Fatalf("expected 1 item, got %d", len(n.Items))
 		}
 		item := n.Items[0]
-		if strings.Contains(item.Why, "AKIAIOSFODNN7EXAMPLE") || !strings.Contains(item.Why, "«secret:aws_key»") {
+		if strings.Contains(item.Why, "AKIAIOSFODNN7EXAMPLE") || !strings.Contains(item.Why, "«secret:aws»") {
 			t.Errorf("expected AWS key to be scrubbed in Why, got %q", item.Why)
 		}
 		if len(item.AnchorChecks) != 2 {
@@ -732,6 +732,54 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 		mark2, _ := state.LoadMark(dataDir, repoID, convID2)
 		if mark2.StepIndex != 1 {
 			t.Errorf("expected mark.StepIndex advanced to 1, got %d", mark2.StepIndex)
+		}
+	})
+
+	t.Run("scrubber error quarantines note and refuses to write to inbox", func(t *testing.T) {
+		dataDir, repoDir, repoID := setupEnrolledRepo(t)
+		convID := "conv-harvest-quarantine"
+		_ = state.SaveMark(dataDir, repoID, &state.Mark{
+			ConversationID:     convID,
+			StepIndex:          0,
+			PendingRequestStep: 1,
+		})
+
+		// Write an invalid .memory/scrub.yaml so scrub.Scrub fails closed.
+		badScrubYAML := "version: 1\nrules:\n  - name: broken\n    pattern: '[unclosed'\n"
+		if err := os.WriteFile(filepath.Join(repoDir, ".memory", "scrub.yaml"), []byte(badScrubYAML), 0644); err != nil {
+			t.Fatalf("writing scrub.yaml: %v", err)
+		}
+
+		noteReply := "```repo-memory-note\n- type: decision\n  title: Keep quarantine\n  why: Scrubber failed closed\n```"
+		replyJSON, _ := json.Marshal(noteReply)
+		lines := []string{
+			`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","content":"commit"}`,
+			`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"Done."}`,
+			fmt.Sprintf(`{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":%s}`, string(replyJSON)),
+		}
+		tp := writeTranscriptSteps(t, convID, lines)
+
+		raw, _ := json.Marshal(StopPayload{
+			ConversationID:    convID,
+			TranscriptPath:    tp,
+			WorkspacePaths:    []string{repoDir},
+			ExecutionNum:      1,
+			TerminationReason: "NO_TOOL_CALL",
+			FullyIdle:         true,
+		})
+		out, err := HandleStop(ctx, raw, WithDataDir(dataDir))
+		if err != nil || string(out) != "{}" {
+			t.Fatalf("expected '{}', got %s (err=%v)", string(out), err)
+		}
+
+		notes, _ := inbox.NewStore(dataDir, repoID).ListAll()
+		if len(notes) != 0 {
+			t.Errorf("expected 0 notes written when scrubber fails closed, got %d", len(notes))
+		}
+
+		qEntries, err := os.ReadDir(filepath.Join(dataDir, repoID, "quarantine"))
+		if err != nil || len(qEntries) != 1 {
+			t.Fatalf("expected 1 quarantine file, got %d (err=%v)", len(qEntries), err)
 		}
 	})
 }
