@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -227,5 +228,83 @@ func TestPostToolUse_InvokeSubagentRegistry(t *testing.T) {
 	children, err := state.ListSubagentChildren(ctx, dataDir, repoID, parentID)
 	if err != nil || len(children) != 1 || children[0] != childID {
 		t.Errorf("expected children [%s], got %v (err=%v)", childID, children, err)
+	}
+}
+
+func TestPostToolUse_RecipeCommandOutcomeTracking(t *testing.T) {
+	ctx := context.Background()
+	dataDir, repoDir, repoID := setupEnrolledRepo(t)
+	if err := config.CreateEnrolledMarker(repoDir); err != nil {
+		t.Fatalf("CreateEnrolledMarker: %v", err)
+	}
+
+	idxPath := index.IndexPath(dataDir, repoID)
+	if err := os.MkdirAll(filepath.Dir(idxPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe := dossiers.Entry{
+		ID:           "rec-test-suite",
+		Type:         dossiers.EntryTypeRecipe,
+		Kind:         dossiers.CognitiveKindProcedural,
+		DossierScope: "core",
+		Text:         "Run Go unit tests\n1. Run `go vet ./...`\n2. Run `go test ./...`",
+		Anchors:      []string{"go.mod"},
+	}
+	if err := idx.UpsertEntry(ctx, recipe); err != nil {
+		t.Fatal(err)
+	}
+	idx.Close()
+
+	// Success in conv-1
+	payload1 := `{
+		"conversationId": "conv-1",
+		"toolName": "run_command",
+		"toolCall": {
+			"name": "run_command",
+			"args": {"CommandLine": "go test ./..."}
+		},
+		"toolResult": {
+			"status": "success",
+			"output": "Command exited with code 0\nok"
+		},
+		"workspacePaths": ["` + repoDir + `"]
+	}`
+	if _, err := HandlePostToolUse(ctx, []byte(payload1), WithDataDir(dataDir)); err != nil {
+		t.Fatalf("HandlePostToolUse conv-1 failed: %v", err)
+	}
+
+	// Success in conv-2 -> graduates skill
+	payload2 := `{
+		"conversationId": "conv-2",
+		"toolName": "bash",
+		"toolCall": {
+			"name": "bash",
+			"args": {"command": "go vet ./... && go test ./..."}
+		},
+		"toolResult": {
+			"status": "success",
+			"output": "PASS"
+		},
+		"workspacePaths": ["` + repoDir + `"]
+	}`
+	if _, err := HandlePostToolUse(ctx, []byte(payload2), WithDataDir(dataDir)); err != nil {
+		t.Fatalf("HandlePostToolUse conv-2 failed: %v", err)
+	}
+
+	idx, err = index.NewIndex(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := idx.GetEntry(ctx, "rec-test-suite")
+	idx.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SuccessCount != 2 || got.FailureCount != 0 || got.StaleSuspect {
+		t.Errorf("expected SuccessCount=2 FailureCount=0 StaleSuspect=false, got %+v", got)
 	}
 }

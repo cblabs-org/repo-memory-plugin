@@ -79,14 +79,14 @@ Implement **Addendum A §10 A7 (Procedures become skills — `procedural` cognit
 
 ## 2. Checklist
 
-- [ ] Add `ListProceduralEntries` and `ListAllEntries` in `internal/core/index/entries.go`.
-- [ ] Create `internal/core/skills/tracker.go` (`ExtractRecipeCommands`, `NormalizeCommand`, `CommandMatchesRecipe`, `OutcomeState`, `RecordCommandOutcome`, `IsBuildManifestPath`, `CheckBuildManifestFreshness`).
-- [ ] Create `internal/core/skills/graduate.go` (`CountRecipeSteps`, `SkillSlug`, `QualifiesForSkill`, `RenderSkillMarkdown`, `SyncGraduatedSkills`, `GraduatedSkillSlug`).
-- [ ] Wire `PostToolUse` command outcome tracking in `internal/harness/antigravity/posttooluse.go`.
-- [ ] Wire `MomentFirstTouch` 1-line skill pointer in `internal/core/delivery/formatter.go` and `internal/harness/antigravity/preinvocation.go`.
-- [ ] Create `cmd/repo-memory/cmd_promote_skills.go`, register `promoteSkillsCmd` in `cmd/repo-memory/main.go`, and wire `CheckBuildManifestFreshness` + `SyncGraduatedSkills` into `internal/core/tick/pipeline.go`.
-- [ ] Write comprehensive unit tests in `internal/core/skills/skills_test.go`, `internal/harness/antigravity/posttooluse_test.go`, and `internal/core/delivery/formatter_test.go`.
-- [ ] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/skills/... ./internal/core/delivery/... ./internal/core/tick/... ./internal/harness/antigravity/... ./cmd/repo-memory/...`.
+- [x] Add `ListProceduralEntries` and `ListAllEntries` in `internal/core/index/entries.go`.
+- [x] Create `internal/core/skills/tracker.go` (`ExtractRecipeCommands`, `NormalizeCommand`, `CommandMatchesRecipe`, `OutcomeState`, `RecordCommandOutcome`, `IsBuildManifestPath`, `CheckBuildManifestFreshness`).
+- [x] Create `internal/core/skills/graduate.go` (`CountRecipeSteps`, `SkillSlug`, `QualifiesForSkill`, `RenderSkillMarkdown`, `SyncGraduatedSkills`, `GraduatedSkillSlug`).
+- [x] Wire `PostToolUse` command outcome tracking in `internal/harness/antigravity/posttooluse.go`.
+- [x] Wire `MomentFirstTouch` 1-line skill pointer in `internal/core/delivery/formatter.go` and `internal/harness/antigravity/preinvocation.go`.
+- [x] Create `cmd/repo-memory/cmd_promote_skills.go`, register `promoteSkillsCmd` in `cmd/repo-memory/main.go`, and wire `CheckBuildManifestFreshness` + `SyncGraduatedSkills` into `internal/core/tick/pipeline.go`.
+- [x] Write comprehensive unit tests in `internal/core/skills/skills_test.go`, `internal/harness/antigravity/posttooluse_test.go`, and `internal/core/delivery/formatter_test.go`.
+- [x] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/skills/... ./internal/core/delivery/... ./internal/core/tick/... ./internal/harness/antigravity/... ./cmd/repo-memory/...`.
 
 ---
 
