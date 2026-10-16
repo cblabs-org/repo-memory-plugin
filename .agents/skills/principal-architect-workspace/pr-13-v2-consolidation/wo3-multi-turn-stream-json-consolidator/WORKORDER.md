@@ -145,19 +145,23 @@ Run all tests (`go test -v -race ./internal/harness/... ./internal/core/consolid
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/harness/interfaces.go` — Added `MultiTurnHousekeeper` interface (`RunMultiTurn(ctx context.Context, stage Stage, prompts []string) ([]Result, error)`).
+- `internal/harness/antigravity/executor.go` & `internal/harness/antigravity/executor_test.go` — Implemented `(*Housekeeper).RunMultiTurn` invoking `agy -p "" --input-format stream-json --output-format stream-json --agent repo-memory-distiller` with NDJSON `{"event":"user","message":{"content":...}}` input lines, cumulative token delta calculation, and unit test `TestHousekeeperRunMultiTurn_StageConsolidate`.
+- `packaging/antigravity/agents/repo-memory-distiller/agent.md` — Added Stage 2 Consolidation Mode (`<consolidation-batch-<token>>`) instructions and structured JSON output schema.
+- `internal/core/consolidate/llm.go` — Implemented `DossierConsolidationInput`, `GenerateConsolidationEchoToken`, `BuildConsolidationPrompt`, `FormatCandidateEntryText`, `BuildCandidateEvidence`, `ParseConsolidatorOutput`, `SynthesizeDeterministicOps`, and `ConsolidateDossiers`.
+- `internal/core/consolidate/llm_test.go` — Added unit tests verifying `<consolidation-batch-TOKEN>` data framing, valid flat and nested op parsing across all 6 op types, `echo_token` mismatch/derailment rejection, and multi-turn `MultiTurnHousekeeper` / deterministic consolidation.
 
 ### Decisions Made
-- Decision description and rationale
+- Removed flat `title` from `op.Fields` after synthesizing `text` via `FormatCandidateEntryText` so `dossiers.Projector.applyAdd` does not overwrite the dossier's top-level `Title` with an individual entry's title.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+(none)
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+(none)
 
 ### Blockers
 (none)
