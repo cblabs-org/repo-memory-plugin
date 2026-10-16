@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-1faac572",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-15T20:13:25Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/config.go",
+          "internal/core/seed/doc_seed.go",
+          "cmd/repo-memory/cmd_seed_docs.go",
+          ".memory/dossiers",
+          ".memory/ATLAS.md",
+          "cmd/repo-memory/main.go",
+          "internal/core/seed/doc_seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "When `opts.DocPaths` is empty in `SeedDocs`, previously seeded `source_doc_path` files from active `doc-seed` entries that are no longer matched by `ResolveDocSeedGlobs` (e.g., deleted files) are included in the reconciliation pass so their entries are deterministically retired with `source_doc_deleted: \u003cpath\u003e`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-1843b8b5",
+      "dossier_scope": "core/config",
+      "timestamp": "2026-10-15T20:13:25Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/config/config.go",
+          "internal/core/seed/doc_seed.go",
+          "cmd/repo-memory/cmd_seed_docs.go",
+          ".memory/dossiers",
+          ".memory/ATLAS.md",
+          "cmd/repo-memory/main.go",
+          "internal/core/seed/doc_seed_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Extracted a stable normalized key hint (`\u003cheading\u003e:\u003cbold-prefix\u003e` or table key) when present so updating the prose of a named rule or table row amends the existing `docseed-\u003chash\u003e` entry in place rather than churning entry IDs."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T20:13:25Z",
+  "batch_id": "01M50K5DM8TWR88C57PQ987K61"
+}

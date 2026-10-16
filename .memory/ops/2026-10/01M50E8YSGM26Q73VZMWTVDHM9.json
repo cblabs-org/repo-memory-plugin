@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-63f7d11a",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-15T18:47:58Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/convert.go",
+          "internal/core/seed/parser.go",
+          "internal/core/seed/gc.go",
+          "internal/core/seed/gc_test.go",
+          "cmd/repo-memory/cmd_ops_gc.go",
+          "cmd/repo-memory/main.go",
+          "evaluation/cmd/build-index/main.go",
+          ".memory/ops",
+          ".agents/skills/principal-architect-workspace"
+        ],
+        "entry_type": "decision",
+        "text": "Filtered module-derivation anchor inputs in `RunOpsGC` to multi-segment non-dot paths (`strings.Contains(a, \"/\") \u0026\u0026 !strings.HasPrefix(a, \".\")`) so root-level files (`Makefile`, `.gitignore`) and dot-directories (`.agents/...`, `.memory/...`) map cleanly to `\"root\"` without creating spurious `.agents` or `Makefile` module scopes during scope repair."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T18:47:58Z",
+  "batch_id": "01M50E8YSGM26Q73VZMWTVDHM9"
+}

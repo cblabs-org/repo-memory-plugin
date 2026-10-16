@@ -17,12 +17,13 @@ import (
 )
 
 var (
-	reprojectRepo      string
-	reprojectDataDir   string
-	reprojectOpsDir    string
-	reprojectDryRun    bool
-	reprojectJSON      bool
-	reprojectAllowLoss bool
+	reprojectRepo         string
+	reprojectDataDir      string
+	reprojectOpsDir       string
+	reprojectDryRun       bool
+	reprojectJSON         bool
+	reprojectAllowLoss    bool
+	reprojectIncludeLocal bool
 )
 
 var reprojectCmd = &cobra.Command{
@@ -81,7 +82,7 @@ var reprojectCmd = &cobra.Command{
 		}
 
 		opsDirs := []string{primaryOpsDir}
-		if dataDir != "" {
+		if reprojectIncludeLocal && dataDir != "" {
 			if repoID != "" {
 				opsDirs = append(opsDirs,
 					filepath.Join(dataDir, "repos", repoID, "ops-local"),
@@ -165,4 +166,5 @@ func init() {
 	reprojectCmd.Flags().BoolVar(&reprojectDryRun, "dry-run", false, "Preview reprojection changes without mutating disk")
 	reprojectCmd.Flags().BoolVar(&reprojectJSON, "json", false, "Output JSON result")
 	reprojectCmd.Flags().BoolVar(&reprojectAllowLoss, "allow-loss", false, "Allow overwriting unrecorded entries or decisions missing from ops")
+	reprojectCmd.Flags().BoolVar(&reprojectIncludeLocal, "include-local", false, "Overlay local branch ops-local and user ops directories from dataDir")
 }

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-734cff19",
+      "dossier_scope": "core/consolidate",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/consolidate/record.go",
+          "internal/core/consolidate/record_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Invoked `scrub.Scrub(\"\", opScrubCtx)` once upfront on every op so malformed Layer 3 `.memory/scrub.yaml` configs fail closed even on ops without optional text fields."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T09:16:46Z",
+  "batch_id": "01M51ZZS1GDQVETHTW7JBR1QNM"
+}

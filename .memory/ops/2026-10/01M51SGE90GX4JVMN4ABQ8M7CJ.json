@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-ed66fa39",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-16T07:23:32Z",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Expressed the $\\ge 1024$-byte contiguous blob pattern in Go's `regexp` package as `[A-Za-z0-9+/=]{512,}[A-Za-z0-9+/=]{512,}` and deferred $\\ge 1024$-char hex strings from Layer 2 to Layer 4 because Go's RE2 engine caps `{min,max}` repeat quantifiers at `1000`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c9aa1eab",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-16T07:23:32Z",
+      "source": "seed",
+      "fields": {
+        "anchors": null,
+        "entry_type": "decision",
+        "text": "Validated custom rules from `.memory/scrub.yaml` and `scrub.local.yaml` at the start of `Scrub` so malformed configs or forbidden keys (`allow`, `disable`, `whitelist`) fail closed deterministically even on empty strings."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T07:23:32Z",
+  "batch_id": "01M51SGE90GX4JVMN4ABQ8M7CJ"
+}

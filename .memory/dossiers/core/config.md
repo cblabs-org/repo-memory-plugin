@@ -25,11 +25,20 @@
 ### [seed-1469d423] Custom `**` matching: Go's `filepath.Match` does not correctly handle `**` for deep recursive directory matching. I added a simple fallback in `AssignSubsystem` to check `strings.HasPrefix` when the glob ends with `/**` to ensure files in deep subdirectories are matched correctly.
 `decision · kind: episodic · anchors: internal/core/config/config.go, .memory/config.yaml, internal/core/config/config_test.go, internal/core/config/subsystem.go, internal/core/config/subsystem_test.go`
 
+### [seed-1843b8b5] Extracted a stable normalized key hint (`<heading>:<bold-prefix>` or table key) when present so updating the prose of a named rule or table row amends the existing `docseed-<hash>` entry in place rather than churning entry IDs.
+`decision · kind: episodic · anchors: internal/core/config/config.go, internal/core/seed/doc_seed.go, cmd/repo-memory/cmd_seed_docs.go, .memory/dossiers, .memory/ATLAS.md, cmd/repo-memory/main.go, internal/core/seed/doc_seed_test.go`
+
 ### [seed-1e638d55] Anchors and path segments are normalized with forward slashes and underscores converted to hyphens to ensure consistent kebab-case scope names matching the v2 design.
 `decision · kind: episodic · anchors: internal/core/config/scopes.go, internal/core/config/scopes_test.go`
 
+### [seed-1faac572] When `opts.DocPaths` is empty in `SeedDocs`, previously seeded `source_doc_path` files from active `doc-seed` entries that are no longer matched by `ResolveDocSeedGlobs` (e.g., deleted files) are included in the reconciliation pass so their entries are deterministically retired with `source_doc_deleted: <path>`.
+`decision · kind: episodic · anchors: internal/core/config/config.go, internal/core/seed/doc_seed.go, cmd/repo-memory/cmd_seed_docs.go, .memory/dossiers, .memory/ATLAS.md, cmd/repo-memory/main.go, internal/core/seed/doc_seed_test.go`
+
 ### [seed-2e4a38a5] `EnsureStorageLayout`: Implemented as `EnsureStorageLayout(dataDir, repoID string, repoRoot ...string) error`, plus standalone `EnsureDataDirLayout` and `EnsureRepoLayout` helpers. This preserves the 2-argument signature specified in WO3 line-item instructions while allowing caller to optionally pass `repoRoot` for the repository `.memory` structure.
 `decision · kind: episodic · anchors: internal/core/config/datadir.go, internal/core/config/config.go, internal/core/config/layout.go, internal/core/config/config_test.go, go.mod, go.sum`
+
+### [seed-483a4548] In `RecordBranchTier`, rendered `.md` and `.history.md` files both under `<branchDossiersDir>/dossiers/` (via `dossiers.NewWriter`) and directly at `<branchDossiersDir>/<scope>.md` so both `SPEC.md` §5.4 direct inspection and `dossiers.NewWriter` conventions succeed.
+`decision · kind: episodic · anchors: internal/core/config/layout.go, .memory/.gitignore, internal/core/index/rebuild.go, internal/core/gitops/worktree.go, internal/core/gitops/worktree_test.go, internal/core/consolidate/publish.go, internal/core/consolidate/publish_test.go`
 
 ### [seed-684b9213] Standardized canonical checkpoint titles (`User Knowledge`, `Model Knowledge`, `Work Accomplished`, `Current Work`, `Outstanding User Requests`, `Files and Code`) while mapping common synonyms (e.g. `Current Work and Next Steps` -> `Current Work`, `User Requests` -> `Outstanding User Requests`) and supporting custom markdown sections.
 `decision · kind: episodic · anchors: internal/core/config/layout.go, internal/core/episode/store.go, internal/core/evidence/checkpoint.go, internal/core/evidence/parser.go, internal/core/evidence/builder.go, internal/core/evidence/checkpoint_test.go, internal/core/tick/pipeline.go, internal/core/tick/pipeline_test.go`
