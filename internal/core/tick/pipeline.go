@@ -210,6 +210,8 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		}
 	}
 
+	p.refreshFreshnessState(ctx, false)
+
 	return nil
 }
 

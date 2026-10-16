@@ -8,12 +8,98 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/coverage"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 )
+
+// FormatFreshnessLine computes or reads the live A6 freshness state and formats the exact 1-line header
+// from Addendum A §7.2:
+//
+//	memory: <index status> · <HEAD status> · <N> notes not yet consolidated · <M> entries suspect
+func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, idx *index.Index, inboxStore *inbox.Store) string {
+	return tick.FormatFreshnessLine(ctx, dataDir, repoID, repoRoot, idx, inboxStore)
+}
+
+func (s *Server) resolveInboxStore() *inbox.Store {
+	if s.inboxStore != nil {
+		return s.inboxStore
+	}
+	if s.dataDir != "" && s.repoID != "" {
+		return inbox.NewStore(s.dataDir, s.repoID)
+	}
+	return nil
+}
+
+func (s *Server) gapThreshold() float64 {
+	if s.repoRoot != "" {
+		if cfg, err := config.LoadRepoConfig(s.repoRoot); err == nil && cfg.Gaps.Threshold > 0 {
+			return cfg.Gaps.Threshold
+		}
+	}
+	return coverage.DefaultGapThreshold
+}
+
+type matchedNoteItem struct {
+	note *inbox.Note
+	item inbox.NoteItem
+}
+
+func noteItemMatchesScope(item inbox.NoteItem, scope string) bool {
+	target := strings.ToLower(strings.TrimSpace(scope))
+	if target == "" {
+		return false
+	}
+	if strings.ToLower(strings.TrimSpace(item.Scope)) == target {
+		return true
+	}
+	for _, a := range item.Anchors {
+		clean := strings.ToLower(strings.TrimSpace(a))
+		if idx := strings.Index(clean, "#"); idx >= 0 {
+			clean = clean[:idx]
+		}
+		if idx := strings.Index(clean, ":l"); idx >= 0 {
+			clean = clean[:idx]
+		}
+		clean = strings.Trim(filepath.ToSlash(clean), "/")
+		if clean == target ||
+			strings.HasPrefix(clean, target+"/") ||
+			strings.HasSuffix(clean, "/"+target) ||
+			strings.Contains(clean, "/"+target+"/") ||
+			strings.ToLower(filepath.Base(filepath.Dir(clean))) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func formatNoteItemWhyDo(item inbox.NoteItem) string {
+	why := strings.TrimSpace(item.Why)
+	do := strings.TrimSpace(item.Do)
+	if why != "" && do != "" {
+		return why + " / " + do
+	}
+	if why != "" {
+		return why
+	}
+	if do != "" {
+		return do
+	}
+	return strings.TrimSpace(item.Evidence)
+}
+
+func formatNoteBranch(note *inbox.Note) string {
+	if note != nil && strings.TrimSpace(note.Branch) != "" {
+		return strings.TrimSpace(note.Branch)
+	}
+	return "main"
+}
 
 // MemoryBriefRequest represents the input to the memory.brief tool.
 type MemoryBriefRequest struct {
@@ -136,7 +222,26 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 		}
 	}
 
+	inboxStore := s.resolveInboxStore()
+	var matchedNotes []matchedNoteItem
+	if inboxStore != nil {
+		if unconsolidated, uErr := inboxStore.ListUnconsolidated(); uErr == nil {
+			for _, n := range unconsolidated {
+				if n == nil {
+					continue
+				}
+				for _, it := range n.Items {
+					if noteItemMatchesScope(it, scope) {
+						matchedNotes = append(matchedNotes, matchedNoteItem{note: n, item: it})
+					}
+				}
+			}
+		}
+	}
+
 	var b strings.Builder
+	b.WriteString(FormatFreshnessLine(ctx, s.dataDir, s.repoID, s.repoRoot, s.idx, inboxStore))
+	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("Scope: %s (%d entries)\n", scope, len(active)))
 	for _, e := range active {
 		text := e.Text
@@ -145,6 +250,24 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 			text = string(runes[:200])
 		}
 		b.WriteString(fmt.Sprintf("[%s] %s: %s\n", e.Type, e.ID, text))
+	}
+
+	if len(matchedNotes) > 0 {
+		b.WriteString("Unconsolidated Inbox Notes (unconsolidated):\n")
+		for _, m := range matchedNotes {
+			b.WriteString(fmt.Sprintf("[unconsolidated %s] (%s) %s: %s — %s\n",
+				m.note.ID,
+				formatNoteBranch(m.note),
+				m.item.Type,
+				strings.TrimSpace(m.item.Title),
+				formatNoteItemWhyDo(m.item),
+			))
+		}
+	}
+
+	gapLines := coverage.FormatGapLinesForScope(scope, active, len(matchedNotes), s.gapThreshold())
+	for _, gl := range gapLines {
+		b.WriteString(gl + "\n")
 	}
 
 	return MemoryBriefResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
@@ -157,8 +280,16 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 		return MemoryWhyResponse{}, errors.New("entryId is required")
 	}
 
+	inboxStore := s.resolveInboxStore()
+	freshnessLine := FormatFreshnessLine(ctx, s.dataDir, s.repoID, s.repoRoot, s.idx, inboxStore)
+
 	entry, err := s.idx.GetEntry(ctx, entryID)
 	if err != nil {
+		if errors.Is(err, index.ErrNotFound) && inboxStore != nil {
+			if noteResp, ok := findUnconsolidatedNoteWhy(inboxStore, entryID, freshnessLine); ok {
+				return MemoryWhyResponse{Result: noteResp}, nil
+			}
+		}
 		return MemoryWhyResponse{}, fmt.Errorf("getting entry %s: %w", entryID, err)
 	}
 
@@ -172,6 +303,7 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 	}
 
 	var b strings.Builder
+	b.WriteString(freshnessLine + "\n")
 	b.WriteString(fmt.Sprintf("Entry: %s\n", entry.ID))
 	b.WriteString(fmt.Sprintf("Type: %s\n", entry.Type))
 	b.WriteString(fmt.Sprintf("Scope: %s\n", entry.DossierScope))
@@ -230,6 +362,66 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 	}
 
 	return MemoryWhyResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
+}
+
+func findUnconsolidatedNoteWhy(inboxStore *inbox.Store, target string, freshnessLine string) (string, bool) {
+	unconsolidated, err := inboxStore.ListUnconsolidated()
+	if err != nil || len(unconsolidated) == 0 {
+		return "", false
+	}
+	targetLower := strings.ToLower(strings.TrimSpace(target))
+
+	for _, n := range unconsolidated {
+		if n == nil {
+			continue
+		}
+		idMatch := strings.EqualFold(strings.TrimSpace(n.ID), targetLower)
+		for _, it := range n.Items {
+			itemMatch := idMatch || strings.Contains(strings.ToLower(it.Title), targetLower)
+			if !itemMatch {
+				for _, a := range it.Anchors {
+					if strings.EqualFold(strings.TrimSpace(a), targetLower) || strings.Contains(strings.ToLower(a), targetLower) {
+						itemMatch = true
+						break
+					}
+				}
+			}
+			if itemMatch {
+				var b strings.Builder
+				b.WriteString(freshnessLine + "\n")
+				b.WriteString(fmt.Sprintf("Note: %s\n", n.ID))
+				b.WriteString("Status: unconsolidated\n")
+				b.WriteString(fmt.Sprintf("Source: %s\n", n.Source))
+				b.WriteString(fmt.Sprintf("Branch: %s\n", formatNoteBranch(n)))
+				b.WriteString(fmt.Sprintf("Type: %s\n", it.Type))
+				scope := strings.TrimSpace(it.Scope)
+				if scope == "" {
+					scope = "general"
+				}
+				b.WriteString(fmt.Sprintf("Scope: %s\n", scope))
+				b.WriteString(fmt.Sprintf("Title: %s\n", strings.TrimSpace(it.Title)))
+				if strings.TrimSpace(it.Why) != "" {
+					b.WriteString(fmt.Sprintf("Why: %s\n", strings.TrimSpace(it.Why)))
+				}
+				if strings.TrimSpace(it.Do) != "" {
+					b.WriteString(fmt.Sprintf("Do: %s\n", strings.TrimSpace(it.Do)))
+				}
+				if len(it.Anchors) > 0 {
+					b.WriteString(fmt.Sprintf("Anchors: %s\n", strings.Join(it.Anchors, ", ")))
+				} else {
+					b.WriteString("Anchors: none\n")
+				}
+				if strings.TrimSpace(it.Evidence) != "" {
+					b.WriteString(fmt.Sprintf("Evidence: %s\n", strings.TrimSpace(it.Evidence)))
+				}
+				if !n.CreatedAt.IsZero() {
+					b.WriteString(fmt.Sprintf("Created: %s\n", n.CreatedAt.Format(time.RFC3339)))
+				}
+				return strings.TrimRight(b.String(), "\n"), true
+			}
+		}
+	}
+	return "", false
 }
 
 // HandleMemoryHistory implements the memory.history tool handler.
@@ -334,12 +526,15 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 		return MemorySearchResponse{Result: "No results found."}, nil
 	}
 
+	inboxStore := s.resolveInboxStore()
+	matchedNotes := searchUnconsolidatedNotes(inboxStore, query)
+
 	results, err := s.idx.SearchEntries(ctx, query)
-	if err != nil {
+	if err != nil && len(matchedNotes) == 0 {
 		return MemorySearchResponse{}, fmt.Errorf("searching entries with %q: %w", query, err)
 	}
 
-	if len(results) == 0 {
+	if len(results) == 0 && len(matchedNotes) == 0 {
 		return MemorySearchResponse{Result: "No results found."}, nil
 	}
 
@@ -354,6 +549,8 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 	}
 
 	var b strings.Builder
+	b.WriteString(FormatFreshnessLine(ctx, s.dataDir, s.repoID, s.repoRoot, s.idx, inboxStore))
+	b.WriteString("\n")
 	for i, e := range results {
 		text := e.Text
 		runes := []rune(text)
@@ -362,8 +559,70 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 		}
 		b.WriteString(fmt.Sprintf("%d. [%s] %s (%s): %s\n", i+1, e.Type, e.ID, e.DossierScope, text))
 	}
+	for _, m := range matchedNotes {
+		scope := strings.TrimSpace(m.item.Scope)
+		if scope == "" {
+			scope = "general"
+		}
+		b.WriteString(fmt.Sprintf("[unconsolidated] %s (%s, branch: %s): %s — %s\n",
+			m.note.ID,
+			scope,
+			formatNoteBranch(m.note),
+			strings.TrimSpace(m.item.Title),
+			formatNoteItemWhyDo(m.item),
+		))
+	}
 
 	return MemorySearchResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
+}
+
+func searchUnconsolidatedNotes(inboxStore *inbox.Store, query string) []matchedNoteItem {
+	if inboxStore == nil {
+		return nil
+	}
+	unconsolidated, err := inboxStore.ListUnconsolidated()
+	if err != nil || len(unconsolidated) == 0 {
+		return nil
+	}
+	qLower := strings.ToLower(strings.TrimSpace(query))
+	if qLower == "" {
+		return nil
+	}
+	tokens := strings.Fields(qLower)
+
+	var out []matchedNoteItem
+	for _, n := range unconsolidated {
+		if n == nil {
+			continue
+		}
+		for _, it := range n.Items {
+			haystack := strings.ToLower(strings.Join([]string{
+				n.ID,
+				it.Title,
+				it.Why,
+				it.Do,
+				it.Evidence,
+				it.Scope,
+				strings.Join(it.Anchors, " "),
+			}, " "))
+			matched := strings.Contains(haystack, qLower)
+			if !matched && len(tokens) > 0 {
+				allTokens := true
+				for _, tok := range tokens {
+					cleanTok := strings.Trim(tok, "*\"'")
+					if cleanTok != "" && !strings.Contains(haystack, cleanTok) {
+						allTokens = false
+						break
+					}
+				}
+				matched = allTokens
+			}
+			if matched {
+				out = append(out, matchedNoteItem{note: n, item: it})
+			}
+		}
+	}
+	return out
 }
 
 // HandleMemoryNote implements the memory.note tool handler.

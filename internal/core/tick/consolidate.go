@@ -74,12 +74,17 @@ type ConsolidationResult struct {
 	EstimatedInputTokens int               `json:"estimated_input_tokens"`
 }
 
-// FreshnessState tracks capture and consolidation freshness at <dataDir>/<repoID>/state/freshness.json.
+// FreshnessState tracks capture, consolidation, and index freshness at <dataDir>/<repoID>/state/freshness.json (Addendum A §7).
 type FreshnessState struct {
 	LastCaptureAt       string `json:"last_capture_at,omitempty"`
 	LastConsolidationAt string `json:"last_consolidation_at,omitempty"`
 	UnconsolidatedNotes int    `json:"unconsolidated_notes"`
 	ActiveEntries       int    `json:"active_entries"`
+	IndexOpLogBatchID   string `json:"index_oplog_batch_id,omitempty"`
+	IndexCurrentToOpLog bool   `json:"index_current_to_oplog"`
+	IndexHeadSHA        string `json:"index_head_sha,omitempty"`
+	HeadMovedSinceBuild bool   `json:"head_moved_since_build"`
+	SuspectEntries      int    `json:"suspect_entries"`
 	UpdatedAt           string `json:"updated_at"`
 }
 
@@ -188,36 +193,40 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 				}
 			}
 			_ = p.rebuildMultiTierIndex(ctx)
-			repoDossiers := projectOpsDir(ctx, filepath.Join(p.repoRoot, ".memory", "ops"))
-			st, _ := LoadFreshnessState(p.dataDir, p.repoID)
-			if st == nil {
-				st = &FreshnessState{}
-			}
-			st.UnconsolidatedNotes = 0
-			st.ActiveEntries = countActiveEntries(repoDossiers)
-			st.UpdatedAt = now.Format(time.RFC3339)
-			_ = SaveFreshnessState(p.dataDir, p.repoID, st)
+			p.refreshFreshnessState(ctx, false)
 		}
 		res.Skipped = len(promotedBatches) == 0
 		res.SkipReason = "no_unconsolidated_notes"
 		return res, nil
 	}
 
-	// 3. Cadence Trigger Check (when !opts.Force && !opts.DryRun).
+	// 3. Cadence & A5 Spend Guard Check (when !opts.Force && !opts.DryRun).
 	st, _ := LoadFreshnessState(p.dataDir, p.repoID)
 	if st == nil {
 		st = &FreshnessState{}
+	}
+	effSpend := p.effectiveSpendConfig()
+	consSpendCfg := effSpend.Jobs["consolidation"]
+	minInterval := DefaultConsolidationMaxAge
+	if consSpendCfg.MinInterval != "" {
+		if parsedDur, parseErr := time.ParseDuration(consSpendCfg.MinInterval); parseErr == nil && parsedDur > 0 {
+			minInterval = parsedDur
+		}
 	}
 	if !opts.Force && !opts.DryRun {
 		due := len(notes) >= DefaultConsolidationMinNotes
 		if !due {
 			if lastStr := strings.TrimSpace(st.LastConsolidationAt); lastStr != "" {
-				if lastTS, parseErr := time.Parse(time.RFC3339, lastStr); parseErr != nil || now.Sub(lastTS) >= DefaultConsolidationMaxAge {
+				if lastTS, parseErr := time.Parse(time.RFC3339, lastStr); parseErr != nil || now.Sub(lastTS) >= minInterval {
+					due = true
+				}
+			} else if guardSt, gErr := LoadSpendGuardState(p.dataDir, p.repoID); gErr == nil && strings.TrimSpace(guardSt.LastRunAt["consolidation"]) != "" {
+				if lastTS, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(guardSt.LastRunAt["consolidation"])); parseErr != nil || now.Sub(lastTS) >= minInterval {
 					due = true
 				}
 			} else {
 				oldestCreated := notes[0].CreatedAt
-				if oldestCreated.IsZero() || now.Sub(oldestCreated) >= DefaultConsolidationMaxAge {
+				if oldestCreated.IsZero() || now.Sub(oldestCreated) >= minInterval {
 					due = true
 				}
 			}
@@ -230,6 +239,12 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 			res.SkipReason = "cadence_not_due"
 			return res, nil
 		}
+	}
+
+	// Enforce A5 max_items batch cap per consolidation run.
+	_, _, maxItems := p.CheckSpendGuard("consolidation", opts.Force)
+	if maxItems > 0 && len(notes) > maxItems {
+		notes = notes[:maxItems]
 	}
 
 	// 4. Quota & Budget Guard (when !opts.DryRun && p.hk != nil).
@@ -394,11 +409,16 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 	}
 	repoInputs := buildDossierInputs(consolidate.TierRepo, "", repoDedup.Remaining, repoDossiers, brokenByScope, atlasSummary)
 
-	res.EstimatedInputTokens = estimateConsolidationTokens(userInputs)
+	rawEst := estimateConsolidationTokens(userInputs)
 	for _, slug := range branchSlugs {
-		res.EstimatedInputTokens += estimateConsolidationTokens(branchInputs[slug])
+		rawEst += estimateConsolidationTokens(branchInputs[slug])
 	}
-	res.EstimatedInputTokens += estimateConsolidationTokens(repoInputs)
+	rawEst += estimateConsolidationTokens(repoInputs)
+	if guardSt, gErr := LoadSpendGuardState(p.dataDir, p.repoID); gErr == nil {
+		res.EstimatedInputTokens = int(float64(rawEst)*guardSt.CalibrationMultiplier() + 0.5)
+	} else {
+		res.EstimatedInputTokens = rawEst
+	}
 
 	// 8. Dry-Run Handling (opts.DryRun == true).
 	if opts.DryRun {
@@ -443,6 +463,9 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 	if err != nil {
 		return nil, err
 	}
+
+	actualTokens := res.Usage.InputTokens + res.Usage.OutputTokens
+	p.RecordSpendRun("consolidation", res.EstimatedInputTokens, actualTokens)
 
 	userCandidateOps := append(append([]ops.Op(nil), userDedup.AmendOps...), userLLMOps...)
 	repoCandidateOps := append(append([]ops.Op(nil), repoDedup.AmendOps...), repoLLMOps...)
@@ -534,11 +557,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		return nil, fmt.Errorf("rebuilding multi-tier index: %w", err)
 	}
 
-	st.LastConsolidationAt = now.Format(time.RFC3339)
-	st.UnconsolidatedNotes = 0
-	st.ActiveEntries = countActiveEntries(repoDossiers)
-	st.UpdatedAt = now.Format(time.RFC3339)
-	_ = SaveFreshnessState(p.dataDir, p.repoID, st)
+	p.refreshFreshnessState(ctx, true)
 
 	return res, nil
 }
@@ -941,3 +960,221 @@ func allowedIDsFromNotesAndEpisodes(notes []*inbox.Note, episodesByConv map[stri
 	}
 	return allowed
 }
+
+// refreshFreshnessState computes and persists the full A6 FreshnessState at <dataDir>/<repoID>/state/freshness.json.
+func (p *PipelineExecutor) refreshFreshnessState(ctx context.Context, updateLastConsolidation bool) {
+	if strings.TrimSpace(p.dataDir) == "" || strings.TrimSpace(p.repoID) == "" {
+		return
+	}
+	now := p.now()
+	st, _ := LoadFreshnessState(p.dataDir, p.repoID)
+	if st == nil {
+		st = &FreshnessState{}
+	}
+	if updateLastConsolidation {
+		st.LastConsolidationAt = now.Format(time.RFC3339)
+	}
+
+	if unconsolidated, err := inbox.NewStore(p.dataDir, p.repoID).ListUnconsolidated(); err == nil {
+		st.UnconsolidatedNotes = len(unconsolidated)
+	}
+
+	activeCount, suspectCount := countActiveAndSuspectEntries(ctx, p.dataDir, p.repoID, p.repoRoot, p.idx)
+	st.ActiveEntries = activeCount
+	st.SuspectEntries = suspectCount
+
+	latestBatch := latestOpLogBatchID(ctx, p.dataDir, p.repoID, p.repoRoot)
+	st.IndexOpLogBatchID = latestBatch
+	st.IndexCurrentToOpLog = true
+
+	headSHA := currentGitHeadSHA(ctx, p.repoRoot)
+	st.IndexHeadSHA = headSHA
+	st.HeadMovedSinceBuild = false
+
+	st.UpdatedAt = now.Format(time.RFC3339)
+	_ = SaveFreshnessState(p.dataDir, p.repoID, st)
+}
+
+func countActiveAndSuspectEntries(ctx context.Context, dataDir, repoID, repoRoot string, idx *index.Index) (active int, suspect int) {
+	if idx != nil {
+		if entries, err := idx.ListAllEntries(ctx); err == nil {
+			for _, e := range entries {
+				if e.Retired || e.SupersededBy != "" {
+					continue
+				}
+				active++
+				if e.StaleSuspect || strings.EqualFold(strings.TrimSpace(e.Verified), "suspect") {
+					suspect++
+				}
+			}
+			return active, suspect
+		}
+	}
+
+	var repoOpsDir string
+	if strings.TrimSpace(repoRoot) != "" {
+		repoOpsDir = filepath.Join(repoRoot, ".memory", "ops")
+	}
+	repoDossiers := projectOpsDir(ctx, repoOpsDir)
+
+	var userOpsDir string
+	if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
+		userOpsDir = filepath.Join(consolidate.UserTierBaseDir(dataDir, repoID), "ops")
+	}
+	userDossiers := projectOpsDir(ctx, userOpsDir)
+
+	branchDossiers := loadAllBranchDossiers(ctx, repoRoot)
+	allActive := combineAllActiveEntries(repoDossiers, userDossiers, branchDossiers)
+	for _, e := range allActive {
+		active++
+		if e.StaleSuspect || strings.EqualFold(strings.TrimSpace(e.Verified), "suspect") {
+			suspect++
+		}
+	}
+	return active, suspect
+}
+
+func latestOpLogBatchID(ctx context.Context, dataDir, repoID, repoRoot string) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var dirs []string
+	if strings.TrimSpace(repoRoot) != "" {
+		dirs = append(dirs, filepath.Join(repoRoot, ".memory", "ops"))
+		if currentBranch, err := gitops.GetCurrentBranchWithContext(ctx, repoRoot); err == nil && strings.TrimSpace(currentBranch) != "" {
+			dirs = append(dirs, consolidate.BranchTierOpsDir(repoRoot, currentBranch))
+		}
+	}
+	if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
+		dirs = append(dirs, filepath.Join(consolidate.UserTierBaseDir(dataDir, repoID), "ops"))
+	}
+
+	var latestID string
+	var latestTS time.Time
+	for _, dir := range dirs {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		reader := ops.NewReader(dir)
+		for batch, err := range reader.Iterate(ctx) {
+			if err != nil || batch == nil {
+				continue
+			}
+			if latestID == "" || batch.CreatedAt.After(latestTS) || (batch.CreatedAt.Equal(latestTS) && batch.BatchID > latestID) {
+				latestID = batch.BatchID
+				latestTS = batch.CreatedAt
+			}
+		}
+	}
+	return latestID
+}
+
+func currentGitHeadSHA(ctx context.Context, repoRoot string) string {
+	if strings.TrimSpace(repoRoot) == "" {
+		return ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	sha, err := gitops.GetHeadCommitWithContext(ctx, repoRoot)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(sha)
+}
+
+func formatCompactAge(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Minute {
+		secs := int(d.Seconds())
+		if secs <= 0 {
+			return "0s"
+		}
+		return fmt.Sprintf("%ds", secs)
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// FormatFreshnessLine computes or reads the live A6 freshness state and formats the exact 1-line header
+// from Addendum A §7.2:
+//
+//	memory: <index status> · <HEAD status> · <N> notes not yet consolidated · <M> entries suspect
+func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, idx *index.Index, inboxStore *inbox.Store) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	st, _ := LoadFreshnessState(dataDir, repoID)
+	diskBatchID := latestOpLogBatchID(ctx, dataDir, repoID, repoRoot)
+
+	indexCurrent := true
+	if st != nil && strings.TrimSpace(st.UpdatedAt) != "" {
+		if !st.IndexCurrentToOpLog {
+			indexCurrent = false
+		} else if diskBatchID != "" && st.IndexOpLogBatchID != diskBatchID {
+			indexCurrent = false
+		}
+	} else if diskBatchID != "" {
+		indexCurrent = false
+	}
+
+	indexStatus := "index current to op-log"
+	if !indexCurrent {
+		ageStr := "unknown"
+		refTS := ""
+		if st != nil {
+			refTS = strings.TrimSpace(st.LastConsolidationAt)
+			if refTS == "" {
+				refTS = strings.TrimSpace(st.UpdatedAt)
+			}
+		}
+		if refTS != "" {
+			if parsed, err := time.Parse(time.RFC3339, refTS); err == nil {
+				ageStr = formatCompactAge(time.Since(parsed))
+			}
+		}
+		indexStatus = fmt.Sprintf("index behind op-log (last built %s ago)", ageStr)
+	}
+
+	liveHead := currentGitHeadSHA(ctx, repoRoot)
+	headMoved := false
+	if st != nil && st.HeadMovedSinceBuild {
+		headMoved = true
+	} else if liveHead != "" && st != nil && strings.TrimSpace(st.IndexHeadSHA) != "" && liveHead != strings.TrimSpace(st.IndexHeadSHA) {
+		headMoved = true
+	}
+	headStatus := "HEAD matches last build"
+	if headMoved {
+		headStatus = "HEAD moved since last build"
+	}
+
+	unconsolidatedCount := 0
+	if inboxStore != nil {
+		if notes, err := inboxStore.ListUnconsolidated(); err == nil {
+			unconsolidatedCount = len(notes)
+		}
+	} else if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
+		if notes, err := inbox.NewStore(dataDir, repoID).ListUnconsolidated(); err == nil {
+			unconsolidatedCount = len(notes)
+		}
+	} else if st != nil {
+		unconsolidatedCount = st.UnconsolidatedNotes
+	}
+
+	_, suspectCount := countActiveAndSuspectEntries(ctx, dataDir, repoID, repoRoot, idx)
+	if suspectCount == 0 && idx == nil && st != nil && st.SuspectEntries > 0 {
+		suspectCount = st.SuspectEntries
+	}
+
+	return fmt.Sprintf("memory: %s · %s · %d notes not yet consolidated · %d entries suspect",
+		indexStatus, headStatus, unconsolidatedCount, suspectCount)
+}
+
