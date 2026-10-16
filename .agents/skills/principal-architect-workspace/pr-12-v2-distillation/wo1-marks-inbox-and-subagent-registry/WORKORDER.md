@@ -28,7 +28,7 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
   - Do NOT modify `Stop` hook logic (`hooks.go`) — that belongs to WO2.
   - Do NOT modify `tick/pipeline.go` — that belongs to WO3 and WO5.
   - Do NOT import `internal/harness/...` from any package under `internal/core/...` (`boundary_test.go` enforces this).
-  - NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute `/usr/local/google/...` paths) in any code, comment, or commit message.
+  - NEVER include any proprietary internal references (`cl/`, `b/`, `go/`, or absolute `/home/<user>/...` paths) in any code, comment, or commit message.
   - All git commits must use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"`.
 
 ## Tooling Constraints

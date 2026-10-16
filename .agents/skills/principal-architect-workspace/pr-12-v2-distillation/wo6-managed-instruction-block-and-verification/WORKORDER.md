@@ -112,7 +112,7 @@ Create `internal/core/config/managed_block.go` implementing Addendum A §8 (`A8:
 - [x] `cmd_enroll.go`, `cmd_unenroll.go`, and `cmd_doctor.go` wired and passing all tests in `cmd/repo-memory/...`.
 - [x] `~/.local/bin/repo-memory` rebuilt from the `WO6` branch.
 - [x] `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./cmd/... ./internal/... ./packaging/...` pass with zero errors.
-- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] Zero proprietary internal references (`cl/`, `b/`, `go/`, `/home/<user>/...`) in any file or commit message.
 
 ## Completion Report
 

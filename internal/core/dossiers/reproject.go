@@ -43,6 +43,7 @@ type ReprojectResult struct {
 	PreExistingEntries      int                  `json:"pre_existing_entries"`
 	VerifiedPreserved       int                  `json:"verified_preserved"`
 	HumanDecisionsPreserved int                  `json:"human_decisions_preserved"`
+	HandEditsCaptured       int                  `json:"hand_edits_captured,omitempty"`
 	FilesAdded              []string             `json:"files_added,omitempty"`
 	FilesUpdated            []string             `json:"files_updated,omitempty"`
 	FilesUnchanged          []string             `json:"files_unchanged,omitempty"`
@@ -162,6 +163,68 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 
 	if len(res.LostEntries) > 0 && !opts.AllowLoss {
 		return res, dossiersMap, fmt.Errorf("%w: %d entries/decisions missing", ErrHumanDecisionLost, len(res.LostEntries))
+	}
+
+	// Detect and capture any human prose edits (OpAmend / OpAdd) on existing on-disk dossier files before re-rendering.
+	var handOps []ops.Op
+	var sortedScopes []string
+	for s := range dossiersMap {
+		sortedScopes = append(sortedScopes, s)
+	}
+	sort.Strings(sortedScopes)
+
+	for _, scopeKey := range sortedScopes {
+		d := dossiersMap[scopeKey]
+		if d == nil || len(d.Entries) == 0 {
+			continue
+		}
+		scopeName := d.Scope
+		if scopeName == "" {
+			scopeName = scopeKey
+		}
+		diskPath := filepath.Join(dossiersDir, filepath.FromSlash(scopeName)+".md")
+		existingBytes, err := os.ReadFile(diskPath)
+		if err != nil {
+			continue
+		}
+		rendered := RenderDossier(d)
+		detected, err := DetectHandEdits(rendered, string(existingBytes), scopeName)
+		if err != nil || len(detected) == 0 {
+			continue
+		}
+		for _, op := range detected {
+			if op.Type == ops.OpAdd && opts.AllowLoss {
+				continue
+			}
+			handOps = append(handOps, op)
+		}
+	}
+
+	if len(handOps) > 0 {
+		res.HandEditsCaptured = len(handOps)
+		entryIndex := make(map[string]string)
+		for sKey, d := range dossiersMap {
+			if d == nil {
+				continue
+			}
+			for _, e := range d.Entries {
+				entryIndex[e.ID] = sKey
+			}
+		}
+		if err := applyBatch(dossiersMap, entryIndex, &ops.OpBatch{Ops: handOps}); err != nil {
+			return res, dossiersMap, err
+		}
+		for _, d := range dossiersMap {
+			if d != nil {
+				sortDossier(d)
+			}
+		}
+		if !opts.DryRun && len(opts.OpsDirs) > 0 && strings.TrimSpace(opts.OpsDirs[0]) != "" {
+			batch := ops.NewBatch(handOps)
+			if err := ops.NewWriter(opts.OpsDirs[0]).Write(batch); err != nil {
+				return res, dossiersMap, err
+			}
+		}
 	}
 
 	// Compute expected rendered files under opts.MemoryDir and compare against disk.

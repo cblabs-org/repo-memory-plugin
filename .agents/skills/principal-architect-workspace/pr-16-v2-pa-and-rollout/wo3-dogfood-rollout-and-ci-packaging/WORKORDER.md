@@ -73,7 +73,7 @@ With all `v2.2` distillation, retrieval, governance, learning, PA integration (`
    - Run `/tmp/repo-memory-wo3 seed`, `/tmp/repo-memory-wo3 seed-docs`, `/tmp/repo-memory-wo3 ops gc --dossiers-dir .memory`, `/tmp/repo-memory-wo3 reproject`, and `/tmp/repo-memory-wo3 promote-skills` a second time.
    - Verify `/tmp/repo-memory-wo3 reproject --dry-run --json` reports `"files_added": null`, `"files_updated": null`, `"files_removed": null`, and `"questions_updated": false`.
 4. Audit `.memory/` for hygiene:
-   - Check that no local absolute paths (such as `/usr/local/google/home/...`) or internal corporate identifiers appear in `.memory/ops/`, `.memory/dossiers/`, `.memory/ATLAS.md`, or `.memory/QUESTIONS.md`. If any workorder completion report seeded a local path into `.memory/ops/`, sanitize or prune it via `ops gc` so `.memory/` is 100% clean.
+   - Check that no local absolute paths (such as `/home/<user>/...`) or proprietary internal corporate identifiers appear in `.memory/ops/`, `.memory/dossiers/`, `.memory/ATLAS.md`, or `.memory/QUESTIONS.md`. If any workorder completion report seeded a local path into `.memory/ops/`, sanitize or prune it via `ops gc` so `.memory/` is 100% clean.
 5. Also smoke-test the new PA commands on the dogfooded repository:
    - Run `/tmp/repo-memory-wo3 brief --workorder .agents/skills/principal-architect-workspace/pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md` and verify it outputs a valid `<= 600`-token workorder brief.
    - Remove `/tmp/repo-memory-wo3` when done.

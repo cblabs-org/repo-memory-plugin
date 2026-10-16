@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
 )
 
 // DefaultBriefMaxTokens is the default token ceiling for PA workorder briefs.
@@ -194,7 +196,11 @@ func normalizeWorkorderCandidatePath(raw string) string {
 	s = filepath.ToSlash(s)
 	s = strings.TrimPrefix(s, "./")
 	s = strings.TrimSuffix(s, "/")
-	if s == "" || s == "." || s == ".." || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "../") {
+	if strings.Contains(s, "..") {
+		return ""
+	}
+	s = path.Clean(s)
+	if s == "" || s == "." || s == ".." || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "../") || strings.Contains(s, "..") {
 		return ""
 	}
 
@@ -278,7 +284,7 @@ func BuildWorkorderBrief(
 		UnconsolidatedNotes: matchedNotes,
 	}
 
-	selectedEntries, selectedNotes, markdown := buildBoundedBriefMarkdown(brief, maxTokens)
+	selectedEntries, selectedNotes, markdown := buildBoundedBriefMarkdown(brief, repoRoot, maxTokens)
 	brief.Entries = selectedEntries
 	brief.UnconsolidatedNotes = selectedNotes
 	brief.BriefMarkdown = markdown
@@ -1177,6 +1183,7 @@ func buildBriefFTSQuery(extractedFiles, resolvedScopes []string) string {
 
 func buildBoundedBriefMarkdown(
 	brief *WorkorderBrief,
+	repoRoot string,
 	maxTokens int,
 ) ([]RankedEntry, []BriefNoteSummary, string) {
 	type budgetAttempt struct {
@@ -1208,6 +1215,7 @@ func buildBoundedBriefMarkdown(
 		selEntries := brief.Entries[:eCount]
 		selNotes := brief.UnconsolidatedNotes[:nCount]
 		md := renderWorkorderBriefMarkdown(
+			repoRoot,
 			brief.StatusLine,
 			brief.CoverageGaps,
 			brief.ResolvedScopes,
@@ -1222,7 +1230,7 @@ func buildBoundedBriefMarkdown(
 		}
 	}
 
-	md := renderWorkorderBriefMarkdown(brief.StatusLine, nil, brief.ResolvedScopes, nil, len(brief.Entries), nil, len(brief.UnconsolidatedNotes), 32)
+	md := renderWorkorderBriefMarkdown(repoRoot, brief.StatusLine, nil, brief.ResolvedScopes, nil, len(brief.Entries), nil, len(brief.UnconsolidatedNotes), 32)
 	maxBytes := maxTokens * 4
 	if maxBytes > 0 && len(md) > maxBytes {
 		md = strings.TrimSpace(md[:maxBytes])
@@ -1231,6 +1239,7 @@ func buildBoundedBriefMarkdown(
 }
 
 func renderWorkorderBriefMarkdown(
+	repoRoot string,
 	statusLine string,
 	coverageGaps []string,
 	resolvedScopes []string,
@@ -1271,18 +1280,7 @@ func renderWorkorderBriefMarkdown(
 		}
 	} else {
 		for _, re := range entries {
-			e := re.Entry
-			scope := strings.TrimSpace(e.DossierScope)
-			if scope == "" {
-				scope = "repo"
-			}
-			stmt := compactSingleLine(e.Text, maxTextChars)
-			prov := formatEntryProvenance(e)
-			if prov != "" {
-				b.WriteString(fmt.Sprintf("- [%s] (%s, %s) %s — %s\n", e.ID, e.Type, scope, stmt, prov))
-			} else {
-				b.WriteString(fmt.Sprintf("- [%s] (%s, %s) %s\n", e.ID, e.Type, scope, stmt))
-			}
+			b.WriteString(formatBriefEntryLine(re.Entry, repoRoot, maxTextChars) + "\n")
 		}
 		if omittedEntries > 0 {
 			b.WriteString(fmt.Sprintf("- ... (+%d more)\n", omittedEntries))
@@ -1305,6 +1303,32 @@ func renderWorkorderBriefMarkdown(
 	}
 
 	return strings.TrimSpace(b.String()) + "\n"
+}
+
+func formatBriefEntryLine(e dossiers.Entry, repoRoot string, maxTextChars int) string {
+	scopeLabel := strings.TrimSpace(e.DossierScope)
+	if scopeLabel == "" {
+		scopeLabel = "repo"
+	}
+	kindLabel := strings.TrimSpace(string(e.Type))
+	if kindLabel == "" {
+		kindLabel = "invariant"
+	}
+	if !e.Retired && !e.StaleSuspect && (e.Type == dossiers.EntryTypeRecipe || e.Type == dossiers.EntryTypeProcedure) {
+		slug := skills.GraduatedSkillSlug(e, repoRoot)
+		if slug == "" && strings.TrimSpace(e.RenderAsSkill) != "" {
+			slug = skills.SkillSlug(e)
+		}
+		if slug != "" {
+			return fmt.Sprintf("- [%s] (%s, %s) skill %s covers this procedure: %s", e.ID, kindLabel, scopeLabel, slug, skills.EntryTitleLine(e))
+		}
+	}
+	stmt := compactSingleLine(e.Text, maxTextChars)
+	prov := formatEntryProvenance(e)
+	if prov != "" {
+		return fmt.Sprintf("- [%s] (%s, %s) %s — %s", e.ID, kindLabel, scopeLabel, stmt, prov)
+	}
+	return fmt.Sprintf("- [%s] (%s, %s) %s", e.ID, kindLabel, scopeLabel, stmt)
 }
 
 func formatEntryProvenance(e dossiers.Entry) string {

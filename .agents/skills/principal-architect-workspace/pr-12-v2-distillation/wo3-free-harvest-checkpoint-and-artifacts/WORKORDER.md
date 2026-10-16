@@ -22,7 +22,7 @@ Implement deterministic zero-token Stage 1b harvest (`SPEC.md` §6.3.2 / `docs/d
 - **Forbidden:**
   - Do NOT import `internal/harness/antigravity` or any concrete adapter from `internal/core/...` (`boundary_test.go` enforces this).
   - Do NOT modify `internal/core/scrub/` or `internal/core/pipeline/prepare/` (belongs to WO4).
-  - NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute `/usr/local/google/...` paths) in any code, comment, or commit message.
+  - NEVER include any proprietary internal references (`cl/`, `b/`, `go/`, or absolute `/home/<user>/...` paths) in any code, comment, or commit message.
   - All git commits must use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"`.
 
 ## Tooling Constraints

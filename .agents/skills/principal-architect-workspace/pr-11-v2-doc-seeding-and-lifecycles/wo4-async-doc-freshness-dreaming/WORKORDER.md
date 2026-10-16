@@ -11,7 +11,7 @@ Implement Async Doc Freshness ("Dreaming", `SPEC.md` §6.3.5, `docs/design-v2-di
 
 ## Context & Architectural Constraints
 
-- **Strictly zero internal references:** Never include `google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths in any files, comments, or commit messages.
+- **Strictly zero internal references:** Never include proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any files, comments, or commit messages.
 - **Deterministic, zero-LLM freshness check:** Per `SPEC.md` §6.3.5 and `design-v2` §7.6, doc freshness during `tick` is deterministic when using `DocSeedSource`:
   - If a seeded markdown document's git blob SHA (`seed.ComputeGitBlobSHA`) matches `source_doc_blob_sha` on all its active `doc-seed` entries, it is skipped in O(1) without emitting ops.
   - If a seeded markdown document was modified on disk (blob SHA changed), `seed.SeedDocs` re-parses the file, emits `OpAmend` (and `OpMove` if scope changed) for updated entries, `OpAdd` for new entries, and `OpRetire` (`reason: "source_doc_updated: <path> (<sha>)"`) for removed bullets.

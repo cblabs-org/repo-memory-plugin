@@ -11,7 +11,7 @@ Resolve all 3 findings (`[MAJOR-1]`, `[MAJOR-2]`, `[MINOR-1]`) from the Cold-Fir
 
 ## Context & Architectural Constraints
 
-- **Strictly zero internal references:** Never include `google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths in any files, comments, or commit messages.
+- **Strictly zero internal references:** Never include proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any files, comments, or commit messages.
 - **Finding `[MAJOR-1]` (`internal/core/seed/doc_seed.go`, `.memory/`):**
   - `isPollutedScope(scope string) bool` in `internal/core/seed/gc.go` (same package `seed`) defines polluted scopes (dot-prefixed scopes like `.memory`, `.agents`, `.agents/agents`, root files like `Makefile`, `Dockerfile`, `LICENSE`, etc.).
   - In `SeedDocs` (`internal/core/seed/doc_seed.go:407-413`), `collectRepoFileAnchors(opts.RepoRoot)` walks `.agents` and root files (`Makefile`), causing `config.DeriveModuleScopes(repoFiles)` to create polluted module scopes.

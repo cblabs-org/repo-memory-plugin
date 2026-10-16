@@ -9,7 +9,7 @@ complexity: architect
 >
 > **Authorization & Governance:** Read `.agents/rules/00-operating-model.md`. This `WORKORDER.md` belongs to parent project `pr-11-v2-doc-seeding-and-lifecycles`, whose 5-WO decomposition is explicitly approved by the human in `.agents/skills/principal-architect-workspace/pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md`. You are authorized to implement and commit directly on the current branch (`pr-11-v2-doc-seeding-and-lifecycles/wo3-doc-seed-source`).
 >
-> **External GitHub Hygiene:** Never include any Google-internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or local `/usr/local/google/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
+> **External GitHub Hygiene:** Never include any proprietary internal references (`cl/`, `b/`, `go/`, or local `/home/<user>/...` paths) in any code, comments, tests, or commit messages. Use git author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`.
 
 ## Objective
 Implement `v2.2` Doc-Seeded Dossiers (`SPEC.md` §6.3.3, `docs/design-v2-distillation-retrieval.md` §7.6, `docs/addendum-a-provenance-and-hardening.md` §11.1): add `DocSeeds []string` and `ResolveDocSeedGlobs` to `internal/core/config/config.go`, implement `DocSeedSource` (`internal/core/seed/doc_seed.go`) with deterministic markdown extraction, git blob SHA provenance (`source_doc_path`, `source_doc_blob_sha`), and idempotent diff reconciliation, and expose `repo-memory seed-docs` (`cmd/repo-memory/cmd_seed_docs.go`).
