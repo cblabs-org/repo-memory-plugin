@@ -62,6 +62,7 @@ func buildRepoPathValidator(opts SeedOptions) func(string) bool {
 	if opts.RepoRoot == "" {
 		return func(string) bool { return true }
 	}
+	setActiveRepoSymbolIndex(opts.RepoRoot)
 
 	if opts.BeforeCommit != "" {
 		cmd := exec.Command("git", "ls-tree", "-r", "--name-only", opts.BeforeCommit)

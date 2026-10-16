@@ -31,7 +31,7 @@ Execute the **protected 1-Task Pilot (`Task 1: DS18B20 Temperature Sensor Module
        - Run `./evaluation/eval-v2/scripts/eval_run.sh --archive --run-id pilot-t1-a-v22` and `./evaluation/eval-v2/scripts/eval_run.sh --archive --run-id pilot-t1-c-v22`, and verify that `archive/git-diff-baseline.patch`, `archive/untracked/`, `archive/transcript.jsonl`, `archive/ledger/*.json`, `archive/marks/*.json`, `archive/notes/*.json`, and `archive/freshness.json` are all archived cleanly and `repo/` is deleted.
 3. **Consolidated Verdict Report (`docs/evaluations/v2-2-micro-probe-verdict.md`):**
    - Synthesize the findings across:
-     - **WO1 (`SEED_REPORT.md`):** Combined `seed` (`256`) + `doc-seed` (`1,027`) = `1,283` entries (`3,190` anchors, `54` subsystem dossiers, `0` `ops gc` drops);
+     - **WO1 (`SEED_REPORT.md`):** Combined `seed` (`256`) + `doc-seed` (`1,027`) = `1,283` entries (`3,203` anchors, `54` subsystem dossiers, `0` `ops gc` drops);
      - **WO2 (`v2-2-read-side-micro-probe.md`):** Multi-invocation read-side probe across Task 1 & Task 2 (`90%–100%` Precision@10, `71` and `86` active persistent rules in context at edit time vs. `0` in `v2.1`, `BuildReinjection`, `DetectRewind`);
      - **WO3 (`v2-2-write-side-micro-probe.md`):** Write-side distillation & consolidation probe across 25 real transcripts (`21.69%` milestone selectivity, `0`-token Stage 1b harvest, `62.30%` overall / `74.20%` top-session / `93.96%` PA-session `PrepareSession` reduction, `100%` `FilterEchoes` suppression, `100%` `EnforceCorroborationGate` downgrade accuracy, Five-Tier routing, `memory/pending` worktree commit);
      - **WO4 (`run_pilot_verification.sh`):** Protected Condition A vs. Condition C pilot staging, compiled `repo-memory` binary hook execution (`PreInvocation` $\to$ `Stop` $\to$ `consolidate`), rubric compliance comparison (`6/6` `esp32` subsystem contracts delivered in Condition C vs. `0/6` in Condition A), zero contamination (`check_contamination.sh`), and `v2.2` archival (`ledger/`, `marks/`, `notes/`, `freshness.json`).
@@ -49,7 +49,7 @@ Execute the **protected 1-Task Pilot (`Task 1: DS18B20 Temperature Sensor Module
 | `evaluation/eval-v2/scripts/run_pilot_verification.sh` | **Create** | Executable (`chmod +x`) end-to-end verification script running `verify_protection.sh`, `verify_template.sh`, `eval_run.sh --dry-run` (Conditions A & C), compiled `repo-memory` binary hooks (`PreInvocation`, `Stop`, `consolidate`), `check_contamination.sh`, and `eval_run.sh --archive`. |
 | `docs/evaluations/v2-2-micro-probe-verdict.md` | **Create** | Consolidated Layer 2 Micro-Probe & 1-Task Pilot Synthesis Report with explicit **GO / NO-GO** readiness gate tables for Layer 3 (`PR-10` Stage 2b) and `PR-15`. |
 
-> **Strict Hygiene Constraint:** Never include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute local workstation paths like `/usr/local/google/...`) in any repository file, test, script, report, or commit message.
+> **Strict Hygiene Constraint:** Never include any proprietary internal identifiers, internal issue/changelist prefixes, internal domain emails, or absolute local machine home paths in any repository file, test, script, report, or commit message.
 
 ---
 

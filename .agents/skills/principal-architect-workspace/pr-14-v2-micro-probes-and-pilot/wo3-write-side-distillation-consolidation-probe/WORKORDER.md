@@ -43,7 +43,7 @@ Build and execute the repeatable **Layer 2 Write-Side Distillation & Consolidati
 | `evaluation/eval-v2/scripts/run_write_probe.sh` | **Create** | Executable shell script (`chmod +x`) that runs `go test -v -run TestEvalV2WriteSideMicroProbe ./internal/core/tick/...` for one-command execution. |
 | `docs/evaluations/v2-2-write-side-micro-probe.md` | **Create** | Comprehensive empirical evaluation report documenting all Stage 1a/1b/1c and Stage 2 metrics (`X2`/`X4`/`X10`), real transcript corpus analysis from `evaluation/repo-memory-transcripts/`, payload reduction tables, security/grounding gate verification, consolidation funnel metrics, and sample projected dossier diffs. |
 
-> **Strict Hygiene Constraint:** Never include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute local workstation paths like `/usr/local/google/...`) in any repository file, test, script, report, or commit message.
+> **Strict Hygiene Constraint:** Never include any proprietary internal identifiers, internal issue/changelist prefixes, internal domain emails, or absolute local machine home paths in any repository file, test, script, report, or commit message.
 
 ---
 
