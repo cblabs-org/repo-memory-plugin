@@ -61,34 +61,52 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 
 	projectArg := fmt.Sprintf("repo-memory-%s", h.RepoID)
 
-	// Prepare input string
-	inputBytes, err := json.Marshal(input)
-	if err != nil {
-		return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
+	var prompt string
+	if stage == harness.StageDistill || stage == harness.StageConsolidate {
+		if s, ok := input.(string); ok {
+			prompt = s
+		} else {
+			inputBytes, err := json.Marshal(input)
+			if err != nil {
+				return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
+			}
+			prompt = string(inputBytes)
+		}
+	} else {
+		// Prepare input string
+		inputBytes, err := json.Marshal(input)
+		if err != nil {
+			return harness.Result{}, fmt.Errorf("failed to marshal input: %w", err)
+		}
+
+		var schemaGuide string
+		switch stage {
+		case harness.StageReconcile:
+			schemaGuide = "Return strictly JSON in the form:\n{\n  \"actions\": [\n    {\"op\": \"create|support|refine|contradict|supersede|promote|discard\", \"candidate\": ..., \"target_id\": \"clm-...\", \"rationale\": \"...\"}\n  ]\n}"
+		case harness.StageVerify:
+			schemaGuide = "Return strictly JSON in the form:\n{\n  \"consistent\": true,\n  \"rationale\": \"...\"\n}"
+		case harness.StageTriage:
+			schemaGuide = "Return strictly JSON in the form:\n{\n  \"decisions\": [\n    {\"id\": \"...\", \"keep\": true, \"reason\": \"...\"}\n  ]\n}"
+		}
+
+		prompt = fmt.Sprintf("You are executing the %s pipeline stage. DO NOT call any tools. %s\n\nInput:\n%s", stage, schemaGuide, string(inputBytes))
 	}
 
-	var schemaGuide string
-	switch stage {
-	case harness.StageReconcile:
-		schemaGuide = "Return strictly JSON in the form:\n{\n  \"actions\": [\n    {\"op\": \"create|support|refine|contradict|supersede|promote|discard\", \"candidate\": ..., \"target_id\": \"clm-...\", \"rationale\": \"...\"}\n  ]\n}"
-	case harness.StageVerify:
-		schemaGuide = "Return strictly JSON in the form:\n{\n  \"consistent\": true,\n  \"rationale\": \"...\"\n}"
-	case harness.StageTriage:
-		schemaGuide = "Return strictly JSON in the form:\n{\n  \"decisions\": [\n    {\"id\": \"...\", \"keep\": true, \"reason\": \"...\"}\n  ]\n}"
-	}
-
-	prompt := fmt.Sprintf("You are executing the %s pipeline stage. DO NOT call any tools. %s\n\nInput:\n%s", stage, schemaGuide, string(inputBytes))
-
-	cmd := exec.CommandContext(ctx, "agy",
+	args := []string{
 		"-p", prompt,
 		"--model", h.Model,
 		"--output-format", "stream-json",
 		"--print-timeout", h.Timeout,
 		"--project", projectArg,
 		"--dangerously-skip-permissions",
-	)
+	}
+	if stage == harness.StageDistill || stage == harness.StageConsolidate {
+		args = append(args, "--agent", "repo-memory-distiller")
+	}
 
-	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1")
+	cmd := exec.CommandContext(ctx, "agy", args...)
+
+	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1", "REPO_MEMORY_INTERNAL=1")
 	cmd.Dir = workDir
 
 	var stdout bytes.Buffer
@@ -115,14 +133,16 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 				return result, fmt.Errorf("agy returned error: %s", msg.Result.Error)
 			}
 			payload := msg.Result.Response
-			
-			// Find the first { and last }
-			first := strings.Index(payload, "{")
-			last := strings.LastIndex(payload, "}")
-			if first != -1 && last != -1 && last >= first {
-				payload = payload[first : last+1]
+
+			if stage != harness.StageDistill && stage != harness.StageConsolidate {
+				// Find the first { and last }
+				first := strings.Index(payload, "{")
+				last := strings.LastIndex(payload, "}")
+				if first != -1 && last != -1 && last >= first {
+					payload = payload[first : last+1]
+				}
 			}
-			
+
 			result.Payload = strings.TrimSpace(payload)
 			result.Usage = harness.Usage{
 				InputTokens:     msg.Result.Usage.InputTokens,

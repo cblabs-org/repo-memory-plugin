@@ -28,6 +28,8 @@ const (
 	KindSweep          Kind = "sweep"
 	KindSeedDocs       Kind = "seed-docs"
 	KindDreamFreshness Kind = "dream-freshness"
+	KindFallback       Kind = "fallback"
+	KindConsolidate    Kind = "consolidate"
 )
 
 // Valid returns true if the Kind is recognized.
@@ -35,7 +37,8 @@ func (k Kind) Valid() bool {
 	switch k {
 	case KindCompact, KindTriage, KindExtract, KindReconcile, KindVerify,
 		KindPublish, KindBrief, KindDejavu, KindRecheck, KindReport,
-		KindCapture, KindSweep, KindSeedDocs, KindDreamFreshness:
+		KindCapture, KindSweep, KindSeedDocs, KindDreamFreshness,
+		KindFallback, KindConsolidate:
 		return true
 	default:
 		return false

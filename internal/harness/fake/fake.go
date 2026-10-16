@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
+
+var fakeSessionLogTokenRe = regexp.MustCompile(`<session-log-([0-9a-fA-F]+)>`)
 
 // FakeHarness is an in-memory test implementation of harness.Harness.
 type FakeHarness struct {
@@ -236,6 +240,8 @@ type FakeHousekeeper struct {
 	mu         sync.RWMutex
 	Results    map[harness.Stage]harness.Result
 	RunHistory []harness.Stage
+	Inputs     []any
+	RunFunc    func(ctx context.Context, stage harness.Stage, input any) (harness.Result, error)
 	RunErr     error
 }
 
@@ -247,16 +253,28 @@ func NewFakeHousekeeper() *FakeHousekeeper {
 
 func (f *FakeHousekeeper) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.RunHistory = append(f.RunHistory, stage)
-	if f.RunErr != nil {
-		return harness.Result{}, f.RunErr
-	}
+	f.Inputs = append(f.Inputs, input)
+	runFn := f.RunFunc
+	runErr := f.RunErr
 	res, ok := f.Results[stage]
+	f.mu.Unlock()
+
+	if runErr != nil {
+		return harness.Result{}, runErr
+	}
+	if runFn != nil {
+		return runFn(ctx, stage, input)
+	}
 	if !ok {
 		return harness.Result{
 			Payload: fmt.Sprintf(`{"status":"ok","stage":%q}`, stage.String()),
 		}, nil
+	}
+	if s, isStr := input.(string); isStr && strings.Contains(res.Payload, "{{echo_token}}") {
+		if m := fakeSessionLogTokenRe.FindStringSubmatch(s); len(m) == 2 {
+			res.Payload = strings.ReplaceAll(res.Payload, "{{echo_token}}", m[1])
+		}
 	}
 	return res, nil
 }
