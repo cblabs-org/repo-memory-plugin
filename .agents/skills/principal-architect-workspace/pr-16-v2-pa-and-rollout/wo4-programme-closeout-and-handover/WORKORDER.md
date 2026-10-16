@@ -5,7 +5,7 @@
 - **Work Order Slug:** `wo4-programme-closeout-and-handover`
 - **Target Branch:** `pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover`
 - **Base Branch:** `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging`
-- **Status:** `IN_PROGRESS`
+- **Status:** `COMPLETED`
 
 ---
 
@@ -89,4 +89,18 @@ Run and verify all of the following commands:
 ---
 
 ## 6. Worker Completion Report
-*(To be filled in by the Tier 3 Worker before returning control to the Principal Architect)*
+
+- **Summary of Changes:**
+  - Updated `README.md` (`## Architecture & Storage Layout`) to document `.memory/QUESTIONS.md` (`# Unresolved open issues, suspect entries, and coverage gaps`) alongside `.memory/ATLAS.md`.
+  - Updated `README.md` (`## CLI Reference`) with the complete `v2.2` CLI reference covering Installation & Repository Enrolment (`install`, `uninstall`, `enroll`/`init`, `unenroll`/`leave`), Seeding & Op-Log Maintenance (`seed-docs`, `seed`, `ops gc`), Consolidation, Skill Graduation & Gardening (`consolidate`, `promote-skills`, `garden`), Principal Architect Integration (`summary`, `brief`), Backfill, Reprojection & Indexing (`backfill`/`backfill-captures`, `reproject`, `reindex`), and Background Tick, Observability & Diagnostics (`tick`/`run`, `status`, `search`, `usage`, `report`, `snapshot`, `doctor`, `disable`, `enable`).
+  - Rebuilt `~/.local/bin/repo-memory` from `cmd/repo-memory`.
+- **Verification Results:**
+  - `go build ./cmd/... ./internal/... ./packaging/...`: **PASS**
+  - `go vet ./cmd/... ./internal/... ./packaging/...`: **PASS**
+  - `GOOS=windows GOARCH=amd64 go build ./cmd/... ./internal/... ./packaging/...`: **PASS**
+  - `go test -race ./cmd/... ./internal/... ./packaging/...`: **PASS** (all packages passed with `-race`, including `cmd/repo-memory` in `17.16s` and `internal/harness/antigravity` in `294.91s`)
+  - `go run ./cmd/repo-memory doctor .`: **PASS** (`0` errors)
+  - `go run ./cmd/repo-memory reproject --dry-run --json`: **PASS** (`30` dossiers projected, `259` active entries, `225` human decisions preserved, `30` files unchanged)
+  - `~/.local/bin/repo-memory --help`: **PASS** (verified all `v2.2` subcommands registered and available)
+  - `git status --short`: **PASS** (strictly limited to `README.md` and `WORKORDER.md`)
+- **Out-of-Scope Findings / Dead Ends:** None.
