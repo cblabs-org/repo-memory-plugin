@@ -11,6 +11,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 )
 
 const (
@@ -210,6 +211,47 @@ func FormatGapLinesForScope(scope string, activeEntries []dossiers.Entry, uncons
 
 	if len(lines) > MaxGapLinesPerResponse {
 		lines = lines[:MaxGapLinesPerResponse]
+	}
+	return lines
+}
+
+// FormatFreshnessHeader returns the 1-line A6 freshness status header for repoRoot.
+func FormatFreshnessHeader(repoRoot, dataDir, repoID string) string {
+	return tick.FormatFreshnessLine(context.Background(), dataDir, repoID, repoRoot, nil, nil)
+}
+
+// IdentifyCoverageGaps returns all scopes in report whose coverage score is below threshold.
+func IdentifyCoverageGaps(report *CoverageReport) []ScopeCoverage {
+	if report == nil {
+		return nil
+	}
+	var gaps []ScopeCoverage
+	for _, sc := range report.Scopes {
+		if sc.BelowThreshold {
+			gaps = append(gaps, sc)
+		}
+	}
+	return gaps
+}
+
+// FormatGapLines returns one-line coverage gap notices across a CoverageReport.
+func FormatGapLines(report *CoverageReport) []string {
+	if report == nil {
+		return nil
+	}
+	var lines []string
+	for _, sc := range report.Scopes {
+		if !sc.BelowThreshold {
+			continue
+		}
+		if sc.ActiveEntries == 0 {
+			lines = append(lines, fmt.Sprintf("No memory covers %s. Absence of memory is not evidence; read the code.", sc.Scope))
+		} else {
+			lines = append(lines, fmt.Sprintf("Low memory coverage for %s (score %.2f). Absence of memory is not evidence; read the code.", sc.Scope, sc.Score))
+		}
+	}
+	for _, dir := range report.UnmappedDirs {
+		lines = append(lines, fmt.Sprintf("Unmapped directory %s has 0 anchored memory entries.", dir))
 	}
 	return lines
 }

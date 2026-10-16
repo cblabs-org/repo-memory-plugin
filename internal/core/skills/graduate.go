@@ -612,3 +612,84 @@ func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, 
 
 	return res, nil
 }
+
+// CheckGraduatedSkillsLint verifies that every .agents/skills/rm-*/SKILL.md carrying
+// `generated_by: repo-memory` still qualifies for graduation and matches deterministic
+// regeneration from .memory/ops/. Hand-authored skills without `generated_by: repo-memory`
+// are ignored.
+func CheckGraduatedSkillsLint(ctx context.Context, repoRoot, dataDir, repoID string) ([]string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if strings.TrimSpace(repoRoot) == "" {
+		return nil, nil
+	}
+
+	skillsRoot := filepath.Join(repoRoot, ".agents", "skills")
+	dirEntries, err := os.ReadDir(skillsRoot)
+	if err != nil {
+		return nil, nil
+	}
+
+	type generatedSkillOnDisk struct {
+		dirName string
+		relPath string
+		content string
+	}
+	var onDisk []generatedSkillOnDisk
+	for _, de := range dirEntries {
+		if !de.IsDir() {
+			continue
+		}
+		dirName := de.Name()
+		if !strings.HasPrefix(dirName, "rm-") {
+			continue
+		}
+		fullSkillPath := filepath.Join(skillsRoot, dirName, "SKILL.md")
+		existingBytes, readErr := os.ReadFile(fullSkillPath)
+		if readErr != nil {
+			continue
+		}
+		existingContent := string(existingBytes)
+		if !IsGeneratedByRepoMemory(existingContent) {
+			continue
+		}
+		onDisk = append(onDisk, generatedSkillOnDisk{
+			dirName: dirName,
+			relPath: filepath.ToSlash(filepath.Join(".agents", "skills", dirName, "SKILL.md")),
+			content: existingContent,
+		})
+	}
+	if len(onDisk) == 0 {
+		return nil, nil
+	}
+
+	entries, err := loadAllProceduralEntriesForSync(ctx, repoRoot, dataDir, repoID)
+	if err != nil {
+		return nil, err
+	}
+	outcomes, _ := LoadOutcomeState(dataDir, repoID)
+
+	qualifyingBySlug := make(map[string]string)
+	for _, entry := range entries {
+		ok, _ := QualifiesForSkill(entry, outcomes)
+		if !ok {
+			continue
+		}
+		slug, content := RenderSkillMarkdown(entry)
+		qualifyingBySlug[slug] = content
+	}
+
+	var warnings []string
+	for _, diskSkill := range onDisk {
+		expectedContent, ok := qualifyingBySlug[diskSkill.dirName]
+		if !ok {
+			warnings = append(warnings, fmt.Sprintf("Graduated skill %s is stale or its source entry no longer qualifies; run 'repo-memory promote-skills'.", diskSkill.relPath))
+		} else if diskSkill.content != expectedContent {
+			warnings = append(warnings, fmt.Sprintf("Graduated skill %s is out of sync with .memory/ops/; run 'repo-memory promote-skills'.", diskSkill.relPath))
+		}
+	}
+
+	sort.Strings(warnings)
+	return warnings, nil
+}
