@@ -5,7 +5,7 @@
 - **Work Order Slug:** `wo2-backfill-and-reproject-cli`
 - **Target Branch:** `pr-16-v2-pa-and-rollout/wo2-backfill-and-reproject-cli`
 - **Base Branch:** `pr-16-v2-pa-and-rollout/wo1-pa-summaries-and-workorder-briefs`
-- **Status:** `IN_PROGRESS`
+- **Status:** `COMPLETED`
 
 ---
 
@@ -197,4 +197,30 @@ Run and verify all of the following commands:
 ---
 
 ## 6. Worker Completion Report
-*(To be filled in by the Tier 3 Worker before returning control to the Principal Architect)*
+
+### Summary of Changes
+1. **Historical Backfill (`internal/core/tick/backfill.go` & `internal/core/tick/backfill_test.go`)**:
+   - Implemented `BackfillOptions`, `BackfillResult`, `RunBackfill`, and `(p *PipelineExecutor) RunBackfill` enforcing A5 spend guards (`SpendConfig.Jobs["backfill"]`: `min_interval: "6h"`, `max_items: 25`, `quota_floor: 0.25`) with `--force`, `--dry-run`, and `--max-items` budgeting.
+   - Implemented `--transcripts` backfill: requeues completed/dead/failed capture jobs in `jobs.sqlite`, idempotently imports PA workspace artifacts (`.agents/skills/principal-architect-workspace/**/PROJECT.md`, `WORKORDER.md`, `context_bridge.md`) into the episode store with state persisted in `<dataDir>/<repoID>/state/backfill_pa.json`, and queues uncovered historical flat episodes.
+   - Implemented `--docs` backfill: invokes `seed.SeedDocs` against `.memory/ops` and reprojects dossiers when entries are mutated.
+   - Implemented `--git` backfill: scans git revert commits (`Revert "..."` / `revert: ...`) and emits deterministic `gotcha` notes (`note-git-revert-<sha[:12]>`, `source: "backfill-git"`) anchored to the touched files of the reverted commit.
+   - Added unit tests in `internal/core/tick/backfill_test.go` verifying `--dry-run` non-mutation, full execution across PA artifacts/docs/git reverts, A5 spend-guard throttling (`min_interval not elapsed`), and `--force` idempotency.
+
+2. **Op-Log Reprojection (`internal/core/dossiers/reproject.go` & `internal/core/dossiers/reproject_test.go`)**:
+   - Implemented `ReprojectOptions`, `ReprojectResult`, `LostEntryViolation`, `ErrHumanDecisionLost`, and `Reproject(ctx, opts)` while strictly adhering to the `internal/core/dossiers` import boundary (importing only `internal/core/ops` and Go standard library packages).
+   - Replays op batches across multiple op directories (`.memory/ops`, `ops-local`, `user/ops`), verifies that all pre-existing dossier entry IDs, `verified` stamps, and human decisions (`decision`, `invariant`, `ruled-out`, or `source: human`/`hand-edit`) survive in the projected `Entries` or `History`, and aborts safely with `ErrHumanDecisionLost` unless `AllowLoss: true` is set.
+   - Computes exact file diff classifications (`FilesAdded`, `FilesUpdated`, `FilesUnchanged`, `FilesRemoved`) for `.memory/dossiers/**/*.md` and `.memory/ATLAS.md`.
+   - Added unit tests in `internal/core/dossiers/reproject_test.go` covering `--dry-run`, deterministic idempotent replay (`FilesUnchanged`), and `ErrHumanDecisionLost` protection against unrecorded hand-added decisions.
+
+3. **CLI Subcommands (`cmd/repo-memory/cmd_backfill.go`, `cmd/repo-memory/cmd_reproject.go`, `cmd/repo-memory/main.go`)**:
+   - Upgraded `cmd_backfill.go` to `Use: "backfill [repo-dir]"` with `Aliases: []string{"backfill-captures"}` and flags `--repo`, `--data-dir`, `--dry-run`, `--json`, `--force`, `--transcripts`, `--docs`, `--git`, and `--max-items`.
+   - Created `cmd_reproject.go` (`Use: "reproject [repo-dir]"`) with flags `--repo`, `--data-dir`, `--ops-dir`, `--dry-run`, `--json`, and `--allow-loss`, coordinating `dossiers.Reproject`, `skills.SyncGraduatedSkills`, and `coverage.WriteQuestionsFile` (`.memory/QUESTIONS.md`).
+   - Registered both `backfillCmd` and `reprojectCmd` on `rootCmd` in `cmd/repo-memory/main.go`.
+
+### Verification Results
+- `go build ./cmd/repo-memory`: **PASS**
+- `go vet ./cmd/... ./internal/...`: **PASS**
+- `GOOS=windows GOARCH=amd64 go build ./cmd/repo-memory`: **PASS**
+- `go test -race ./internal/core/tick/... ./internal/core/dossiers/... ./cmd/repo-memory/...`: **PASS**
+- `go test ./cmd/... ./internal/...`: **PASS**
+- `git status --short`: Verified only permitted files were created/modified.

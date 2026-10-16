@@ -49,5 +49,7 @@ func init() {
 	rootCmd.AddCommand(gardenCmd)
 	rootCmd.AddCommand(summaryCmd)
 	rootCmd.AddCommand(briefCmd)
+	rootCmd.AddCommand(backfillCmd)
+	rootCmd.AddCommand(reprojectCmd)
 }
 
