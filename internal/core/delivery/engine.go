@@ -120,7 +120,7 @@ func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
 	return valid
 }
 
-// stopWords contains common English words that match nearly everything in FTS5.
+// stopWords contains common English words and prompt/URL boilerplate that match nearly everything in FTS5.
 var stopWords = map[string]bool{
 	"the": true, "and": true, "for": true, "are": true, "but": true,
 	"not": true, "you": true, "all": true, "can": true, "her": true,
@@ -135,6 +135,12 @@ var stopWords = map[string]bool{
 	"into": true, "them": true, "than": true, "then": true, "some": true,
 	"also": true, "made": true, "after": true, "should": true, "would": true,
 	"could": true, "about": true, "which": true, "their": true, "there": true,
+	"write": true, "build": true, "using": true, "once": true, "per": true,
+	"between": true, "need": true, "added": true, "show": true, "top": true,
+	"level": true, "hour": true, "sec": true, "mins": true, "http": true,
+	"https": true, "com": true, "org": true, "net": true, "www": true,
+	"public": true, "simple": true, "ids": true, "pro": true,
+	"waterproof": true, "compatible": true, "device": true,
 }
 
 // sanitizeFTSQuery converts raw prompt terms into a safe FTS5 query.
@@ -224,7 +230,7 @@ func (e *Engine) DossierEntries(ctx context.Context, scope string) ([]RankedEntr
 	
 	var valid []dossiers.Entry
 	for _, ent := range entries {
-		if ent.Type == dossiers.EntryTypeInvariant || ent.Type == dossiers.EntryTypeFailureSignature || ent.Type == dossiers.EntryTypeRuledOut {
+		if ent.Type == dossiers.EntryTypeInvariant || ent.Type == dossiers.EntryTypeContract || ent.Type == dossiers.EntryTypeFailureSignature || ent.Type == dossiers.EntryTypeRuledOut {
 			valid = append(valid, ent)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
@@ -18,6 +19,48 @@ import (
 )
 
 var editIntentPattern = regexp.MustCompile(`(?i)\b(?:edit|modify|change|update|write\s+to|replace)\s+(?:the\s+file\s+|file\s+)?[` + "`" + `"'` + `]?([a-zA-Z0-9_\-./\\]+)`)
+
+var promptStopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "but": true,
+	"not": true, "you": true, "all": true, "can": true, "her": true,
+	"was": true, "one": true, "our": true, "out": true, "has": true,
+	"his": true, "how": true, "its": true, "may": true, "new": true,
+	"now": true, "old": true, "see": true, "way": true, "who": true,
+	"did": true, "get": true, "let": true, "say": true, "she": true,
+	"too": true, "use": true, "fix": true, "any": true, "had": true,
+	"that": true, "this": true, "with": true, "have": true, "from": true,
+	"they": true, "been": true, "will": true, "what": true, "when": true,
+	"your": true, "each": true, "make": true, "like": true, "just": true,
+	"into": true, "them": true, "than": true, "then": true, "some": true,
+	"also": true, "made": true, "after": true, "should": true, "would": true,
+	"could": true, "about": true, "which": true, "their": true, "there": true,
+	"write": true, "build": true, "using": true, "once": true, "per": true,
+	"between": true, "need": true, "added": true, "show": true, "top": true,
+	"level": true, "hour": true, "sec": true, "mins": true, "http": true,
+	"https": true, "com": true, "org": true, "net": true, "www": true,
+	"public": true, "simple": true, "ids": true, "pro": true,
+	"waterproof": true, "compatible": true, "device": true,
+}
+
+// ExtractPromptTerms splits a user prompt on non-word characters (stripping
+// attached punctuation and URL boilerplate), filters common English stopwords,
+// and returns deduplicated terms of length >= 3.
+func ExtractPromptTerms(prompt string) []string {
+	seen := make(map[string]bool)
+	var terms []string
+	parts := strings.FieldsFunc(prompt, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	})
+	for _, part := range parts {
+		lower := strings.ToLower(part)
+		if len(lower) < 3 || promptStopWords[lower] || seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		terms = append(terms, part)
+	}
+	return terms
+}
 
 type PreInvocationPayload struct {
 	ConversationID      string   `json:"conversationId"`
@@ -240,12 +283,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 	// Task start moment — only on the first invocation of a new user turn.
 	if input.InvocationNum == 0 && input.InitialNumSteps <= 1 {
-		var promptTerms []string
-		for _, term := range strings.Fields(input.UserPrompt) {
-			if len(term) >= 3 {
-				promptTerms = append(promptTerms, term)
-			}
-		}
+		promptTerms := ExtractPromptTerms(input.UserPrompt)
 
 		// Diff paths: git already returns repo-relative paths — keep them as-is.
 		// Guard against single-commit repos where HEAD~1 would fail.
