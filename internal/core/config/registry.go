@@ -12,9 +12,10 @@ import (
 
 // RegistryEntry represents an enrolled repository entry in <data-dir>/registry.json.
 type RegistryEntry struct {
-	RepoID   string `json:"repo_id"`
-	RootPath string `json:"root_path"`
-	Enabled  *bool  `json:"enabled,omitempty"`
+	RepoID                 string `json:"repo_id"`
+	RootPath               string `json:"root_path"`
+	Enabled                *bool  `json:"enabled,omitempty"`
+	CreatedInstructionFile bool   `json:"created_instruction_file,omitempty"`
 }
 
 // UnmarshalJSON supports both snake_case (repo_id, root_path) and PascalCase (RepoID, RootPath).
@@ -22,9 +23,10 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 	type Alias RegistryEntry
 	var aux struct {
 		Alias
-		AltRepoID   string `json:"RepoID"`
-		AltRootPath string `json:"RootPath"`
-		AltEnabled  *bool  `json:"Enabled"`
+		AltRepoID                 string `json:"RepoID"`
+		AltRootPath               string `json:"RootPath"`
+		AltEnabled                *bool  `json:"Enabled"`
+		AltCreatedInstructionFile *bool  `json:"CreatedInstructionFile"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -38,6 +40,9 @@ func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
 	}
 	if e.Enabled == nil && aux.AltEnabled != nil {
 		e.Enabled = aux.AltEnabled
+	}
+	if !e.CreatedInstructionFile && aux.AltCreatedInstructionFile != nil {
+		e.CreatedInstructionFile = *aux.AltCreatedInstructionFile
 	}
 	return nil
 }
@@ -177,6 +182,15 @@ func AddToRegistry(dataDir string, workspacePaths []string, repoID, rootPath str
 		RepoID:   repoID,
 		RootPath: cleanRoot,
 	}
+	if existing, ok := reg[cleanRoot]; ok {
+		entry.Enabled = existing.Enabled
+		entry.CreatedInstructionFile = existing.CreatedInstructionFile
+	} else if evalRoot != "" {
+		if existing, ok := reg[evalRoot]; ok {
+			entry.Enabled = existing.Enabled
+			entry.CreatedInstructionFile = existing.CreatedInstructionFile
+		}
+	}
 
 	// Always ensure root path is registered
 	reg[cleanRoot] = entry
@@ -192,6 +206,45 @@ func AddToRegistry(dataDir string, workspacePaths []string, repoID, rootPath str
 		}
 	}
 
+	return SaveRegistry(dataDir, reg)
+}
+
+// SetCreatedInstructionFile updates CreatedInstructionFile on registry entries matching repoRoot.
+func SetCreatedInstructionFile(dataDir, repoRoot string, created bool) error {
+	reg, err := LoadRegistry(dataDir)
+	if err != nil {
+		return err
+	}
+
+	cleanRoot := filepath.Clean(repoRoot)
+	evalRoot, _ := filepath.EvalSymlinks(cleanRoot)
+
+	updated := false
+	for k, entry := range reg {
+		kClean := filepath.Clean(k)
+		kEval, _ := filepath.EvalSymlinks(kClean)
+		rootClean := filepath.Clean(entry.RootPath)
+		rootEval, _ := filepath.EvalSymlinks(rootClean)
+
+		matches := kClean == cleanRoot ||
+			(evalRoot != "" && kClean == evalRoot) ||
+			(kEval != "" && kEval == cleanRoot) ||
+			(kEval != "" && evalRoot != "" && kEval == evalRoot) ||
+			rootClean == cleanRoot ||
+			(evalRoot != "" && rootClean == evalRoot) ||
+			(rootEval != "" && rootEval == cleanRoot) ||
+			(rootEval != "" && evalRoot != "" && rootEval == evalRoot)
+
+		if matches {
+			entry.CreatedInstructionFile = entry.CreatedInstructionFile || created
+			reg[k] = entry
+			updated = true
+		}
+	}
+
+	if !updated {
+		return nil
+	}
 	return SaveRegistry(dataDir, reg)
 }
 
