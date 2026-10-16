@@ -12,10 +12,14 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
 )
 
-var subagentUUIDPattern = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+var (
+	subagentUUIDPattern = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+	exitCodePattern     = regexp.MustCompile(`(?i)(?:exited\s+with\s+code|exit\s+code|exit\s+status|exit_code"?\s*[:=]|exitCode"?\s*[:=])\s*([0-9]+)`)
+)
 
 type PostToolUsePayload struct {
 	ConversationID      string   `json:"conversationId"`
@@ -30,6 +34,7 @@ type PostToolUsePayload struct {
 		Status string `json:"status"`
 		Output string `json:"output"`
 	} `json:"toolResult"`
+	Error               string   `json:"error"`
 	StepIdx             int      `json:"stepIdx"`
 	TranscriptPath      string   `json:"transcriptPath"`
 	TranscriptPathSnake string   `json:"transcript_path"`
@@ -50,6 +55,50 @@ func (p *PostToolUsePayload) Normalize() {
 	if p.ToolName == "" && p.ToolCall.Name != "" {
 		p.ToolName = p.ToolCall.Name
 	}
+	if p.Error != "" && p.ToolResult.Status == "" {
+		p.ToolResult.Status = "error"
+		if p.ToolResult.Output == "" {
+			p.ToolResult.Output = p.Error
+		}
+	}
+}
+
+func isCommandTool(name string) bool {
+	return strings.EqualFold(name, "run_command") || strings.EqualFold(name, "bash")
+}
+
+func extractPostToolCommand(rawArgs json.RawMessage) string {
+	if len(rawArgs) == 0 {
+		return ""
+	}
+	var args struct {
+		CommandLine  string `json:"CommandLine"`
+		CmdLineLower string `json:"commandLine"`
+		CmdSnake     string `json:"command_line"`
+		Command      string `json:"command"`
+		CmdCap       string `json:"Command"`
+		Cmd          string `json:"cmd"`
+	}
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return ""
+	}
+	for _, s := range []string{args.CommandLine, args.CmdLineLower, args.CmdSnake, args.Command, args.CmdCap, args.Cmd} {
+		if strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func hasNonZeroExitCodeInOutput(output string) bool {
+	matches := exitCodePattern.FindAllStringSubmatch(output, -1)
+	for _, m := range matches {
+		code := strings.TrimSpace(m[1])
+		if code != "" && code != "0" {
+			return true
+		}
+	}
+	return false
 }
 
 func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
@@ -66,13 +115,13 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	// Fast exit: only edit tools (gate ack), subagent invocations, and error results need post-processing.
-	// Everything else (view_file, grep_search, list_dir, etc.) returns immediately
-	// to avoid paying the repo lookup + enrollment check cost on every tool call.
-	isError := strings.EqualFold(input.ToolResult.Status, "error")
+	// Fast exit: only edit tools (gate ack), subagent invocations, command tools (recipe tracking),
+	// and error results need post-processing.
+	isError := strings.EqualFold(input.ToolResult.Status, "error") || strings.EqualFold(input.ToolResult.Status, "failed")
 	isEdit := isEditTool(input.ToolName)
 	isSubagentInvoke := strings.EqualFold(input.ToolName, "invoke_subagent") || strings.EqualFold(input.ToolCall.Name, "invoke_subagent")
-	if !isError && !isEdit && !isSubagentInvoke {
+	isCommand := isCommandTool(input.ToolName) || isCommandTool(input.ToolCall.Name)
+	if !isError && !isEdit && !isSubagentInvoke && !isCommand {
 		return []byte("{}"), nil
 	}
 
@@ -128,6 +177,24 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		}
 	}
 
+	if isCommand {
+		cmdStr := extractPostToolCommand(input.ToolCall.Args)
+		if cmdStr != "" {
+			nonZero := hasNonZeroExitCodeInOutput(input.ToolResult.Output)
+			failed := isError || nonZero
+			succeeded := !failed && (strings.EqualFold(input.ToolResult.Status, "success") ||
+				strings.EqualFold(input.ToolResult.Status, "ok") ||
+				strings.EqualFold(input.ToolResult.Status, "done") ||
+				(input.ToolResult.Status == "" && input.Error == ""))
+			if succeeded || failed {
+				_, _ = skills.RecordCommandOutcome(ctx, dataDir, repoID, workspaceRoot, input.ConversationID, cmdStr, succeeded)
+			}
+			if nonZero {
+				isError = true
+			}
+		}
+	}
+
 	// On successful edit tool completion, acknowledge any pending gates.
 	// Require explicit "success" status — empty/cancelled/rejected should not approve.
 	if strings.EqualFold(input.ToolResult.Status, "success") && isEdit {
@@ -165,29 +232,11 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 	defer idx.Close()
 
 	commandPrefix := input.ToolName
-	if input.ToolName == "run_command" {
-		var args struct {
-			CommandLine  string `json:"CommandLine"`
-			CmdLineLower string `json:"commandLine"`
-			CmdSnake     string `json:"command_line"`
-			Command      string `json:"command"`
-		}
-		if len(input.ToolCall.Args) > 0 {
-			if err := json.Unmarshal(input.ToolCall.Args, &args); err == nil {
-				cmdStr := args.CommandLine
-				if cmdStr == "" {
-					cmdStr = args.CmdLineLower
-				}
-				if cmdStr == "" {
-					cmdStr = args.CmdSnake
-				}
-				if cmdStr == "" {
-					cmdStr = args.Command
-				}
-				fields := strings.Fields(cmdStr)
-				if len(fields) > 0 {
-					commandPrefix = fields[0]
-				}
+	if isCommand {
+		if cmdStr := extractPostToolCommand(input.ToolCall.Args); cmdStr != "" {
+			fields := strings.Fields(cmdStr)
+			if len(fields) > 0 {
+				commandPrefix = fields[0]
 			}
 		}
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/telemetry"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
@@ -183,6 +184,12 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
+	if p.repoRoot != "" {
+		if _, err := skills.CheckBuildManifestFreshness(ctx, p.repoRoot, p.dataDir, p.repoID, p.idx); err != nil {
+			return fmt.Errorf("checking build manifest freshness: %w", err)
+		}
+	}
+
 	if p.idx != nil {
 		var currentBranch string
 		if p.repoRoot != "" {
@@ -190,6 +197,12 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		}
 		if err := consolidate.RebuildMultiTierIndex(ctx, p.idx, p.dataDir, p.repoID, p.repoRoot, currentBranch); err != nil {
 			return fmt.Errorf("rebuilding multi-tier index: %w", err)
+		}
+	}
+
+	if p.repoRoot != "" {
+		if _, err := skills.SyncGraduatedSkills(ctx, p.repoRoot, p.dataDir, p.repoID, false); err != nil {
+			return fmt.Errorf("syncing graduated skills: %w", err)
 		}
 	}
 

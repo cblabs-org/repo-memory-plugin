@@ -356,7 +356,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				entries, err = engine.AnchorEntries(ctx, path)
 			}
 			if err == nil && len(entries) > 0 {
-				formatted := delivery.FormatEntries(entries)
+				formatted := delivery.FormatEntriesForMoment(entries, delivery.MomentFirstTouch, workspaceRoot)
 				injectSteps = append(injectSteps, InjectStep{
 					UserMessage: formatted,
 				})
