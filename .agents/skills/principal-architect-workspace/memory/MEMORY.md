@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-14-v2-micro-probes-and-pilot | **Active (WO3/4 — WO1–WO2 complete)** — Layer 2 Read-Side & Write-Side Micro-Probes and `esp32` 1-Task Pilot | Evaluation (`eval-v2`), Seed (`pa` + `doc-seed`), Delivery Probe, Distillation/Consolidation Probe | [PROJECT.md](../pr-14-v2-micro-probes-and-pilot/PROJECT.md) |
+| pr-14-v2-micro-probes-and-pilot | **Active (WO4/4 — WO1–WO3 complete)** — Layer 2 Read-Side & Write-Side Micro-Probes and `esp32` 1-Task Pilot | Evaluation (`eval-v2`), Seed (`pa` + `doc-seed`), Delivery Probe, Distillation/Consolidation Probe | [PROJECT.md](../pr-14-v2-micro-probes-and-pilot/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Superseded/integrated into `pr-14-v2-micro-probes-and-pilot` for Layer 2 probes | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
