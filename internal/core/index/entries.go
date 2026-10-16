@@ -437,6 +437,81 @@ func (idx *Index) ListEntriesBySource(ctx context.Context, source string) ([]dos
 	return results, nil
 }
 
+// ListProceduralEntries returns all active entries where type IN ('recipe', 'procedure') or kind = 'procedural', ordered by id.
+func (idx *Index) ListProceduralEntries(ctx context.Context) ([]dossiers.Entry, error) {
+	query := `
+	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
+	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
+	       COALESCE(success_count, 0), COALESCE(failure_count, 0),
+	       COALESCE(last_succeeded_at, ''), COALESCE(stale_suspect, 0),
+	       COALESCE(render_as_skill, ''),
+	       verified, closes_when, created_at, updated_at
+	FROM entries
+	WHERE type IN ('recipe', 'procedure') OR kind = 'procedural'
+	ORDER BY id
+	`
+	rows, err := idx.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("listing procedural entries: %w", err)
+	}
+	defer rows.Close()
+
+	results, err := scanEntryRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range results {
+		anchors, err := idx.getEntryAnchors(ctx, results[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		results[i].Anchors = anchors
+	}
+
+	if results == nil {
+		results = []dossiers.Entry{}
+	}
+	return results, nil
+}
+
+// ListAllEntries returns all active entries ordered by id.
+func (idx *Index) ListAllEntries(ctx context.Context) ([]dossiers.Entry, error) {
+	query := `
+	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
+	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
+	       COALESCE(success_count, 0), COALESCE(failure_count, 0),
+	       COALESCE(last_succeeded_at, ''), COALESCE(stale_suspect, 0),
+	       COALESCE(render_as_skill, ''),
+	       verified, closes_when, created_at, updated_at
+	FROM entries
+	ORDER BY id
+	`
+	rows, err := idx.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("listing all entries: %w", err)
+	}
+	defer rows.Close()
+
+	results, err := scanEntryRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range results {
+		anchors, err := idx.getEntryAnchors(ctx, results[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		results[i].Anchors = anchors
+	}
+
+	if results == nil {
+		results = []dossiers.Entry{}
+	}
+	return results, nil
+}
+
 type ScoredEntry struct {
 	Entry dossiers.Entry
 	Score float64
