@@ -166,7 +166,31 @@ Create package `prepare` in `internal/core/pipeline/prepare/prepare.go` and `val
     - Output copying instruction text from a viewed `SKILL.md` fails.
 
 ## Verification Checklist
-- [ ] `go test ./internal/core/scrub/... ./internal/core/pipeline/... ./internal/harness/antigravity/...` passes.
-- [ ] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
-- [ ] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
-- [ ] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] `go test ./internal/core/scrub/... ./internal/core/pipeline/... ./internal/harness/antigravity/...` passes.
+- [x] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
+- [x] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
+- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+
+## Completion Report
+
+### Summary of Changes
+1. **Layered Scrubber (`internal/core/scrub/scrubber.go` & `scrubber_test.go`):**
+   - Implemented the 4-layer secret and blob scrubber (`Scrub`) per Addendum A §5 (`A4`):
+     - **Layer 1 (Structural):** Redacts private key blocks (`«secret:private_key»`), credentialed URLs (`«secret:url_cred»`), Authorization/Bearer/token headers (`«secret:token»`), provider-prefixed keys (`«secret:aws»`, `«secret:github»`, `«secret:slack»`, `«secret:gcp_api_key»`, `«secret:api_key»`), and secret-named environment assignments (`«secret:env»`).
+     - **Layer 2 (Identifier preservation & Entropy/Hex):** Preserves conversation UUIDs (unless preceded on the same line within 40 chars by a secret label and not in `AllowedIDs`, in which case replaced with `«secret:uuid»`), `repo-memory` entry IDs, 26-char Crockford Base32 ULIDs, and 40-char git commit SHAs (when in `AllowedIDs`, in a git context on the same line, or verified via `git -C <RepoRoot> cat-file -e <sha>^{object}` with a 300ms timeout), while redacting unlabelled 32+ char hex secrets (`«secret:hex»`).
+     - **Layer 3 (Custom regex rules):** Loads optional `.memory/scrub.yaml` and `<DataDir>/<RepoID>/scrub.local.yaml`, failing closed with an error if any file contains weakening keys (`allow`, `disable`, `whitelist`) or invalid regular expressions.
+     - **Layer 4 (Blob stripping):** Strips inline base64 data URIs and $\ge 1024$-byte contiguous blobs to `«blob:stripped»`.
+   - Implemented `QuarantinePayload(dataDir, repoID, boundary, reason string, raw []byte)` writing `0600` quarantine files under `<dataDir>/<repoID>/quarantine/`.
+   - Wired `scrub.Scrub` and `scrub.QuarantinePayload` into `harvestTurnNote` in `internal/harness/antigravity/stop_distill.go` so scrubber errors quarantine the note and refuse to write un-scrubbed content to `evidence/notes/`.
+2. **Preparation Layer & Distiller Output Validator (`internal/core/pipeline/prepare/prepare.go`, `validate.go`, & `prepare_test.go`):**
+   - Implemented `PrepareSession` per `SPEC.md` §6.4 and `design-v2` §5.6: reframes `CHECKPOINT` headers as `platform` records (`Index: 0`), drops `[repo-memory ...]` exposures and `Stop` continuation prompts, strips `<USER_REQUEST>` wrappers, replaces file reads with `[viewed <path>, <N> lines]` stubs (recording `StubbedSteps` and `InstructionSnippets`), summarizes `invoke_subagent` steps to 1 line, escapes embedded role markers and `<session-log-` / `</session-log-` delimiters, and wraps JSON records in a random 16-hex-char `<session-log-TOKEN>` container.
+   - Implemented `ValidateDistillerOutput`: verifies the echoed random token (`ErrMissingEchoToken`), rejects tool calls or task-doing prose (`ErrTaskExecutionDetected`), verifies every item cites valid non-stubbed step indices (`ErrInvalidStepCitation`), and rejects items that copy viewed instruction text (`ErrCopiedInstructionText`).
+
+### Decisions Made
+- Expressed the $\ge 1024$-byte contiguous blob pattern in Go's `regexp` package as `[A-Za-z0-9+/=]{512,}[A-Za-z0-9+/=]{512,}` and deferred $\ge 1024$-char hex strings from Layer 2 to Layer 4 because Go's RE2 engine caps `{min,max}` repeat quantifiers at `1000`.
+- Validated custom rules from `.memory/scrub.yaml` and `scrub.local.yaml` at the start of `Scrub` so malformed configs or forbidden keys (`allow`, `disable`, `whitelist`) fail closed deterministically even on empty strings.
+
+### Verification
+- `go test -v ./internal/core/scrub/... ./internal/core/pipeline/... ./internal/harness/antigravity/...` — PASS
+- `go test ./cmd/... ./internal/... ./packaging/...` — PASS (including `TestCoreImportBoundaries`)
+- `go vet ./cmd/... ./internal/... ./packaging/...` — PASS (0 warnings)
