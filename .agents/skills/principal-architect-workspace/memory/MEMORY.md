@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-12-v2-distillation | **Active (3/6 WOs)** — Starting WO4 (`wo4-preparation-layer-and-scrubber`) | State (`marks`, `subagents`), Inbox (`notes`, `free_harvest`), Stop Hook (`stop_distill`), Prepare, Scrub, Tick (`fallback`), Config (`managed_block`) | [PROJECT.md](../pr-12-v2-distillation/PROJECT.md) |
+| pr-12-v2-distillation | **Active (4/6 WOs)** — Starting WO5 (`wo5-sidecar-fallback`) | State (`marks`, `subagents`), Inbox (`notes`, `free_harvest`), Stop Hook (`stop_distill`), Prepare, Scrub, Tick (`fallback`), Config (`managed_block`) | [PROJECT.md](../pr-12-v2-distillation/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete)** — Ready to resume at WO4 (`wo4-dry-run`) | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
