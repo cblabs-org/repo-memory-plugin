@@ -14,3 +14,5 @@
 - **WO3 (`wo3-dogfood-rollout-and-ci-packaging`) — Completed (`d89c041`):**
   - `repo-memory reproject` defaults to `<repoRoot>/.memory/ops` unless `--include-local` is set.
   - Dogfooded `.memory/` state (`30` dossiers, `259` active entries, `225` human decisions preserved) with zero second-run churn and upgraded `.github/workflows/ci.yml`.
+- **WO4 (`wo4-programme-closeout-and-handover`) — Completed (`6e765e4`):**
+  - Updated `README.md` with `.memory/QUESTIONS.md` storage layout and the complete `v2.2` CLI subcommand reference, rebuilt `~/.local/bin/repo-memory`, and passed all cross-platform and race-detector verification gates.
