@@ -31,7 +31,7 @@ Implement deterministic zero-token Stage 1b harvest (`SPEC.md` §6.3.2 / `docs/d
 
 ## Line-Item Instructions
 
-- [ ] **1. `internal/core/inbox/free_harvest.go` — Stage 1b Free Zero-Token Distillations (`CHECKPOINT` & `brain/` Artifacts)**
+- [x] **1. `internal/core/inbox/free_harvest.go` — Stage 1b Free Zero-Token Distillations (`CHECKPOINT` & `brain/` Artifacts)**
   - Create `internal/core/inbox/free_harvest.go` in package `inbox`.
   - Implement `HarvestCheckpointsAndArtifacts(ctx context.Context, dataDir, repoID, repoRoot string, epStore *episode.Store, inboxStore *Store) (int, error)`:
     - If `inboxStore == nil`, initialize `inboxStore = NewStore(dataDir, repoID)`.
@@ -71,11 +71,11 @@ Implement deterministic zero-token Stage 1b harvest (`SPEC.md` §6.3.2 / `docs/d
           - Write `&Note{Source: SourceArtifact, ConversationID: convID, Items: items, DedupKey: dedupKey}` via `inboxStore.Write(note)` and increment `notesCreated`.
     - Return `notesCreated, nil`.
 
-- [ ] **2. `internal/core/tick/pipeline.go` — Wire `HarvestFreeSources` into `PipelineExecutor.Run`**
+- [x] **2. `internal/core/tick/pipeline.go` — Wire `HarvestFreeSources` into `PipelineExecutor.Run`**
   - Add method `(p *PipelineExecutor) HarvestFreeSources(ctx context.Context) (int, error)` calling `inbox.HarvestCheckpointsAndArtifacts(ctx, p.dataDir, p.repoID, p.repoRoot, p.epStore, inbox.NewStore(p.dataDir, p.repoID))`.
   - In `(p *PipelineExecutor) Run(ctx context.Context) error`, call `if _, err := p.HarvestFreeSources(ctx); err != nil { return err }` right after `p.convertCapturesToEvidence(ctx)`.
 
-- [ ] **3. `internal/core/inbox/free_harvest_test.go` — Unit Tests**
+- [x] **3. `internal/core/inbox/free_harvest_test.go` — Unit Tests**
   - Test `HarvestCheckpointsAndArtifacts` extracting a `source: "checkpoint"` note from an episode in `epStore` whose `Header.Checkpoints["Model Knowledge"]` and `Header.Checkpoints["User Knowledge"]` contain bullets referencing real files in `repoRoot`, verifying `AnchorChecks`, `DedupKey`, and `ListUnconsolidated()`.
   - Test `HarvestCheckpointsAndArtifacts` extracting a `source: "artifact"` note from a markdown artifact under `<dataDir>/<repoID>/evidence/artifacts/<convID>/analysis.md` referencing real files in `repoRoot` (while skipping `.metadata.json`, `.md.resolved`, and unanchored/junk bullets).
   - Test idempotency: running `HarvestCheckpointsAndArtifacts` (or `PipelineExecutor.HarvestFreeSources`) a second time with unchanged checkpoints and artifacts produces `0` new notes and does not duplicate inbox files.
@@ -92,4 +92,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+✅ Complete
+
+### Changes Made
+- `internal/core/inbox/free_harvest.go` — Implemented Stage 1b deterministic zero-token `HarvestCheckpointsAndArtifacts` (`source: "checkpoint"` from episode `Checkpoints` sections `"Model Knowledge"`, `"User Knowledge"`, and qualifying `"Work Accomplished"` bullets with `"Files and Code"` anchor fallback; `source: "artifact"` from `<dataDir>/<repoID>/evidence/artifacts/<convID>/**/*.md` via `seed.ParseDocToOps` and anchored bullet extraction), repo-path validation (`isValidRepoAnchor`), keyword entry-type classification, `CheckAnchors` attachment, and SHA-256 `DedupKey` idempotency.
+- `internal/core/tick/pipeline.go` — Added `(p *PipelineExecutor) HarvestFreeSources(ctx context.Context) (int, error)` and wired it into `(p *PipelineExecutor) Run(ctx context.Context)` immediately after `p.convertCapturesToEvidence(ctx)`.
+- `internal/core/inbox/free_harvest_test.go` — Added unit tests covering `source: "checkpoint"` extraction, `source: "artifact"` extraction (skipping `.metadata.json`, `.md.resolved`, `.system_generated`, junk, and unanchored bullets), `AnchorChecks`, `DedupKey`, and idempotency across repeated runs.
+- `internal/core/tick/pipeline_test.go` — Added `TestPipelineRun_HarvestFreeSources` verifying end-to-end `PipelineExecutor.Run` capture-to-evidence + free checkpoint harvest and second-call idempotency.
+
+### Decisions Made
+- Combined `seed.ParseDocToOps` with keyword classification overrides (`classifyBulletType`) and a fallback anchored bullet extractor in `extractItemsFromArtifact` so both structured multi-section docs and free-form markdown artifacts in `evidence/artifacts/<convID>/` produce properly typed, repo-anchored `NoteItem` records capped at 6 items per note.
+- Computed deterministic SHA-256 content prefixes (`sha256Hex[:16]`) over ordered non-empty checkpoint sections (`checkpoint:<sessionID>:<hash16>`) and artifact file contents (`artifact:<convID>:<relPath>:<hash16>`) so unchanged checkpoints and artifacts are skipped in $O(1)$ via `inboxStore.HasDedupKey`.
+
+### Dead Ends & Warnings
+- (none)
+
+### Out-of-Scope Findings
+- Legacy v1 oracle test suites under `evaluation/oracle/wo1-op-log`, `wo2-dossier-schema-renderer`, `wo4-index-migration`, `wo1-ledger-engine`, and `wo4-gates` reference removed `internal/core/claims` or unexported package symbols when running unscoped `go test ./...` across `evaluation/oracle/...`; all production and test packages under `./cmd/...`, `./internal/...`, and `./packaging/...` pass 100%.
+
