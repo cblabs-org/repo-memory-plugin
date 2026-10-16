@@ -33,3 +33,10 @@ type Reporter interface {
 type Housekeeper interface {
 	Run(ctx context.Context, stage Stage, input any) (Result, error)
 }
+
+// MultiTurnHousekeeper executes multiple prompts sequentially in a single warm stream-json session.
+type MultiTurnHousekeeper interface {
+	Housekeeper
+	RunMultiTurn(ctx context.Context, stage Stage, prompts []string) ([]Result, error)
+}
+

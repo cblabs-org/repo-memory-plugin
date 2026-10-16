@@ -37,6 +37,15 @@ func NewHousekeeper(dataDir, repoID, model, timeout string) *Housekeeper {
 
 // Ensure it implements the interface
 var _ harness.Housekeeper = (*Housekeeper)(nil)
+var _ harness.MultiTurnHousekeeper = (*Housekeeper)(nil)
+
+type streamInputUserEvent struct {
+	Event   string `json:"event"`
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+}
+
 
 type streamResult struct {
 	Event  string `json:"event"`
@@ -158,4 +167,107 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 	}
 	return result, nil
 }
+
+func (h *Housekeeper) RunMultiTurn(ctx context.Context, stage harness.Stage, prompts []string) ([]harness.Result, error) {
+	if len(prompts) == 0 {
+		return nil, nil
+	}
+
+	workDir := filepath.Join(h.DataDir, "runs", h.RepoID)
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create work dir: %w", err)
+	}
+
+	projectArg := fmt.Sprintf("repo-memory-%s", h.RepoID)
+
+	var stdinBuf bytes.Buffer
+	for _, prompt := range prompts {
+		var evt streamInputUserEvent
+		evt.Event = "user"
+		evt.Message.Content = prompt
+		line, err := json.Marshal(evt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal stream-json user event: %w", err)
+		}
+		stdinBuf.Write(line)
+		stdinBuf.WriteByte('\n')
+	}
+
+	args := []string{
+		"-p", "",
+		"--input-format", "stream-json",
+		"--output-format", "stream-json",
+		"--model", h.Model,
+		"--print-timeout", h.Timeout,
+		"--project", projectArg,
+		"--dangerously-skip-permissions",
+	}
+	if stage == harness.StageDistill || stage == harness.StageConsolidate {
+		args = append(args, "--agent", "repo-memory-distiller")
+	}
+
+	cmd := exec.CommandContext(ctx, "agy", args...)
+	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1", "REPO_MEMORY_INTERNAL=1")
+	cmd.Dir = workDir
+	cmd.Stdin = &stdinBuf
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 3 {
+			return nil, harness.ErrQuotaExhausted
+		}
+		return nil, fmt.Errorf("agy multi-turn execution failed: %v\nStderr: %s", err, stderr.String())
+	}
+
+	var results []harness.Result
+	var prevUsage harness.Usage
+
+	decoder := json.NewDecoder(&stdout)
+	for decoder.More() {
+		var msg streamResult
+		if err := decoder.Decode(&msg); err != nil {
+			return results, fmt.Errorf("failed to decode stream-json: %w", err)
+		}
+		if msg.Event == "result" {
+			if msg.Result.Status == "ERROR" {
+				return results, fmt.Errorf("agy returned error: %s", msg.Result.Error)
+			}
+
+			payload := strings.TrimSpace(msg.Result.Response)
+			cur := harness.Usage{
+				InputTokens:     msg.Result.Usage.InputTokens,
+				OutputTokens:    msg.Result.Usage.OutputTokens,
+				ThinkingTokens:  msg.Result.Usage.ThinkingTokens,
+				CacheReadTokens: msg.Result.Usage.CacheReadTokens,
+			}
+
+			turnUsage := cur
+			if len(results) > 0 && cur.InputTokens >= prevUsage.InputTokens && cur.OutputTokens >= prevUsage.OutputTokens {
+				turnUsage = harness.Usage{
+					InputTokens:     cur.InputTokens - prevUsage.InputTokens,
+					OutputTokens:    cur.OutputTokens - prevUsage.OutputTokens,
+					ThinkingTokens:  max(0, cur.ThinkingTokens-prevUsage.ThinkingTokens),
+					CacheReadTokens: max(0, cur.CacheReadTokens-prevUsage.CacheReadTokens),
+				}
+			}
+			prevUsage = cur
+
+			results = append(results, harness.Result{
+				Payload: payload,
+				Usage:   turnUsage,
+			})
+		}
+	}
+
+	if len(results) != len(prompts) {
+		return results, fmt.Errorf("agy multi-turn returned %d results for %d prompts. Stdout: %s\nStderr: %s", len(results), len(prompts), stdout.String(), stderr.String())
+	}
+
+	return results, nil
+}
+
 
