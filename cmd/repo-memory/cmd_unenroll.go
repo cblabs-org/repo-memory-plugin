@@ -48,6 +48,11 @@ func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
 
 	// Find the entry before removal to obtain RepoID if purge is requested
 	entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot)
+	createdByUs := found && entry != nil && entry.CreatedInstructionFile
+
+	if err := config.RemoveInstructionBlock(repoRoot, createdByUs); err != nil {
+		return fmt.Errorf("removing instruction block from %s: %w", config.InstructionFilename, err)
+	}
 
 	removedIDs, err := config.RemoveFromRegistry(dataDir, repoRoot)
 	if err != nil {

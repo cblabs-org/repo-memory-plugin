@@ -48,6 +48,11 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("ensuring repo layout: %w", err)
 	}
 
+	createdInstructionFile, err := config.EnsureInstructionBlock(repoRoot)
+	if err != nil {
+		return fmt.Errorf("updating %s: %w", config.InstructionFilename, err)
+	}
+
 	if err := config.CreateEnrolledMarker(repoRoot); err != nil {
 		return fmt.Errorf("creating enrolled marker: %w", err)
 	}
@@ -71,6 +76,11 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	workspacePaths := append([]string{repoRoot}, worktrees...)
 	if err := config.AddToRegistry(dataDir, workspacePaths, repoID, repoRoot); err != nil {
 		return fmt.Errorf("adding to registry: %w", err)
+	}
+	if createdInstructionFile {
+		if err := config.SetCreatedInstructionFile(dataDir, repoRoot, true); err != nil {
+			return fmt.Errorf("recording instruction file creation in registry: %w", err)
+		}
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Enrolled repository %s (repo-id: %s)\n", repoRoot, repoID)

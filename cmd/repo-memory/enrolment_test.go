@@ -111,6 +111,17 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 	if entry.RepoID != expectedID {
 		t.Errorf("got RepoID %q, want %q", entry.RepoID, expectedID)
 	}
+	if !entry.CreatedInstructionFile {
+		t.Errorf("expected CreatedInstructionFile=true for fresh repo")
+	}
+	geminiPath := filepath.Join(repoDir, config.InstructionFilename)
+	geminiData, err := os.ReadFile(geminiPath)
+	if err != nil {
+		t.Fatalf("expected GEMINI.md to be created on fresh repo enroll: %v", err)
+	}
+	if !strings.Contains(string(geminiData), config.ManagedBlockBeginV2) {
+		t.Errorf("expected GEMINI.md to contain v2 managed block, got: %s", string(geminiData))
+	}
 
 	// 4. Verify data-dir layout created for this repo
 	for _, sub := range config.DataDirSubdirectories {
@@ -163,7 +174,7 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 		t.Errorf("expected template warning in stderr, got: %s", stderr.String())
 	}
 
-	// Verify GEMINI.md now contains both original content and map include line
+	// Verify GEMINI.md now contains both original content and v2 managed block
 	geminiData, err := os.ReadFile(geminiPath)
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +182,23 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 	geminiStr := string(geminiData)
 	if !strings.Contains(geminiStr, "# Existing Project Guidelines") {
 		t.Errorf("lost existing GEMINI.md content: %s", geminiStr)
+	}
+	if !strings.Contains(geminiStr, config.ManagedBlockBeginV2) || !strings.Contains(geminiStr, "@[memory atlas](.memory/ATLAS.md)") {
+		t.Errorf("expected GEMINI.md to contain v2 managed block, got: %s", geminiStr)
+	}
+
+	// Unenrolling should remove the managed block and preserve the pre-existing user content byte-for-byte
+	cmdUnenroll := unenrollCmd
+	cmdUnenroll.SetOut(&stdout)
+	if err := RunUnenroll(cmdUnenroll, repoDir, false); err != nil {
+		t.Fatalf("RunUnenroll failed: %v", err)
+	}
+	restoredGemini, err := os.ReadFile(geminiPath)
+	if err != nil {
+		t.Fatalf("expected pre-existing GEMINI.md to remain after unenroll: %v", err)
+	}
+	if string(restoredGemini) != initialGemini {
+		t.Errorf("expected GEMINI.md to match initial content byte-for-byte:\ngot:  %q\nwant: %q", string(restoredGemini), initialGemini)
 	}
 }
 
@@ -229,6 +257,10 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 	}
 	if _, err := os.Stat(config.EnrolledMarkerPath(repoDir)); !os.IsNotExist(err) {
 		t.Errorf("expected marker file to not exist after unenroll")
+	}
+	// GEMINI.md created by enroll must be deleted on unenroll
+	if _, err := os.Stat(filepath.Join(repoDir, config.InstructionFilename)); !os.IsNotExist(err) {
+		t.Errorf("expected GEMINI.md created by enroll to be deleted on unenroll")
 	}
 
 	// Private data dir must STILL exist because purge=false
@@ -662,6 +694,31 @@ func TestDoctor_Checks(t *testing.T) {
 	}
 	if buf.Len() > 0 {
 		t.Errorf("expected clean doctor output, got: %s", buf.String())
+	}
+
+	// Case 4: GEMINI.md has unbalanced or duplicate managed block markers
+	geminiPath := filepath.Join(repoDir, config.InstructionFilename)
+	if err := os.WriteFile(geminiPath, []byte("# Guidelines\n<!-- repo-memory:begin v2 -->\nunclosed block\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⚠ GEMINI.md managed block error:") || !strings.Contains(buf.String(), "unbalanced") {
+		t.Errorf("expected doctor warning for unbalanced GEMINI.md markers, got: %s", buf.String())
+	}
+
+	// Case 5: GEMINI.md has duplicate begin markers
+	if err := os.WriteFile(geminiPath, []byte("<!-- repo-memory:begin v2 -->\n<!-- repo-memory:begin v2 -->\n<!-- repo-memory:end -->\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⚠ GEMINI.md managed block error:") || !strings.Contains(buf.String(), "duplicate") {
+		t.Errorf("expected doctor warning for duplicate GEMINI.md markers, got: %s", buf.String())
 	}
 }
 
