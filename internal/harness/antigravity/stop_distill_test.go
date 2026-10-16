@@ -536,9 +536,10 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 
 		// Save mark from executionNum == 0 request at step 2
 		if err := state.SaveMark(dataDir, repoID, &state.Mark{
-			ConversationID:     convID,
-			StepIndex:          0,
-			PendingRequestStep: 2,
+			ConversationID:      convID,
+			StepIndex:           0,
+			PendingRequestStep:  2,
+			PendingContinuation: true,
 		}); err != nil {
 			t.Fatalf("SaveMark: %v", err)
 		}
@@ -637,9 +638,10 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 		dataDir, repoDir, repoID := setupEnrolledRepo(t)
 		convID := "conv-harvest-none"
 		_ = state.SaveMark(dataDir, repoID, &state.Mark{
-			ConversationID:     convID,
-			StepIndex:          0,
-			PendingRequestStep: 1,
+			ConversationID:      convID,
+			StepIndex:           0,
+			PendingRequestStep:  1,
+			PendingContinuation: true,
 		})
 
 		lines := []string{
@@ -676,9 +678,10 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 		dataDir, repoDir, repoID := setupEnrolledRepo(t)
 		convID := "conv-harvest-malformed"
 		_ = state.SaveMark(dataDir, repoID, &state.Mark{
-			ConversationID:     convID,
-			StepIndex:          0,
-			PendingRequestStep: 1,
+			ConversationID:      convID,
+			StepIndex:           0,
+			PendingRequestStep:  1,
+			PendingContinuation: true,
 		})
 
 		// Case 1: reply contains tool calls
@@ -712,6 +715,12 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 
 		// Case 2: malformed YAML without fenced block
 		convID2 := "conv-harvest-bad-yaml"
+		_ = state.SaveMark(dataDir, repoID, &state.Mark{
+			ConversationID:      convID2,
+			StepIndex:           0,
+			PendingRequestStep:  0,
+			PendingContinuation: true,
+		})
 		linesBad := []string{
 			`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","content":"commit"}`,
 			`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"Sorry, I forgot the format."}`,
@@ -735,13 +744,56 @@ func TestStopDistill_HarvestPass(t *testing.T) {
 		}
 	})
 
+	t.Run("unrequested executionNum >= 1 returns early without advancing mark.StepIndex", func(t *testing.T) {
+		dataDir, repoDir, repoID := setupEnrolledRepo(t)
+		convID := "conv-harvest-unrequested"
+		_ = state.SaveMark(dataDir, repoID, &state.Mark{
+			ConversationID:      convID,
+			StepIndex:           1,
+			PendingRequestStep:  0,
+			PendingContinuation: false,
+		})
+
+		noteReply := "```repo-memory-note\n- type: decision\n  title: Should not harvest\n  why: Unrequested continuation\n```"
+		replyJSON, _ := json.Marshal(noteReply)
+		lines := []string{
+			`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","content":"commit"}`,
+			`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"Done."}`,
+			fmt.Sprintf(`{"step_index":2,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":%s}`, string(replyJSON)),
+		}
+		tp := writeTranscriptSteps(t, convID, lines)
+
+		raw, _ := json.Marshal(StopPayload{
+			ConversationID:    convID,
+			TranscriptPath:    tp,
+			WorkspacePaths:    []string{repoDir},
+			ExecutionNum:      1,
+			TerminationReason: "NO_TOOL_CALL",
+			FullyIdle:         true,
+		})
+		out, err := HandleStop(ctx, raw, WithDataDir(dataDir))
+		if err != nil || string(out) != "{}" {
+			t.Fatalf("expected '{}', got %s (err=%v)", string(out), err)
+		}
+
+		notes, _ := inbox.NewStore(dataDir, repoID).ListAll()
+		if len(notes) != 0 {
+			t.Errorf("expected 0 notes written for unrequested continuation, got %d", len(notes))
+		}
+		mark, _ := state.LoadMark(dataDir, repoID, convID)
+		if mark.StepIndex != 1 {
+			t.Errorf("expected mark.StepIndex to remain 1, got %d", mark.StepIndex)
+		}
+	})
+
 	t.Run("scrubber error quarantines note and refuses to write to inbox", func(t *testing.T) {
 		dataDir, repoDir, repoID := setupEnrolledRepo(t)
 		convID := "conv-harvest-quarantine"
 		_ = state.SaveMark(dataDir, repoID, &state.Mark{
-			ConversationID:     convID,
-			StepIndex:          0,
-			PendingRequestStep: 1,
+			ConversationID:      convID,
+			StepIndex:           0,
+			PendingRequestStep:  1,
+			PendingContinuation: true,
 		})
 
 		// Write an invalid .memory/scrub.yaml so scrub.Scrub fails closed.

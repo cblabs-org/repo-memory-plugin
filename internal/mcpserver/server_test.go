@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
@@ -77,9 +78,14 @@ func TestMemoryNote_V2EntryTypesInboxAndMark(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	ledger := delivery.NewLedger("conv-mcp-test")
+	ledger.RecordPull("inv-EXPOSED1")
+	ledger.RecordPull("got-EXPOSED2")
+
 	srv := mcpserver.NewServer(idx,
 		mcpserver.WithOpsDir(opsDir),
 		mcpserver.WithRepoContext(dataDir, repoID, repoRoot),
+		mcpserver.WithLedger(ledger),
 	)
 
 	allTypes := []string{
@@ -126,6 +132,9 @@ func TestMemoryNote_V2EntryTypesInboxAndMark(t *testing.T) {
 	first := notes[0]
 	if first.Source != inbox.SourceMCPNote {
 		t.Errorf("expected source %q, got %q", inbox.SourceMCPNote, first.Source)
+	}
+	if len(first.ExposureList) != 2 || first.ExposureList[0].EntryID != "inv-EXPOSED1" || first.ExposureList[1].EntryID != "got-EXPOSED2" {
+		t.Errorf("expected ExposureList populated from ledger on mcp-note, got %+v", first.ExposureList)
 	}
 	if len(first.Items) != 1 || len(first.Items[0].AnchorChecks) != 2 {
 		t.Fatalf("expected 2 anchor checks on note item, got %+v", first.Items)
