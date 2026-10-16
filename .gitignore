@@ -13,3 +13,5 @@ evaluation/eval-v2/tpl-c/
 evaluation/eval-v2/tpl-d/
 # eval-v2 seed data (ops JSON + SQLite index)
 evaluation/eval-v2/seed/
+# eval-v2 per-run working copies and archives
+evaluation/eval-v2/runs/
