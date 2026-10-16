@@ -88,6 +88,14 @@ func TestQualifiesAndRenderSkillMarkdown(t *testing.T) {
 	if ok, _ := QualifiesForSkill(entryNoConvEvidence, singleConvOutcomes); ok {
 		t.Errorf("expected false when only 1 conversation succeeded")
 	}
+	if ok, _ := QualifiesForSkill(entryNoConvEvidence, nil); ok {
+		t.Errorf("expected false when outcomes == nil and Evidence has no conv: tags")
+	}
+	entryOneConvEvidence := entry
+	entryOneConvEvidence.Evidence = []string{"conv:c1"}
+	if ok, _ := QualifiesForSkill(entryOneConvEvidence, nil); ok {
+		t.Errorf("expected false when outcomes == nil and Evidence has only 1 conv: tag")
+	}
 
 	// Two distinct conversations in outcomes -> qualifies.
 	twoConvOutcomes := &OutcomeState{

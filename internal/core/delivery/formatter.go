@@ -15,7 +15,7 @@ func FormatEntry(entry dossiers.Entry) string {
 }
 
 func FormatEntryForMoment(entry dossiers.Entry, moment Moment, workspaceRoot string) string {
-	if moment == MomentFirstTouch {
+	if moment == MomentFirstTouch || moment == MomentFirstEntry {
 		if slug := skills.GraduatedSkillSlug(entry, workspaceRoot); slug != "" {
 			title := skills.EntryTitleLine(entry)
 			return fmt.Sprintf("[repo-memory %s] skill %s covers this procedure: %s", entry.ID, slug, title)

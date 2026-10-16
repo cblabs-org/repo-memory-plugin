@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
@@ -121,5 +122,60 @@ func TestCheckGraduatedSkillsLint(t *testing.T) {
 	}
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "Graduated skill .agents/skills/rm-stale/SKILL.md is stale or its source entry no longer qualifies") {
 		t.Fatalf("expected stale warning for rm-stale, got %v", warnings)
+	}
+}
+
+func TestGraduatedSkillSlug_RequiresGeneratedFileWhenWorkspaceRootSet(t *testing.T) {
+	workspace := t.TempDir()
+
+	entry := dossiers.Entry{
+		ID:           "rec-auto-01",
+		Type:         dossiers.EntryTypeRecipe,
+		DossierScope: "build",
+		Text:         "Build and test project\n1. Run `go build ./...`\n2. Run `go test ./...`",
+		Evidence:     []string{"conv:c1", "conv:c2"},
+		SuccessCount: 2,
+		FailureCount: 0,
+	}
+
+	// 1. When workspaceRoot is non-empty and .agents/skills/rm-<slug>/SKILL.md is missing on disk,
+	// GraduatedSkillSlug must return "" (never fall back to QualifiesForSkill(entry, nil)).
+	if got := GraduatedSkillSlug(entry, workspace); got != "" {
+		t.Fatalf("expected empty slug when SKILL.md does not exist under workspaceRoot, got %q", got)
+	}
+
+	// 2. When .agents/skills/rm-<slug>/SKILL.md exists on disk WITHOUT generated_by: repo-memory,
+	// GraduatedSkillSlug must return "".
+	slug, md := RenderSkillMarkdown(entry)
+	skillDir := filepath.Join(workspace, ".agents", "skills", slug)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("---\nname: "+slug+"\ndescription: Hand written\n---\n# Custom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GraduatedSkillSlug(entry, workspace); got != "" {
+		t.Fatalf("expected empty slug for hand-authored SKILL.md without generated_by: repo-memory, got %q", got)
+	}
+
+	// 3. When .agents/skills/rm-<slug>/SKILL.md exists on disk WITH generated_by: repo-memory,
+	// GraduatedSkillSlug returns slug.
+	if err := os.WriteFile(skillFile, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GraduatedSkillSlug(entry, workspace); got != slug {
+		t.Fatalf("expected %q when generated SKILL.md exists on disk, got %q", slug, got)
+	}
+
+	// 4. When workspaceRoot is empty, GraduatedSkillSlug falls back to QualifiesForSkill(entry, nil),
+	// which requires >= 2 distinct conversations for automatic graduation.
+	if got := GraduatedSkillSlug(entry, ""); got != slug {
+		t.Fatalf("expected %q when workspaceRoot is empty and entry has 2 conv: tags, got %q", slug, got)
+	}
+	singleConvEntry := entry
+	singleConvEntry.Evidence = []string{"conv:c1"}
+	if got := GraduatedSkillSlug(singleConvEntry, ""); got != "" {
+		t.Fatalf("expected empty slug when entry has only 1 conversation, got %q", got)
 	}
 }

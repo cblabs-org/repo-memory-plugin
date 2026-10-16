@@ -222,41 +222,9 @@ func QualifiesForSkill(entry dossiers.Entry, outcomes *OutcomeState) (bool, stri
 		return false, ""
 	}
 
-	convCount, hasOutcomeRecord := distinctSucceededConvCount(entry, outcomes)
-	if hasOutcomeRecord {
-		if convCount < 2 {
-			return false, ""
-		}
-		return true, SkillSlug(entry)
-	}
-
-	// Check Evidence conv: tags when outcomes has no record for entry.ID.
-	hasConvEvidence := false
-	for _, ev := range entry.Evidence {
-		if strings.HasPrefix(strings.TrimSpace(ev), "conv:") {
-			hasConvEvidence = true
-			break
-		}
-	}
-	if hasConvEvidence {
-		if convCount < 2 {
-			return false, ""
-		}
-		return true, SkillSlug(entry)
-	}
-
-	// If outcomes was explicitly provided (e.g. during SyncGraduatedSkills) and neither outcomes nor
-	// Evidence has >= 2 distinct conversations, require at least 2 distinct evidence records if Evidence is populated.
-	if outcomes != nil && len(entry.Evidence) > 0 {
-		evSeen := make(map[string]bool)
-		for _, ev := range entry.Evidence {
-			if t := strings.TrimSpace(ev); t != "" {
-				evSeen[t] = true
-			}
-		}
-		if len(evSeen) < 2 {
-			return false, ""
-		}
+	convCount, _ := distinctSucceededConvCount(entry, outcomes)
+	if convCount < 2 {
+		return false, ""
 	}
 
 	return true, SkillSlug(entry)
@@ -394,8 +362,10 @@ func GraduatedSkillSlug(entry dossiers.Entry, workspaceRoot string) string {
 	slug := SkillSlug(entry)
 	if strings.TrimSpace(workspaceRoot) != "" {
 		skillPath := filepath.Join(workspaceRoot, ".agents", "skills", slug, "SKILL.md")
-		if info, err := os.Stat(skillPath); err == nil && !info.IsDir() {
-			return slug
+		if data, err := os.ReadFile(skillPath); err == nil {
+			if IsGeneratedByRepoMemory(string(data)) {
+				return slug
+			}
 		}
 		// Also check if any .agents/skills/rm-*/SKILL.md references source_entry_id: <entry.ID>.
 		skillsRoot := filepath.Join(workspaceRoot, ".agents", "skills")
@@ -406,12 +376,13 @@ func GraduatedSkillSlug(entry dossiers.Entry, workspaceRoot string) string {
 				}
 				candidate := filepath.Join(skillsRoot, de.Name(), "SKILL.md")
 				if data, readErr := os.ReadFile(candidate); readErr == nil {
-					if extractSourceEntryIDFromSkill(string(data)) == entry.ID {
+					if IsGeneratedByRepoMemory(string(data)) && extractSourceEntryIDFromSkill(string(data)) == entry.ID {
 						return de.Name()
 					}
 				}
 			}
 		}
+		return ""
 	}
 
 	if ok, qSlug := QualifiesForSkill(entry, nil); ok {

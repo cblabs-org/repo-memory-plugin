@@ -404,7 +404,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			if !ledger.HasSeenDossier(scopeName) {
 				entries, err := engine.DossierEntries(ctx, scopeName)
 				if err == nil && len(entries) > 0 {
-					formatted := delivery.FormatEntries(entries)
+					formatted := delivery.FormatEntriesForMoment(entries, delivery.MomentFirstEntry, workspaceRoot)
 					injectSteps = append(injectSteps, InjectStep{
 						UserMessage: formatted,
 					})
