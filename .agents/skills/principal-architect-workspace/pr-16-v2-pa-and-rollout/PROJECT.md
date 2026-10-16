@@ -42,8 +42,8 @@ Complete the final PR (`22/22`) of the `repo-memory` `v2.2` programme (`PR-16-v2
 
 | # | Work Order | Branch | Scope | Complexity | Status |
 |---|---|---|---|---|---|
-| 1 | [wo1-pa-summaries-and-workorder-briefs](wo1-pa-summaries-and-workorder-briefs/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo1-pa-summaries-and-workorder-briefs` | Implement `repo-memory summary <session-id>` ($\le 1.5\text{k}$ tokens) and `repo-memory brief --workorder <path>` / `--scope <scope>` with unit tests. | standard | ☐ Ready |
-| 2 | [wo2-backfill-and-reproject-cli](wo2-backfill-and-reproject-cli/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo2-backfill-and-reproject-cli` | Upgrade `repo-memory backfill` (`--dry-run`, `--json`, `--transcripts`, `--docs`, `--git`, A5 spend guards) and implement `repo-memory reproject` (`--dry-run`, `--json`, human-decision preservation check). | standard | ☐ Planned |
+| 1 | [wo1-pa-summaries-and-workorder-briefs](wo1-pa-summaries-and-workorder-briefs/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo1-pa-summaries-and-workorder-briefs` | Implement `repo-memory summary <session-id>` ($\le 1.5\text{k}$ tokens) and `repo-memory brief --workorder <path>` / `--scope <scope>` with unit tests. | standard | ☑ Completed (`c52caed`) |
+| 2 | [wo2-backfill-and-reproject-cli](wo2-backfill-and-reproject-cli/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo2-backfill-and-reproject-cli` | Upgrade `repo-memory backfill` (`--dry-run`, `--json`, `--transcripts`, `--docs`, `--git`, A5 spend guards) and implement `repo-memory reproject` (`--dry-run`, `--json`, human-decision preservation check). | standard | ☐ Ready |
 | 3 | [wo3-dogfood-rollout-and-ci-packaging](wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging` | Run full dogfood rollout on `repo-memory-plugin` (`seed`, `seed-docs`, `ops gc`, `reproject`, `promote-skills`, `reindex`, `doctor`) and update `.github/workflows/` CI checks. | standard | ☐ Planned |
 | 4 | [wo4-programme-closeout-and-handover](wo4-programme-closeout-and-handover/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover` | Update `README.md` CLI reference, run full verification (`go build`, `go vet`, `GOOS=windows`, `go test -race`), rebuild `~/.local/bin/repo-memory`, and finalize `PROJECT.md` for Step 6A PR Audit. | standard | ☐ Planned |
 
@@ -63,5 +63,11 @@ Complete the final PR (`22/22`) of the `repo-memory` `v2.2` programme (`PR-16-v2
 ## Session Log
 
 ### 2026-10-16 — Project Initialized
-- Initialized `pr-16-v2-pa-and-rollout` stacked on `pr-15-v2-learning/wo5-verification-and-skill-lint` (`cb2bc10`).
+- Initialized `pr-16-v2-pa-and-rollout` stacked on `pr-15-v2-learning/wo5-verification-and-skill-lint` (`5c57d41`).
 - Approved 4-WO decomposition (`WO1` PA summaries & workorder briefs, `WO2` backfill & reproject CLI, `WO3` dogfood rollout & CI, `WO4` programme close-out).
+
+### 2026-10-16 — WO1 Completed (`c52caed`)
+- Exported `dossiers.EstimateTokens` in `internal/core/dossiers/lint.go`.
+- Implemented `internal/core/episode/summary.go` (`BuildSessionSummary`, `SummarizeSessionInput`) and `cmd/repo-memory/cmd_summary.go` (`repo-memory summary <session-id-or-path> [--json] [--max-tokens]`).
+- Implemented `internal/core/delivery/workorder_brief.go` (`ExtractWorkorderPaths`, `BuildWorkorderBrief`) and `cmd/repo-memory/cmd_brief.go` (`repo-memory brief [--workorder <path>] [--scope <scope>] [--json] [--max-tokens]`).
+- Verified all unit and race tests pass across `internal/core/episode`, `internal/core/delivery`, and `cmd/repo-memory`.
