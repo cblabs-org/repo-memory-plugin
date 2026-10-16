@@ -14,6 +14,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
@@ -134,8 +135,18 @@ func (p *PipelineExecutor) ConvertCapturesToEvidence(ctx context.Context) error 
 	return p.convertCapturesToEvidence(ctx)
 }
 
+// HarvestFreeSources runs Stage 1b deterministic zero-token harvest over episode checkpoints
+// and conversation artifacts (`source: "checkpoint"` and `source: "artifact"`).
+func (p *PipelineExecutor) HarvestFreeSources(ctx context.Context) (int, error) {
+	return inbox.HarvestCheckpointsAndArtifacts(ctx, p.dataDir, p.repoID, p.repoRoot, p.epStore, inbox.NewStore(p.dataDir, p.repoID))
+}
+
 func (p *PipelineExecutor) Run(ctx context.Context) error {
 	if err := p.convertCapturesToEvidence(ctx); err != nil {
+		return err
+	}
+
+	if _, err := p.HarvestFreeSources(ctx); err != nil {
 		return err
 	}
 

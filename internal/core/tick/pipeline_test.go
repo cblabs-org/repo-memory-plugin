@@ -11,6 +11,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
@@ -249,6 +250,84 @@ func TestPipelineRun_ConvertCapturesToEvidence(t *testing.T) {
 	}
 	if ep.Header.Status != "captured" {
 		t.Errorf("got status %s, want captured", ep.Header.Status)
+	}
+}
+
+func TestPipelineRun_HarvestFreeSources(t *testing.T) {
+	dataDir := t.TempDir()
+	repoRoot := filepath.Join(dataDir, "workspace")
+	repoID := "repo-test-harvest"
+	convID := "conv-session-harvest"
+
+	os.MkdirAll(filepath.Join(repoRoot, ".memory"), 0755)
+	os.MkdirAll(filepath.Join(repoRoot, "internal", "core", "tick"), 0755)
+	os.WriteFile(filepath.Join(repoRoot, "internal", "core", "tick", "pipeline.go"), []byte("package tick\n"), 0644)
+
+	cfg := config.DefaultRepoConfig()
+	config.SaveRepoConfig(repoRoot, cfg)
+
+	transcriptDir := filepath.Join(dataDir, "transcripts")
+	os.MkdirAll(transcriptDir, 0755)
+	transcriptPath := filepath.Join(transcriptDir, "transcript.jsonl")
+	transcriptContent := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-10-04T10:00:00Z","content":"Hello"}
+{"step_index":1,"source":"SYSTEM","type":"CHECKPOINT","status":"DONE","created_at":"2026-10-04T10:02:00Z","content":"### 1. Model Knowledge\n- **Core Boundary**: ` + "`internal/core/tick/pipeline.go`" + ` must never import concrete harness adapters.\n\n### 2. Files and Code\n- internal/core/tick/pipeline.go"}
+`
+	os.WriteFile(transcriptPath, []byte(transcriptContent), 0644)
+
+	repoDataDir := filepath.Join(dataDir, repoID)
+	os.MkdirAll(repoDataDir, 0755)
+	jobStore, err := jobs.Open(filepath.Join(repoDataDir, "jobs.sqlite"))
+	if err != nil {
+		t.Fatalf("jobs.Open: %v", err)
+	}
+	defer jobStore.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	mockEntry := spool.Entry{
+		Kind:           spool.KindCapture,
+		ConversationID: convID,
+		TranscriptPath: transcriptPath,
+		RepoRoot:       repoRoot,
+		Branch:         "main",
+		Head:           "commit-abc123",
+	}
+	entryBytes, _ := json.Marshal(mockEntry)
+
+	_, _ = jobStore.Enqueue(ctx, &jobs.Job{
+		Kind:           jobs.KindCapture,
+		Priority:       jobs.PriorityNormal,
+		IdempotencyKey: "capture-" + convID,
+		Payload:        string(entryBytes),
+	})
+
+	epStore := episode.NewStore(dataDir, repoID)
+	exec := tick.NewPipelineExecutor(dataDir, repoRoot, repoID, jobStore, epStore)
+
+	if err := exec.Run(ctx); err != nil {
+		t.Fatalf("exec.Run failed: %v", err)
+	}
+
+	inboxStore := inbox.NewStore(dataDir, repoID)
+	notes, err := inboxStore.ListUnconsolidated()
+	if err != nil {
+		t.Fatalf("ListUnconsolidated: %v", err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("expected 1 harvested checkpoint note, got %d", len(notes))
+	}
+	if notes[0].Source != inbox.SourceCheckpoint {
+		t.Errorf("got source %q, want %q", notes[0].Source, inbox.SourceCheckpoint)
+	}
+
+	// Second HarvestFreeSources call is idempotent
+	n2, err := exec.HarvestFreeSources(ctx)
+	if err != nil {
+		t.Fatalf("second HarvestFreeSources failed: %v", err)
+	}
+	if n2 != 0 {
+		t.Errorf("expected 0 notes on second HarvestFreeSources call, got %d", n2)
 	}
 }
 
