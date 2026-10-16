@@ -185,3 +185,71 @@ func TestReproject_HumanDecisionPreservationGuard(t *testing.T) {
 		t.Errorf("expected dossiers/internal/core/jobs.md in FilesUpdated, got %v", resAllowed.FilesUpdated)
 	}
 }
+
+func TestReproject_CapturesAndPreservesHumanProseHandEdits(t *testing.T) {
+	ctx := context.Background()
+	memDir := filepath.Join(t.TempDir(), ".memory")
+	opsDir := filepath.Join(memDir, "ops")
+	seedOpsBatchForReprojectTest(t, opsDir)
+
+	if _, _, err := Reproject(ctx, ReprojectOptions{
+		MemoryDir: memDir,
+		OpsDirs:   []string{opsDir},
+	}); err != nil {
+		t.Fatalf("initial Reproject failed: %v", err)
+	}
+
+	// Simulate a human prose edit to an existing entry in .memory/dossiers/internal/core/jobs.md
+	jobsDossierPath := filepath.Join(memDir, "dossiers", "internal", "core", "jobs.md")
+	origBytes, err := os.ReadFile(jobsDossierPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editedContent := strings.Replace(
+		string(origBytes),
+		"Enable PRAGMA journal_mode=WAL on open",
+		"Enable PRAGMA journal_mode=WAL and busy_timeout=5000 on open",
+		1,
+	)
+	if editedContent == string(origBytes) {
+		t.Fatalf("failed to apply simulated prose edit to jobs.md:\n%s", string(origBytes))
+	}
+	if err := os.WriteFile(jobsDossierPath, []byte(editedContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reproject captures the hand edit as an OpAmend batch in .memory/ops and preserves the human prose
+	res1, _, err := Reproject(ctx, ReprojectOptions{
+		MemoryDir: memDir,
+		OpsDirs:   []string{opsDir},
+	})
+	if err != nil {
+		t.Fatalf("Reproject after hand edit failed: %v", err)
+	}
+	if res1.HandEditsCaptured != 1 {
+		t.Errorf("HandEditsCaptured = %d, want 1", res1.HandEditsCaptured)
+	}
+
+	afterBytes, err := os.ReadFile(jobsDossierPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(afterBytes), "busy_timeout=5000") {
+		t.Errorf("expected human prose edit to be preserved in jobs.md after Reproject, got:\n%s", string(afterBytes))
+	}
+
+	// Subsequent Reproject replays the captured OpAmend from .memory/ops with 0 new hand edits and 0 file churn
+	res2, _, err := Reproject(ctx, ReprojectOptions{
+		MemoryDir: memDir,
+		OpsDirs:   []string{opsDir},
+	})
+	if err != nil {
+		t.Fatalf("second Reproject failed: %v", err)
+	}
+	if res2.HandEditsCaptured != 0 {
+		t.Errorf("second Reproject HandEditsCaptured = %d, want 0", res2.HandEditsCaptured)
+	}
+	if len(res2.FilesUpdated) != 0 {
+		t.Errorf("second Reproject FilesUpdated = %v, want empty", res2.FilesUpdated)
+	}
+}
