@@ -135,19 +135,20 @@ Run all tests (`go test -v -race ./internal/core/consolidate/...`), `go vet ./in
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/consolidate/record.go` — Implemented `OpValidationFailure`, `ValidateAndPrepareOps`, `RecordAndRenderResult`, `RecordAndRenderDirs`, and `RecordAndRenderTier` covering state-aware op existence checks, 6-line entry text cap enforcement, schema validation (`ops.ValidateOp`), 4-layer secret/blob scrubbing (`scrub.Scrub` + `scrub.QuarantinePayload`), ULID `ops.OpBatch` persistence, dossier/history/atlas projection, `dossiers.LintDossier` cap checks, and `inboxStore.MarkConsolidated`.
+- `internal/core/consolidate/record_test.go` — Added unit tests `TestValidateAndPrepareOps_StateAwareAndLifecycle`, `TestValidateAndPrepareOps_ScrubberRedactionAndQuarantine`, and `TestRecordAndRenderTier_EndToEndProjectionAndMarkConsolidated`.
 
 ### Decisions Made
-- Decision description and rationale
+- Invoked `scrub.Scrub("", opScrubCtx)` once upfront on every op so malformed Layer 3 `.memory/scrub.yaml` configs fail closed even on ops without optional text fields.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+(none)
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+(none)
 
 ### Blockers
 (none)
