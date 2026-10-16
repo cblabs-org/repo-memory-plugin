@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-12-v2-distillation
 > **Base branch:** `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` (`c4a275c`)
-> **Status:** ⏳ Awaiting Cold-Firewall PR Audit (6/6 WOs complete)
+> **Status:** ✅ Complete (6/6 WOs complete, PR #20 APPROVED)
 > **Human approval:** Decomposition approved 2026-10-15 as part of the v2.2 Programme Transition Plan (`PROGRAM.md` / `PROGRAM-PLAN.md`, Decision `VD14`).
 
 ## Objective
@@ -74,7 +74,9 @@ Implement the `v2.2` Stage 1 Distillation pipeline per `SPEC.md` v1.0 (§4.6, §
 - Added `StageDistill` and `StageConsolidate` (`internal/harness/types.go`), `KindFallback` and `KindConsolidate` (`internal/core/jobs/types.go`), and updated `Housekeeper.Run` (`internal/harness/antigravity/executor.go`) to invoke `agy -p --agent repo-memory-distiller` with `REPO_MEMORY_HOUSEKEEPING=1` and `REPO_MEMORY_INTERNAL=1`.
 - Implemented Stage 1c Sidecar Fallback (`RunSidecarFallback` in `internal/core/tick/fallback.go`) wired into `PipelineExecutor.Run` (`internal/core/tick/pipeline.go`).
 
-### 2026-10-16 — WO6 (`wo6-managed-instruction-block-and-verification`) Complete (`5e9f197`)
+### 2026-10-16 — WO6 (`wo6-managed-instruction-block-and-verification`) Complete (`5e9f197`) & Cold-Firewall PR #20 Approved (`e038f91`)
 - Implemented Addendum A §8 (`A8: Managed instruction blocks (v2)`) in `internal/core/config/managed_block.go` (`CanonicalManagedBlockV2`, `ValidateInstructionBlock`, `EnsureInstructionBlock`, `RemoveInstructionBlock`) and `CreatedInstructionFile` tracking in `internal/core/config/registry.go`.
 - Wired managed instruction block lifecycle into `RunEnroll` (`cmd_enroll.go`), `RunUnenroll` (`cmd_unenroll.go`), and `RunDoctor` (`cmd_doctor.go`).
+- Opened stacked GitHub [PR #20](https://github.com/cblabs-org/repo-memory-plugin/pull/20); Cold-Firewall PR Audit returned `APPROVED (0 blocking, 0 major, 3 minor)`.
+- Applied surgical polish commit `e038f91` resolving all 3 minor audit observations (`[MINOR-1]` attaching `s.ledger.GetExposureList()` to `mcp-note` inbox notes in `HandleMemoryNote`, `[MINOR-2]` guarding `harvestTurnNote` on `mark.PendingContinuation || mark.PendingRequestStep > 0`, and `[MINOR-3]` advancing `mark.StepIndex` / `mark.LastFallbackAt` on `NONE` sidecar responses without incrementing `NoteCount` / `NotesToday`).
 - Rebuilt `~/.local/bin/repo-memory` and verified `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./cmd/... ./internal/... ./packaging/...`.
