@@ -1,5 +1,5 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-16T14:52:00Z -->
+<!-- Last updated: 2026-10-16T19:05:00Z -->
 
 ## Active Programs
 | Program | Plan | Status |
@@ -9,7 +9,7 @@
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-15-v2-learning | **Active — WO3/5 complete, WO4/5 ready** (5-WO decomposition approved) | Layer 3 Eval Bridge (`eval-v2`), Skills (`graduate`, `tracker`), Tick (`closes_when`, `gardening`), Coverage/Gaps & Spend Guards (`mcpserver`, `coverage`, `config`), Doctor Lint | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
+| pr-15-v2-learning | **Active — WO4/5 complete, WO5/5 ready** (5-WO decomposition approved) | Layer 3 Eval Bridge (`eval-v2`), Skills (`graduate`, `tracker`), Tick (`closes_when`, `gardening`), Coverage/Gaps & Spend Guards (`mcpserver`, `coverage`, `config`), Doctor Lint | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO4/7 complete, WO5/7 ready (Stage 1 & WO4 complete; WO5–WO7 bridge prompt & rubrics committed in PR-15 WO1)** — Ready for Stage 2a/2b multi-replicate workstation runs | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
