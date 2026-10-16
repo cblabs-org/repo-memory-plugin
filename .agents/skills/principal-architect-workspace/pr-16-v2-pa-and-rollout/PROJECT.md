@@ -3,7 +3,7 @@
 > **Programme:** [repo-memory](../programme-repo-memory/PROGRAM.md) ([PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md))
 > **Project:** `pr-16-v2-pa-and-rollout`
 > **Base branch:** `pr-15-v2-learning/wo5-verification-and-skill-lint` (`cb2bc10`)
-> **Status:** 🔄 Active — Approved for execution (`WO1`–`WO4`)
+> **Status:** ✅ Complete (2026-10-16, GitHub PR #24 APPROVED)
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 (§5.5, §7.7, §13, §14) + [v2.2 Design (Rev 4)](../../../../docs/design-v2-distillation-retrieval.md) (§5.5, §7, §8) + [Addendum A (Rev 3)](../../../../docs/addendum-a-provenance-and-hardening.md) (§6 A5, §7 A6, §10 A7, §11 A9)
 
 ---
@@ -86,3 +86,7 @@ Complete the final PR (`22/22`) of the `repo-memory` `v2.2` programme (`PR-16-v2
 - Updated `README.md` with `.memory/QUESTIONS.md` in the storage layout and the complete `v2.2` CLI subcommand reference (`install`, `uninstall`, `enroll`, `unenroll`, `seed-docs`, `seed`, `ops gc`, `consolidate`, `promote-skills`, `garden`, `summary`, `brief`, `backfill`, `reproject`, `reindex`, `tick`, `status`, `search`, `usage`, `report`, `snapshot`, `doctor`, `disable`, `enable`).
 - Applied Cold-Firewall PR Audit polish items (`[POLISH-1]` through `[POLISH-5]`): scrubbed PA workspace negative-instruction strings, updated `README.md:78` quickstart test command to `go test ./cmd/... ./internal/... ./packaging/...`, hardened `normalizeWorkorderCandidatePath` (`path.Clean` + `..` traversal rejection) and added 1-line graduated skill pointer rendering in `workorder_brief.go`, and added `DetectHandEdits` capture before re-render in `reproject.go`.
 - Rebuilt `~/.local/bin/repo-memory` and verified `go build`, `go vet`, `GOOS=windows`, `go test -race ./cmd/... ./internal/... ./packaging/...`, `doctor .`, and `reproject --dry-run`.
+
+### 2026-10-16 — Step 6A Audit & Step 6B Graduation (GitHub PR #24 APPROVED)
+- Opened stacked GitHub PR #24 (`pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover` -> `pr-15-v2-learning/wo5-verification-and-skill-lint`).
+- Cold-Firewall PR Audit returned `APPROVED (0 blocking, 0 major)`; all 5 polish items applied and verified in `3bab035`. Graduated into `MEMORY.md` and `PROJECT_INDEX.md`.

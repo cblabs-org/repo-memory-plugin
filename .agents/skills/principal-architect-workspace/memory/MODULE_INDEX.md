@@ -82,4 +82,4 @@
 |---|---|---|
 | pr-13-v2-consolidation ✅ | Two-lane publish (`memory/pending` worktree), Five-Tier scope isolation (`user:`, `branch:`, `repo:`), branch-merge promotion (`PromoteMergedBranchOps`) (PR #21) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
 | pr-15-v2-learning ✅ | Close conditions (`closes_when`), gardening (`repo-memory garden`), elicitation questions (`.memory/QUESTIONS.md`), skill lint (`repo-memory doctor`) (PR #23) | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
-| pr-16-v2-pa-and-rollout (active) | Episode summaries (`summary`), WORKORDER briefs (`brief --workorder`), `backfill`, `reproject`, full dogfood rollout | [PROJECT.md](../pr-16-v2-pa-and-rollout/PROJECT.md) |
+| pr-16-v2-pa-and-rollout ✅ | Episode summaries (`summary`), WORKORDER briefs (`brief --workorder`), `backfill`, `reproject`, full dogfood rollout & CI (PR #24) | [PROJECT.md](../pr-16-v2-pa-and-rollout/PROJECT.md) |

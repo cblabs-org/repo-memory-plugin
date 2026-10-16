@@ -4,6 +4,7 @@
 
 | Project | Completed | Scope | Session | Context |
 |---|---|---|---|---|
+| pr-11-v2-doc-seeding-and-lifecycles | 2026-10-15 | Dossiers (`CognitiveKind`, `{section?}`), Ops (`doc-seed`), Index, Seeder (`DocSeedSource`, `seed-docs`), Tick (`dream-freshness`) (PR #19 APPROVED) | - | [PROJECT.md](../pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md) |
 | pr-10b-delivery-and-storage-fixes | 2026-10-15 | Delivery (`UserMessage`, `DetectRewind`, `InjectedSet`), Index (`#13`), Projector (`#11`), Seeder (`#10`, `#12`), Ops (`#16`) (PR #18 APPROVED) | - | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-10a-v2-2-docs-and-specs | 2026-10-15 | SPEC v1.0, Design v2 Rev 4, Addendum A Rev 3, Hooks Reference, README (PR #17) | - | [PROJECT.md](../pr-10a-v2-2-docs-and-specs/PROJECT.md) |
 | pr-09b-product-fixes | 2026-10-11 | Delivery, Index, Ranker, Seeder (Stage 0 fixes: canonical IndexPath, bm25 relevance, per-session InjectedSet dedup, relevance threshold, FTS error surfacing) | - | [PROJECT.md](../pr-09b-product-fixes/PROJECT.md) |
