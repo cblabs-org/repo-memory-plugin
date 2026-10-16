@@ -306,40 +306,13 @@ func evaluateSingleClosesWhen(ctx context.Context, repoRoot, dataDir, repoID str
 		if strings.TrimSpace(repoRoot) == "" {
 			return false, ""
 		}
-		relPath, pattern, ok := splitPathAndPattern(arg)
-		if !ok {
-			return false, ""
-		}
-		fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			return false, ""
-		}
-		if matchFilePattern(string(data), pattern) {
-			return true, fmt.Sprintf("file %s contains %s", relPath, pattern)
-		}
-		return false, ""
+		return evaluateFileContains(repoRoot, arg)
 
 	case "file_not_contains":
 		if strings.TrimSpace(repoRoot) == "" {
 			return false, ""
 		}
-		relPath, pattern, ok := splitPathAndPattern(arg)
-		if !ok {
-			return false, ""
-		}
-		fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return true, fmt.Sprintf("file %s is absent", relPath)
-			}
-			return false, ""
-		}
-		if !matchFilePattern(string(data), pattern) {
-			return true, fmt.Sprintf("file %s does not contain %s", relPath, pattern)
-		}
-		return false, ""
+		return evaluateFileNotContains(repoRoot, arg)
 
 	case "branch_merged":
 		if strings.TrimSpace(repoRoot) == "" {
@@ -371,19 +344,89 @@ func evaluateSingleClosesWhen(ctx context.Context, repoRoot, dataDir, repoID str
 	}
 }
 
+func resolveSafeRepoPath(repoRoot, rawRelPath string) (cleanRelSlash string, absTarget string, ok bool) {
+	if strings.TrimSpace(repoRoot) == "" {
+		return "", "", false
+	}
+	rawRelPath = strings.TrimSpace(rawRelPath)
+	if rawRelPath == "" || filepath.IsAbs(rawRelPath) || strings.HasPrefix(rawRelPath, "/") || strings.HasPrefix(rawRelPath, "\\") {
+		return "", "", false
+	}
+	slashed := strings.ReplaceAll(rawRelPath, "\\", "/")
+	for strings.HasPrefix(slashed, "./") {
+		slashed = strings.TrimPrefix(slashed, "./")
+	}
+	if slashed == "" || strings.HasPrefix(slashed, "/") {
+		return "", "", false
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(slashed))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || filepath.IsAbs(cleaned) {
+		return "", "", false
+	}
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", "", false
+	}
+	absTarget = filepath.Join(absRoot, cleaned)
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", false
+	}
+	return filepath.ToSlash(cleaned), absTarget, true
+}
+
+func evaluateFileContains(repoRoot, arg string) (bool, string) {
+	rawPath, pattern, ok := splitPathAndPattern(arg)
+	if !ok {
+		return false, ""
+	}
+	relPath, fullPath, ok := resolveSafeRepoPath(repoRoot, rawPath)
+	if !ok {
+		return false, ""
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return false, ""
+	}
+	if matchFilePattern(string(data), pattern) {
+		return true, fmt.Sprintf("file %s contains %s", relPath, pattern)
+	}
+	return false, ""
+}
+
+func evaluateFileNotContains(repoRoot, arg string) (bool, string) {
+	rawPath, pattern, ok := splitPathAndPattern(arg)
+	if !ok {
+		return false, ""
+	}
+	relPath, fullPath, ok := resolveSafeRepoPath(repoRoot, rawPath)
+	if !ok {
+		return false, ""
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true, fmt.Sprintf("file %s is absent", relPath)
+		}
+		return false, ""
+	}
+	if !matchFilePattern(string(data), pattern) {
+		return true, fmt.Sprintf("file %s does not contain %s", relPath, pattern)
+	}
+	return false, ""
+}
+
 func splitPathAndPattern(arg string) (string, string, bool) {
 	idx := strings.IndexByte(arg, ':')
 	if idx <= 0 {
 		return "", "", false
 	}
-	relPath := filepath.ToSlash(strings.TrimSpace(arg[:idx]))
-	relPath = strings.TrimPrefix(relPath, "./")
-	relPath = strings.TrimPrefix(relPath, "/")
+	rawPath := strings.TrimSpace(arg[:idx])
 	pattern := arg[idx+1:]
-	if relPath == "" || pattern == "" {
+	if rawPath == "" || pattern == "" {
 		return "", "", false
 	}
-	return relPath, pattern, true
+	return rawPath, pattern, true
 }
 
 func matchFilePattern(content, pattern string) bool {
@@ -402,33 +445,46 @@ func matchFilePattern(content, pattern string) bool {
 }
 
 func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
-	clean := filepath.ToSlash(strings.TrimSpace(pathOrSlug))
-	clean = strings.TrimPrefix(clean, "./")
-	clean = strings.TrimPrefix(clean, "/")
-	if clean == "" {
+	clean, directPath, ok := resolveSafeRepoPath(repoRoot, pathOrSlug)
+	if !ok {
 		return false, ""
+	}
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return false, ""
+	}
+	isInsideRoot := func(p string) bool {
+		rel, rErr := filepath.Rel(absRoot, p)
+		return rErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 	}
 
 	var candidateWOFiles []string
 	var candidateProjectFiles []string
 	slug := filepath.Base(strings.TrimSuffix(clean, "/WORKORDER.md"))
 
-	directPath := filepath.Join(repoRoot, filepath.FromSlash(clean))
 	if info, err := os.Stat(directPath); err == nil {
 		if info.IsDir() {
 			woFile := filepath.Join(directPath, "WORKORDER.md")
-			if _, err := os.Stat(woFile); err == nil {
-				candidateWOFiles = append(candidateWOFiles, woFile)
+			if isInsideRoot(woFile) {
+				if _, err := os.Stat(woFile); err == nil {
+					candidateWOFiles = append(candidateWOFiles, woFile)
+				}
 			}
 			projFile := filepath.Join(filepath.Dir(directPath), "PROJECT.md")
-			if _, err := os.Stat(projFile); err == nil {
-				candidateProjectFiles = append(candidateProjectFiles, projFile)
+			if isInsideRoot(projFile) {
+				if _, err := os.Stat(projFile); err == nil {
+					candidateProjectFiles = append(candidateProjectFiles, projFile)
+				}
 			}
 		} else {
-			candidateWOFiles = append(candidateWOFiles, directPath)
+			if isInsideRoot(directPath) {
+				candidateWOFiles = append(candidateWOFiles, directPath)
+			}
 			projFile := filepath.Join(filepath.Dir(filepath.Dir(directPath)), "PROJECT.md")
-			if _, err := os.Stat(projFile); err == nil {
-				candidateProjectFiles = append(candidateProjectFiles, projFile)
+			if isInsideRoot(projFile) {
+				if _, err := os.Stat(projFile); err == nil {
+					candidateProjectFiles = append(candidateProjectFiles, projFile)
+				}
 			}
 		}
 	}

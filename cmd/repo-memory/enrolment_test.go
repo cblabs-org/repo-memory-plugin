@@ -807,14 +807,39 @@ func TestDoctor_GraduatedSkillsLint(t *testing.T) {
 		t.Errorf("expected clean doctor output after SyncGraduatedSkills, got: %s", buf.String())
 	}
 
-	// Also verify status and report commands output v2.2 information cleanly
+	// Also seed a branch-local entry in .memory/local/ops/feat-branch and a user-tier entry
+	// to verify RunStatus and RunReport project and count across tiers.
+	branchOpsDir := filepath.Join(repoDir, ".memory", "local", "ops", "feat-branch")
+	if err := os.MkdirAll(branchOpsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	branchAddOp := ops.Op{
+		Type:         ops.OpAdd,
+		EntryID:      "inv-branch-01",
+		DossierScope: "branch-scope",
+		Timestamp:    now,
+		Source:       ops.SourceConsolidation,
+		Fields: map[string]any{
+			"entry_type": "invariant",
+			"kind":       "semantic",
+			"text":       "Branch-specific invariant for feat-branch",
+			"anchors":    []string{"go.mod"},
+		},
+	}
+	if err := ops.NewWriter(branchOpsDir).Write(ops.NewBatchWithTime([]ops.Op{branchAddOp}, now)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Also verify status and report commands output v2.2 information cleanly across tiers
 	buf.Reset()
 	cmdStatus := statusCmd
 	cmdStatus.SetOut(&buf)
 	if err := RunStatus(cmdStatus, repoDir, false); err != nil {
 		t.Fatalf("RunStatus failed: %v", err)
 	}
-	if !strings.Contains(buf.String(), "memory:") || !strings.Contains(buf.String(), "Skills:     1 graduated") {
+	if !strings.Contains(buf.String(), "memory:") ||
+		!strings.Contains(buf.String(), "Dossiers:   2 active (2 active entries)") ||
+		!strings.Contains(buf.String(), "Skills:     1 graduated") {
 		t.Errorf("unexpected status output:\n%s", buf.String())
 	}
 
@@ -824,7 +849,9 @@ func TestDoctor_GraduatedSkillsLint(t *testing.T) {
 	if err := RunReport(cmdReport, repoDir, false); err != nil {
 		t.Fatalf("RunReport failed: %v", err)
 	}
-	if !strings.Contains(buf.String(), "memory:") || !strings.Contains(buf.String(), "rm-build-test") {
+	if !strings.Contains(buf.String(), "memory:") ||
+		!strings.Contains(buf.String(), "Entries:    2 active (semantic: 1, procedural: 1, episodic: 0)") ||
+		!strings.Contains(buf.String(), "rm-build-test") {
 		t.Errorf("unexpected report output:\n%s", buf.String())
 	}
 }
