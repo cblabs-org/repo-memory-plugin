@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
 )
+
+var subagentUUIDPattern = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
 
 type PostToolUsePayload struct {
 	ConversationID      string   `json:"conversationId"`
@@ -62,12 +66,13 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	// Fast exit: only edit tools (gate ack) and error results need post-processing.
+	// Fast exit: only edit tools (gate ack), subagent invocations, and error results need post-processing.
 	// Everything else (view_file, grep_search, list_dir, etc.) returns immediately
 	// to avoid paying the repo lookup + enrollment check cost on every tool call.
 	isError := strings.EqualFold(input.ToolResult.Status, "error")
 	isEdit := isEditTool(input.ToolName)
-	if !isError && !isEdit {
+	isSubagentInvoke := strings.EqualFold(input.ToolName, "invoke_subagent") || strings.EqualFold(input.ToolCall.Name, "invoke_subagent")
+	if !isError && !isEdit && !isSubagentInvoke {
 		return []byte("{}"), nil
 	}
 
@@ -110,6 +115,17 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 	}
 	if repoID == "" {
 		return []byte("{}"), nil
+	}
+
+	if isSubagentInvoke {
+		childConvID := extractSubagentChildID(input.ToolResult.Output, input.TranscriptPath, input.StepIdx, input.ConversationID)
+		role := extractSubagentRole(input.ToolCall.Args)
+		if childConvID != "" && input.ConversationID != "" && !strings.EqualFold(childConvID, input.ConversationID) {
+			_ = state.RecordSubagent(ctx, dataDir, repoID, childConvID, input.ConversationID, role)
+		}
+		if !isError {
+			return []byte("{}"), nil
+		}
 	}
 
 	// On successful edit tool completion, acknowledge any pending gates.
@@ -239,4 +255,92 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 	return out, nil
+}
+
+func extractSubagentChildID(output, transcriptPath string, stepIdx int, parentConvID string) string {
+	if id := extractConvIDFromText(output, parentConvID); id != "" {
+		return id
+	}
+	if transcriptPath == "" {
+		return ""
+	}
+	baseDir := transcriptPath
+	if fi, err := os.Stat(transcriptPath); err == nil && !fi.IsDir() {
+		baseDir = filepath.Dir(transcriptPath)
+	}
+	steps, err := ParseTranscript(baseDir)
+	if err != nil || len(steps) == 0 {
+		if data, readErr := os.ReadFile(transcriptPath); readErr == nil {
+			if id := extractConvIDFromText(string(data), parentConvID); id != "" {
+				return id
+			}
+		}
+		return ""
+	}
+	for i := len(steps) - 1; i >= 0; i-- {
+		s := steps[i]
+		if stepIdx > 0 && s.StepIndex < stepIdx {
+			continue
+		}
+		if id := extractConvIDFromText(s.Content, parentConvID); id != "" {
+			return id
+		}
+		if len(s.ToolCalls) > 0 {
+			if id := extractConvIDFromText(string(s.ToolCalls), parentConvID); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func extractConvIDFromText(s, parentConvID string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
+		for _, k := range []string{"conversationId", "conversation_id", "childConversationId", "child_conversation_id"} {
+			if v, ok := obj[k].(string); ok {
+				v = strings.TrimSpace(v)
+				if v != "" && !strings.EqualFold(v, parentConvID) {
+					return v
+				}
+			}
+		}
+		if res, ok := obj["result"].(map[string]any); ok {
+			for _, k := range []string{"conversationId", "conversation_id", "childConversationId", "child_conversation_id"} {
+				if v, ok := res[k].(string); ok {
+					v = strings.TrimSpace(v)
+					if v != "" && !strings.EqualFold(v, parentConvID) {
+						return v
+					}
+				}
+			}
+		}
+	}
+	matches := subagentUUIDPattern.FindAllString(trimmed, -1)
+	for _, m := range matches {
+		if !strings.EqualFold(m, parentConvID) {
+			return m
+		}
+	}
+	return ""
+}
+
+func extractSubagentRole(rawArgs json.RawMessage) string {
+	if len(rawArgs) == 0 {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(rawArgs, &obj); err != nil {
+		return ""
+	}
+	for _, k := range []string{"Role", "role", "TypeName", "type_name"} {
+		if v, ok := obj[k].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }

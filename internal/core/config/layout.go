@@ -16,11 +16,14 @@ var DataDirSubdirectories = []string{
 	"episodes",
 	"evidence",
 	filepath.Join("evidence", "artifacts"),
+	filepath.Join("evidence", "notes"),
 	"pending",
 	"alerts",
 	"metrics",
 	"logs",
 	"state",
+	filepath.Join("state", "marks"),
+	"quarantine",
 }
 
 // RepoMemorySubdirectories lists the subdirectories under <repoRoot>/.memory/.
