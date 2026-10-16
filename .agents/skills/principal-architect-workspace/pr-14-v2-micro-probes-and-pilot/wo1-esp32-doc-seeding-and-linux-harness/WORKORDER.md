@@ -45,12 +45,12 @@ Make `evaluation/eval-v2/scripts/*.sh` portable across Linux and macOS with full
 
 ## Line-Item Instructions
 
-- [ ] **1. Add `--repo` flag to `seed`, `seed-docs`, and `ops gc` CLIs:**
+- [x] **1. Add `--repo` flag to `seed`, `seed-docs`, and `ops gc` CLIs:**
   - In `cmd/repo-memory/cmd_seed.go`: add `--repo` (default `"."`) to `seedCmd` and pass it to `gitops.FindRepoRoot(seedRepoDir)` instead of `"."`.
   - In `cmd/repo-memory/cmd_seed_docs.go`: add `--repo` (default `"."`) to `seedDocsCmd` and pass it to `gitops.FindRepoRoot(seedDocsRepoDir)` instead of `"."`.
   - In `cmd/repo-memory/cmd_ops_gc.go`: add `--repo` (default `"."`) to `opsGCCmd` so `resolvePath` uses `gitops.FindRepoRoot(opsGCRepoDir)`.
 
-- [ ] **2. Fix Linux Portability & `v2.2` State Archival in `evaluation/eval-v2/scripts/`:**
+- [x] **2. Fix Linux Portability & `v2.2` State Archival in `evaluation/eval-v2/scripts/`:**
   - In `evaluation/eval-v2/scripts/eval_run.sh`:
     - Add a portable helper function `clone_tree_portable`:
       ```bash
@@ -75,13 +75,13 @@ Make `evaluation/eval-v2/scripts/*.sh` portable across Linux and macOS with full
       - `*/state/freshness.json` into `${ARCHIVE_DIR}/freshness.json`
   - In `evaluation/eval-v2/scripts/verify_template.sh`: add a portable SHA-256 helper (`sha256_file`) that uses `shasum -a 256` if available and falls back to `sha256sum`.
 
-- [ ] **3. Stage `matthewmcneill/esp32-app-foundation` (`45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`) & Create `evaluation/eval-v2/scripts/prepare_templates.sh`:**
+- [x] **3. Stage `matthewmcneill/esp32-app-foundation` (`45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`) & Create `evaluation/eval-v2/scripts/prepare_templates.sh`:**
   - Create `evaluation/eval-v2/scripts/prepare_templates.sh` (executable `chmod +x`) that:
     - Clones `https://github.com/matthewmcneill/esp32-app-foundation.git` into `evaluation/eval-v2/template` if not already present (using `DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/95209/bus" XDG_RUNTIME_DIR="/run/user/95209"`), checks out commit `45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`, removes the `origin` remote (`git remote remove origin || true`) so no push can occur, and tags `45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa` as `baseline` (preserving commit history in `template/` so `repo-memory seed --before 45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa` and `repo-memory seed-docs` can read exact git commit timestamps and blobs at `45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`).
     - Creates `tpl-a`, `tpl-b`, `tpl-c`, and `tpl-d` using `clone_tree_portable`, squashing `.git` in each `tpl-{a,b,c,d}` to a clean single `baseline` commit (no git history to mine, no remote) plus the condition commit (`condition-a: no memory`, `condition-b: PA only`, `condition-c: repo-memory push`, `condition-d: both`), removing `.agents/skills/principal-architect-workspace/` and writing `.agents/overrides/disabled-skills.txt` in `tpl-a` and `tpl-c`.
   - Run `./evaluation/eval-v2/scripts/prepare_templates.sh` and verify `template/` is at `45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa` and `tpl-{a,b,c,d}` are cleanly staged.
 
-- [ ] **4. Inspect `esp32-app-foundation` Docs/Skills & Refine `internal/core/seed/doc_seed.go`:**
+- [x] **4. Inspect `esp32-app-foundation` Docs/Skills & Refine `internal/core/seed/doc_seed.go`:**
   - Inspect how `repo-memory seed-docs` parses `evaluation/eval-v2/template/docs/developer/**/*.md` and `evaluation/eval-v2/template/.agents/skills/**/SKILL.md` (specifically `.agents/skills/framework-expert/SKILL.md` and `.agents/skills/creating-a-module/SKILL.md`).
   - Refine `internal/core/seed/doc_seed.go` (and `gc.go` if needed) so that:
     - `extractFirstCommandLine` also recognizes `pio `, `platformio `, `python `, `python3 `, `cmake `, and `./` commands in code fences.
@@ -89,7 +89,7 @@ Make `evaluation/eval-v2/scripts/*.sh` portable across Linux and macOS with full
     - Ensure `isPollutedScope` in `internal/core/seed/gc.go` does not falsely reject valid `esp32-app-foundation` scopes while still rejecting polluted scopes.
     - Add unit tests in `internal/core/seed/doc_seed_test.go` covering `esp32-app-foundation`-style skill/developer-doc extraction (`framework-expert`, `creating-a-module`, `pio test -e native` recipe extraction, and subsystem anchoring).
 
-- [ ] **5. Upgrade `evaluation/eval-v2/scripts/build_index.sh` & Rebuild `evaluation/eval-v2/seed/`:**
+- [x] **5. Upgrade `evaluation/eval-v2/scripts/build_index.sh` & Rebuild `evaluation/eval-v2/seed/`:**
   - Upgrade `evaluation/eval-v2/scripts/build_index.sh` so that when building the Condition C/D seed artifacts for `evaluation/eval-v2/template` (`45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`):
     1. It builds `~/.local/bin/repo-memory` from the current repo (`go build -o "${REPO_MEMORY_BIN}" "${REPO_ROOT}/cmd/repo-memory"`).
     2. It runs `repo-memory seed --repo "${TEMPLATE_DIR}" --pa-dir "${PA_DIR}" --ops-dir "${OUT_DIR}/ops" --before 45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa` to seed PA workorders.
@@ -99,7 +99,7 @@ Make `evaluation/eval-v2/scripts/*.sh` portable across Linux and macOS with full
     6. It queries and prints the breakdown of entries by `source` (`seed` vs. `doc-seed`), `kind` (`semantic`, `procedural`, `episodic`), and `type`, plus FTS5 match counts.
   - Run `./evaluation/eval-v2/scripts/build_index.sh --clean` and verify that both `seed` (PA workorders) and `doc-seed` (`docs/developer/` + `.agents/skills/`) entries are present in `evaluation/eval-v2/seed/index.db`, `evaluation/eval-v2/seed/dossiers/`, and `evaluation/eval-v2/seed/ATLAS.md`.
 
-- [ ] **6. Update `evaluation/eval-v2/SEED_REPORT.md`:**
+- [x] **6. Update `evaluation/eval-v2/SEED_REPORT.md`:**
   - Update `evaluation/eval-v2/SEED_REPORT.md` with the exact `v2.2` combined (`seed` + `doc-seed`) metrics:
     - Total entries, total anchors, op batches written
     - Breakdown by `source` (`seed` PA workorders vs. `doc-seed` curated developer guides & skills)
@@ -125,4 +125,31 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+✅ Complete
+
+### Changes Made
+- `cmd/repo-memory/cmd_seed.go` — Added `--repo` flag (`seedRepoDir`, default `"."`), smart path resolution supporting both repo-relative defaults and caller-relative explicit paths, and fallback resolution to `baseline`/`HEAD` when `--before` references a pre-squash commit SHA.
+- `cmd/repo-memory/cmd_seed_docs.go` — Added `--repo` flag (`seedDocsRepoDir`, default `"."`) and smart path resolution for `--ops-dir` and `--config`.
+- `cmd/repo-memory/cmd_ops_gc.go` — Added `--repo` flag (`opsGCRepoDir`, default `"."`) and smart path resolution for `--ops-dir`, `--dossiers-dir`, and `--config`.
+- `evaluation/eval-v2/scripts/eval_run.sh` — Added `clone_tree_portable` helper (`cp -c -R` on Darwin, `cp --reflink=auto -a` / `cp -a` on Linux), `--dry-run` mode, Condition C/D `v2.2` seed artifact staging (`ops/`, `dossiers/`, `ATLAS.md`, and `reindex`), and `--archive` support for `state/marks/*.json`, `evidence/notes/*.json`, `state/freshness.json`, `data-dir/`, and `git-diff.patch`.
+- `evaluation/eval-v2/scripts/verify_template.sh` — Added portable `sha256_file` helper (`shasum -a 256` with `sha256sum` fallback), defaulted target directory to `evaluation/eval-v2/template` when present, and handled hosts without `pio` installed by verifying SHA-256 manifest integrity.
+- `evaluation/eval-v2/scripts/prepare_templates.sh` — Created repeatable executable script staging `matthewmcneill/esp32-app-foundation` into `evaluation/eval-v2/template` (removing `origin` remote and tagging `baseline`) and creating isolated single-commit condition templates `tpl-a`, `tpl-b`, `tpl-c`, and `tpl-d`.
+- `internal/core/seed/doc_seed.go` — Extended `extractFirstCommandLine` and `classifyDocEntryType` for `pio`, `platformio`, `python`, `python3`, `cmake`, and `./` commands; added C++/PlatformIO file extension support (`.ini`, `.hpp`, `.hxx`, `.cc`, `.csv`, `.html`, `.css`, `.defaults`, `CMakeLists.txt`), C++ interface/module symbol anchor resolution (`extractDocAnchors`), Markdown link resolution, callout (`> [!IMPORTANT]`/`[!WARNING]`/`[!CAUTION]`) and skill Q&A (`### ...?`) extraction, section/document fallback anchoring for `SKILL.md` and `docs/developer/`, and 2-file C++ submodule scope preservation (`expandSubmoduleAnchorsForScopes`).
+- `internal/core/seed/gc.go` — Updated `isPollutedScope` to reject scopes containing `.` or leading/path-segment `-` (such as `src/main.cpp` or `hardware/-TEMPLATE`), allowed valid single-segment repo directory anchors (`isValidDocDirAnchor`), and applied `expandSubmoduleAnchorsForScopes` during `RunOpsGC` scope repair.
+- `internal/core/seed/doc_seed_test.go` — Added `TestSeedDocs_ESP32SkillAndDeveloperDocs` verifying extraction from `framework-expert` (`SKILL.md`) and `docs/developer/creating-a-module.md`, `pio test -e native` recipe classification, subsystem scope resolution (`modules/DataManager`, `modules/U8G2Display`, `modules/Application`), and zero-repair agreement with `RunOpsGC`.
+- `evaluation/eval-v2/scripts/build_index.sh` — Upgraded to 5-stage `v2.2` pipeline (`go build` -> `repo-memory seed` -> `repo-memory seed-docs` -> `repo-memory ops gc` -> `repo-memory reindex` + WAL checkpoint + SQL verification with `sqlite3`/`python3` fallback).
+- `evaluation/eval-v2/SEED_REPORT.md` — Updated with full `v2.2` combined corpus metrics (`1,283` entries: `256` `seed` + `1,027` `doc-seed`, `3,190` anchors, `80` op batches, `54` projected dossiers + `ATLAS.md`, cognitive lifecycle breakdown, entry type breakdown, and FTS5/scope query tables).
+
+### Decisions Made
+- Preserved 2-file C++ submodule directories (`modules/DataManager`, `modules/U8G2Display`, `modules/EventBus`, `modules/ConfigManager`, `modules/Application`, etc.) as distinct module scopes during `DeriveModuleScopes` in `doc_seed.go` and `gc.go` (matching `preinvocation.go`'s 3-item synthetic sibling pattern) so `first-entry` and scope queries resolve to dedicated module dossiers rather than rolling all 2-file C++ modules into a single generic `modules` scope.
+- Mapped framework role interfaces (`IDataSource`, `FetchContext`, `IWebContributor`, `ITabRegistry`, `IMCPContributor`, `IDisplayBoard`, `IConfigurable`, `IOTAVerifier`, `IPreconditionContributor`, `IBLEServiceProvider`) to both their `include/interfaces/*.hpp` header and their owning subsystem module (`modules/DataManager`, `modules/WebServer`, `modules/MCPServer`, `modules/U8G2Display`, `modules/ConfigManager`, etc.), preferring concrete module paths for `DossierScope` while retaining interface headers in `anchors` for `first-touch` delivery.
+- Added fallback in `cmd_seed.go` to resolve `--before` against the `baseline` tag when the specified pre-squash SHA (`45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`) is not a standalone object in the cloned Git history, matching `c7dc8d88ec703d61597817533cfcaf29d460e3fd` (verified identical `platformio.ini` SHA-256 `d4e548eb511ebcb2a1769d96028da61acc3b7431f6038a884fbcf0455c1e8855` and 435/118/79 workorder counts).
+
+### Dead Ends & Warnings
+- Creating a Git tag whose name is a 40-character hex string (`45d4b5d17e6f6da4ce96d1cd52bd4fa4d92568aa`) causes Git to warn (`refname is ambiguous`) and resolve the 40-hex string as a missing raw object SHA before consulting `refs/tags/`; deleted the 40-hex tag and resolved missing `--before` commit SHAs to the `baseline` tag in `cmd_seed.go` instead.
+
+### Out-of-Scope Findings
+- (none)
+

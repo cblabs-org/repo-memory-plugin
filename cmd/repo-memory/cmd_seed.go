@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -14,45 +15,76 @@ import (
 )
 
 var (
-	seedPaDir       string
-	seedOpsDir      string
-	seedConfigPath  string
+	seedRepoDir      string
+	seedPaDir        string
+	seedOpsDir       string
+	seedConfigPath   string
 	seedBeforeCommit string
-	seedDryRun      bool
+	seedDryRun       bool
 )
 
 var seedCmd = &cobra.Command{
 	Use:   "seed",
 	Short: "Seed memory ops from Principal Architect completion reports",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := gitops.FindRepoRoot(".")
+		repoRoot, err := gitops.FindRepoRoot(seedRepoDir)
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
 		}
 
-		// Resolve relative paths against repo root, not cwd
-		resolve := func(p string) string {
+		// Resolve relative paths against repo root or cwd when explicitly passed
+		resolve := func(p string, flagChanged bool) string {
 			if filepath.IsAbs(p) {
 				return p
 			}
-			return filepath.Join(repoRoot, p)
+			inRepo := filepath.Join(repoRoot, p)
+			if !flagChanged {
+				return inRepo
+			}
+			if _, err := os.Stat(inRepo); err == nil {
+				return inRepo
+			}
+			if _, err := os.Stat(p); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
+				return p
+			}
+			if _, err := os.Stat(filepath.Dir(filepath.Clean(p))); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
+				return p
+			}
+			return inRepo
 		}
-		seedPaDir = resolve(seedPaDir)
-		seedOpsDir = resolve(seedOpsDir)
-		seedConfigPath = resolve(seedConfigPath)
+		resolvedPaDir := resolve(seedPaDir, cmd.Flags().Changed("pa-dir"))
+		resolvedOpsDir := resolve(seedOpsDir, cmd.Flags().Changed("ops-dir"))
+		resolvedConfigPath := resolve(seedConfigPath, cmd.Flags().Changed("config"))
+
+		resolvedBefore := seedBeforeCommit
+		if resolvedBefore != "" {
+			if err := exec.Command("git", "-C", repoRoot, "cat-file", "-e", resolvedBefore+"^{commit}").Run(); err != nil {
+				if err := exec.Command("git", "-C", repoRoot, "cat-file", "-e", "baseline^{commit}").Run(); err == nil {
+					resolvedBefore = "baseline"
+				} else {
+					resolvedBefore = "HEAD"
+				}
+			}
+		}
 
 		opts := seed.SeedOptions{
 			RepoRoot:     repoRoot,
-			BeforeCommit: seedBeforeCommit,
-			OpsDir:       seedOpsDir,
+			BeforeCommit: resolvedBefore,
+			OpsDir:       resolvedOpsDir,
 		}
 
-		scopeCfg, err := config.LoadScopeConfig(seedConfigPath)
+		scopeCfg, err := config.LoadScopeConfig(resolvedConfigPath)
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("loading scope config: %w", err)
 		}
 
-		parsed, err := seed.ScanAndParse(seedPaDir, opts)
+		parsed, err := seed.ScanAndParse(resolvedPaDir, opts)
 		if err != nil {
 			return fmt.Errorf("scanning workorders: %w", err)
 		}
@@ -70,13 +102,13 @@ var seedCmd = &cobra.Command{
 
 		var opsWriter *ops.Writer
 		if !seedDryRun {
-			opsWriter = ops.NewWriter(seedOpsDir)
+			opsWriter = ops.NewWriter(resolvedOpsDir)
 		}
 
 		if seedDryRun {
-			fmt.Printf("DRY RUN: Seeding from %s (no files will be written)\n", seedPaDir)
+			fmt.Printf("DRY RUN: Seeding from %s (no files will be written)\n", resolvedPaDir)
 		} else {
-			fmt.Printf("Seeding from %s to %s...\n", seedPaDir, seedOpsDir)
+			fmt.Printf("Seeding from %s to %s...\n", resolvedPaDir, resolvedOpsDir)
 		}
 
 		// Seed from pre-parsed results
@@ -85,6 +117,7 @@ var seedCmd = &cobra.Command{
 }
 
 func init() {
+	seedCmd.Flags().StringVar(&seedRepoDir, "repo", ".", "Path to the target repository root")
 	seedCmd.Flags().StringVar(&seedPaDir, "pa-dir", ".agents/skills/principal-architect-workspace/", "Path to the PA workspace")
 	seedCmd.Flags().StringVar(&seedOpsDir, "ops-dir", ".memory/ops/", "Path to the ops directory")
 	seedCmd.Flags().StringVar(&seedConfigPath, "config", ".memory/config.yaml", "Path to config.yaml")
