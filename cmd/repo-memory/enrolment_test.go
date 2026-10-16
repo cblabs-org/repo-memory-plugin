@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
 )
 
 
@@ -719,6 +723,109 @@ func TestDoctor_Checks(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "⚠ GEMINI.md managed block error:") || !strings.Contains(buf.String(), "duplicate") {
 		t.Errorf("expected doctor warning for duplicate GEMINI.md markers, got: %s", buf.String())
+	}
+}
+
+func TestDoctor_GraduatedSkillsLint(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+
+	pluginDir := t.TempDir()
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", pluginDir)
+	if err := os.MkdirAll(filepath.Join(pluginDir, "workspace-plugin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
+
+	var buf bytes.Buffer
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&buf)
+	if err := RunEnroll(cmdEnroll, repoDir); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	repoID, _ := gitops.GenerateRepoID(repoDir)
+	opsDir := filepath.Join(repoDir, ".memory", "ops")
+	now := time.Now().UTC()
+	addOp := ops.Op{
+		Type:         ops.OpAdd,
+		EntryID:      "rec-doc-01",
+		DossierScope: "build",
+		Timestamp:    now,
+		Source:       ops.SourceConsolidation,
+		Fields: map[string]any{
+			"entry_type":      "recipe",
+			"kind":            "procedural",
+			"text":            "Run build and test\n1. Run `go build ./...`\n2. Run `go test ./...`",
+			"anchors":         []string{"go.mod"},
+			"render_as_skill": "rm-build-test",
+		},
+	}
+	if err := ops.NewWriter(opsDir).Write(ops.NewBatchWithTime([]ops.Op{addOp}, now)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := skills.SyncGraduatedSkills(context.Background(), repoDir, dataDir, repoID, false); err != nil {
+		t.Fatalf("SyncGraduatedSkills failed: %v", err)
+	}
+
+	skillPath := filepath.Join(repoDir, ".agents", "skills", "rm-build-test", "SKILL.md")
+	origBytes, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("reading graduated skill failed: %v", err)
+	}
+
+	// Corrupt the generated skill on disk while retaining generated_by: repo-memory
+	if err := os.WriteFile(skillPath, []byte(string(origBytes)+"\n drifted manual line\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	buf.Reset()
+	cmdDoctor := doctorCmd
+	cmdDoctor.SetOut(&buf)
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⚠ Graduated skill .agents/skills/rm-build-test/SKILL.md is out of sync") {
+		t.Errorf("expected doctor lint warning for drifted skill, got: %s", buf.String())
+	}
+
+	// Restore via SyncGraduatedSkills -> doctor should be completely clean
+	if _, err := skills.SyncGraduatedSkills(context.Background(), repoDir, dataDir, repoID, false); err != nil {
+		t.Fatalf("SyncGraduatedSkills failed: %v", err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if buf.Len() > 0 {
+		t.Errorf("expected clean doctor output after SyncGraduatedSkills, got: %s", buf.String())
+	}
+
+	// Also verify status and report commands output v2.2 information cleanly
+	buf.Reset()
+	cmdStatus := statusCmd
+	cmdStatus.SetOut(&buf)
+	if err := RunStatus(cmdStatus, repoDir, false); err != nil {
+		t.Fatalf("RunStatus failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "memory:") || !strings.Contains(buf.String(), "Skills:     1 graduated") {
+		t.Errorf("unexpected status output:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	cmdReport := reportCmd
+	cmdReport.SetOut(&buf)
+	if err := RunReport(cmdReport, repoDir, false); err != nil {
+		t.Fatalf("RunReport failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "memory:") || !strings.Contains(buf.String(), "rm-build-test") {
+		t.Errorf("unexpected report output:\n%s", buf.String())
 	}
 }
 

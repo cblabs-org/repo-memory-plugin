@@ -9,6 +9,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -93,6 +94,22 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 			fmt.Fprintln(cmd.OutOrStdout(), "  Fix the markers manually in GEMINI.md, then run: repo-memory enroll .")
 		} else if strings.Contains(content, "<!-- repo-memory:begin v1") {
 			fmt.Fprintln(cmd.OutOrStdout(), "⚠ GEMINI.md contains a v1 managed block; run 'repo-memory enroll .' to upgrade to v2.")
+		}
+	}
+
+	if hasMemoryDir {
+		dataDir := config.DataDir()
+		repoID := ""
+		if entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot); found && entry != nil {
+			repoID = entry.RepoID
+		}
+		if repoID == "" {
+			repoID, _ = gitops.GenerateRepoID(repoRoot)
+		}
+		if skillWarnings, err := skills.CheckGraduatedSkillsLint(cmd.Context(), repoRoot, dataDir, repoID); err == nil {
+			for _, w := range skillWarnings {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠ %s\n", w)
+			}
 		}
 	}
 
