@@ -185,6 +185,98 @@ func TestRunSidecarFallback_IdleMilestoneSessionDistillation(t *testing.T) {
 	if updatedMark.StepIndex != 4 {
 		t.Errorf("expected mark.StepIndex advanced to 4, got %d", updatedMark.StepIndex)
 	}
+	if updatedMark.StepTimestamp != now.Add(-3*time.Hour).UTC().Format(time.RFC3339) {
+		t.Errorf("expected mark.StepTimestamp %q, got %q", now.Add(-3*time.Hour).UTC().Format(time.RFC3339), updatedMark.StepTimestamp)
+	}
+	if !updatedMark.LastFallbackAt.Equal(now) {
+		t.Errorf("expected mark.LastFallbackAt=%v, got %v", now, updatedMark.LastFallbackAt)
+	}
+	if !updatedMark.LastNoteAt.Equal(now) || updatedMark.NoteCount != 1 || updatedMark.NotesToday != 1 {
+		t.Errorf("expected NoteCount=1, NotesToday=1, LastNoteAt=%v, got %+v", now, updatedMark)
+	}
+}
+
+func TestRunSidecarFallback_NoneOutputAdvancesMarkWithoutIncrementingNoteCount(t *testing.T) {
+	dataDir, repoRoot, jobStore, epStore := setupFallbackTestEnv(t, "repo-fb-none")
+	repoID := "repo-fb-none"
+	convID := "conv-idle-none"
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+
+	initialMark := &state.Mark{
+		ConversationID:      convID,
+		StepIndex:           1,
+		PendingContinuation: true,
+		PendingRequestStep:  2,
+	}
+	if err := state.SaveMark(dataDir, repoID, initialMark); err != nil {
+		t.Fatal(err)
+	}
+
+	ep := &episode.Episode{
+		Header: episode.Header{
+			EpisodeID: "ep-none-1",
+			SessionID: convID,
+			RepoID:    repoID,
+			Started:   now.Add(-4 * time.Hour),
+			Ended:     now.Add(-3 * time.Hour),
+		},
+		Steps: []harness.Step{
+			{Index: 1, Kind: harness.StepKindUser, Text: "initial"},
+			{
+				Index:    2,
+				Kind:     harness.StepKindCommand,
+				Command:  "git commit -m 'chore: minor fix'",
+				Commit:   "1234567890abcdef1234567890abcdef12345678",
+				RawData:  map[string]any{"created_at": "2026-10-16T08:55:00Z"},
+			},
+		},
+	}
+	if _, err := epStore.WriteEpisode(ep); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeHK := fake.NewFakeHousekeeper()
+	fakeHK.SetResult(harness.StageDistill, harness.Result{
+		Payload: "NONE\necho_token: {{echo_token}}\n",
+		Usage:   harness.Usage{InputTokens: 200, OutputTokens: 20},
+	})
+
+	exec := tick.NewPipelineExecutor(dataDir, repoRoot, repoID, jobStore, epStore)
+	exec.SetHousekeeper(fakeHK)
+	exec.Now = func() time.Time { return now }
+	exec.QuotaChecker = func(context.Context) (*telemetry.QuotaStatus, error) {
+		return &telemetry.QuotaStatus{
+			Buckets: []telemetry.QuotaBucket{{ID: "flash", RemainingFraction: 0.90}},
+		}, nil
+	}
+
+	n, err := exec.RunSidecarFallback(context.Background())
+	if err != nil {
+		t.Fatalf("RunSidecarFallback failed: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 notes written for NONE output, got %d", n)
+	}
+
+	updatedMark, err := state.LoadMark(dataDir, repoID, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedMark.StepIndex != 2 {
+		t.Errorf("expected mark.StepIndex advanced to 2, got %d", updatedMark.StepIndex)
+	}
+	if updatedMark.StepTimestamp != "2026-10-16T08:55:00Z" {
+		t.Errorf("expected mark.StepTimestamp '2026-10-16T08:55:00Z', got %q", updatedMark.StepTimestamp)
+	}
+	if updatedMark.PendingContinuation || updatedMark.PendingRequestStep != 0 {
+		t.Errorf("expected PendingContinuation=false and PendingRequestStep=0, got %+v", updatedMark)
+	}
+	if !updatedMark.LastFallbackAt.Equal(now) {
+		t.Errorf("expected mark.LastFallbackAt=%v, got %v", now, updatedMark.LastFallbackAt)
+	}
+	if updatedMark.NoteCount != 0 || updatedMark.NotesToday != 0 || !updatedMark.LastNoteAt.IsZero() {
+		t.Errorf("expected NoteCount=0, NotesToday=0, and zero LastNoteAt on NONE output, got %+v", updatedMark)
+	}
 }
 
 func TestRunSidecarFallback_ActiveSessionSkipped(t *testing.T) {

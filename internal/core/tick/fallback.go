@@ -251,6 +251,9 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 			continue
 		}
 
+		lastStepTS := extractLastStepTimestamp(uncovered, ep.Header.Ended, mark.StepTimestamp)
+		written := 0
+
 		if len(items) > 0 {
 			scrubFailed := false
 			var allAnchors []string
@@ -301,8 +304,10 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 
 			if scrubFailed {
 				mark.StepIndex = lastStep
+				mark.StepTimestamp = lastStepTS
 				mark.PendingContinuation = false
 				mark.PendingRequestStep = 0
+				mark.LastFallbackAt = now
 				_ = state.SaveMark(p.dataDir, p.repoID, mark)
 				continue
 			}
@@ -324,6 +329,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 				Items:          items,
 			}
 			if _, writeErr := inbox.NewStore(p.dataDir, p.repoID).Write(note); writeErr == nil {
+				written++
 				notesWritten++
 				for _, it := range items {
 					if t := strings.TrimSpace(it.Title); t != "" {
@@ -334,11 +340,15 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 		}
 
 		mark.StepIndex = lastStep
+		mark.StepTimestamp = lastStepTS
 		mark.PendingContinuation = false
 		mark.PendingRequestStep = 0
-		mark.LastNoteAt = now
-		mark.NoteCount++
-		mark.NotesToday++
+		mark.LastFallbackAt = now
+		if written > 0 {
+			mark.LastNoteAt = now
+			mark.NoteCount++
+			mark.NotesToday++
+		}
 		_ = state.SaveMark(p.dataDir, p.repoID, mark)
 	}
 
@@ -374,6 +384,24 @@ func stepBounds(uncovered []harness.Step, defaultStart int) (firstStep, lastStep
 		}
 	}
 	return firstStep, lastStep
+}
+
+func extractLastStepTimestamp(uncovered []harness.Step, ended time.Time, currentTS string) string {
+	for i := len(uncovered) - 1; i >= 0; i-- {
+		raw := uncovered[i].RawData
+		if len(raw) == 0 {
+			continue
+		}
+		for _, k := range []string{"created_at", "timestamp", "time"} {
+			if v, ok := raw[k].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	if !ended.IsZero() {
+		return ended.UTC().Format(time.RFC3339)
+	}
+	return currentTS
 }
 
 func isEligibleForFallback(
