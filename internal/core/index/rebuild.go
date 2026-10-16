@@ -13,17 +13,103 @@ import (
 )
 
 func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) error {
-	if opsReader == nil {
+	return idx.RebuildFromOpLogs(ctx, opsReader)
+}
+
+func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Reader) error {
+	var validReaders []*ops.Reader
+	for _, r := range opsReaders {
+		if r != nil {
+			validReaders = append(validReaders, r)
+		}
+	}
+	if len(validReaders) == 0 {
 		return fmt.Errorf("ops reader cannot be nil")
 	}
 
-	projector := dossiers.NewProjector(opsReader)
-	dossierMap, err := projector.Project(ctx)
-	if err != nil {
-		return fmt.Errorf("projecting dossiers: %w", err)
+	dossierMap := make(map[string]*dossiers.Dossier)
+	mergedAliases := config.NewAliasMap()
+
+	for _, r := range validReaders {
+		projected, err := dossiers.NewProjector(r).Project(ctx)
+		if err != nil {
+			return fmt.Errorf("projecting dossiers: %w", err)
+		}
+		for scope, d := range projected {
+			if d == nil {
+				continue
+			}
+			targetScope := scope
+			if targetScope == "" {
+				targetScope = d.Scope
+			}
+			existing, ok := dossierMap[targetScope]
+			if !ok || existing == nil {
+				cp := *d
+				cp.Entries = append([]dossiers.Entry(nil), d.Entries...)
+				cp.History = append([]dossiers.Entry(nil), d.History...)
+				dossierMap[targetScope] = &cp
+				continue
+			}
+			if existing.Kind == "" && d.Kind != "" {
+				existing.Kind = d.Kind
+			}
+			if existing.Title == "" && d.Title != "" {
+				existing.Title = d.Title
+			}
+			if existing.Purpose == "" && d.Purpose != "" {
+				existing.Purpose = d.Purpose
+			}
+			entryIdxByID := make(map[string]int, len(existing.Entries))
+			for i, e := range existing.Entries {
+				if e.ID != "" {
+					entryIdxByID[e.ID] = i
+				}
+			}
+			for _, e := range d.Entries {
+				if e.ID != "" {
+					if pos, found := entryIdxByID[e.ID]; found {
+						existing.Entries[pos] = e
+						continue
+					}
+					entryIdxByID[e.ID] = len(existing.Entries)
+				}
+				existing.Entries = append(existing.Entries, e)
+			}
+			histIdxByID := make(map[string]int, len(existing.History))
+			for i, h := range existing.History {
+				if h.ID != "" {
+					histIdxByID[h.ID] = i
+				}
+			}
+			for _, h := range d.History {
+				if h.ID != "" {
+					if pos, found := histIdxByID[h.ID]; found {
+						existing.History[pos] = h
+						continue
+					}
+					histIdxByID[h.ID] = len(existing.History)
+				}
+				existing.History = append(existing.History, h)
+			}
+		}
+
+		am, err := config.BuildAliasMap(r, ctx)
+		if err != nil {
+			return fmt.Errorf("building alias map: %w", err)
+		}
+		if am != nil {
+			for _, oldScope := range am.AllAliases() {
+				if am.HasAlias(oldScope) {
+					if targets := am.Targets(oldScope); len(targets) > 0 {
+						mergedAliases.Add(oldScope, targets)
+					} else if resolved := am.Resolve(oldScope); resolved != "" && resolved != oldScope {
+						mergedAliases.SetAlias(oldScope, resolved)
+					}
+				}
+			}
+		}
 	}
-
-
 
 	tx, err := idx.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -150,15 +236,11 @@ func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) e
 		}
 	}
 
-	aliasMap, err := config.BuildAliasMap(opsReader, ctx)
-	if err != nil {
-		return fmt.Errorf("building alias map: %w", err)
-	}
-	if aliasMap != nil {
+	if mergedAliases != nil {
 		now := time.Now().UTC().Format(time.RFC3339Nano)
-		for _, oldScope := range aliasMap.AllAliases() {
-			if aliasMap.HasAlias(oldScope) {
-				resolved := aliasMap.Resolve(oldScope)
+		for _, oldScope := range mergedAliases.AllAliases() {
+			if mergedAliases.HasAlias(oldScope) {
+				resolved := mergedAliases.Resolve(oldScope)
 				if resolved != "" && resolved != oldScope {
 					_, err := tx.ExecContext(ctx, "INSERT INTO aliases (old_scope, new_scope, created_at) VALUES (?, ?, ?)",
 						oldScope, resolved, now)
