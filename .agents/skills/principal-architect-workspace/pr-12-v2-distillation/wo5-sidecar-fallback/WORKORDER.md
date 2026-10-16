@@ -131,7 +131,29 @@ Write comprehensive unit tests in `internal/core/tick/fallback_test.go` covering
 5. **Prepare Validator Rejection Quarantined:** When `Housekeeper` returns output missing `echo_token` or citing a stubbed `[viewed ...]` step, the output is quarantined under `<dataDir>/<repoID>/quarantine/` and no inbox note is written.
 
 ## Verification Checklist
-- [ ] `go test ./internal/core/tick/... ./internal/harness/... ./cmd/repo-memory/... ./packaging/...` passes.
-- [ ] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
-- [ ] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
-- [ ] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] `go test ./internal/core/tick/... ./internal/harness/... ./cmd/repo-memory/... ./packaging/...` passes.
+- [x] `go test ./cmd/... ./internal/... ./packaging/...` passes (including `internal/core/boundary_test.go`).
+- [x] `go vet ./cmd/... ./internal/... ./packaging/...` passes with zero warnings.
+- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+
+## Completion Report
+- **Status:** Completed
+- **Branch:** `pr-12-v2-distillation/wo5-sidecar-fallback`
+- **Commit:** `09fc797` (`feat(distill): implement sidecar fallback and repo-memory-distiller packaging (WO5)`)
+- **Summary of Changes:**
+  1. **`repo-memory-distiller` Subagent Packaging (`packaging/antigravity/agents/repo-memory-distiller/agent.md`, `packaging/antigravity/templates.go`, `cmd/repo-memory/cmd_install.go`):**
+     - Updated `packaging/antigravity/agents/repo-memory-distiller/agent.md` to the `v2.2` distiller specification (`SPEC.md` §6.3.3 & §6.4, `docs/design-v2-distillation-retrieval.md` §5.4 & §5.6) while preserving X8 frontmatter (`max-turns: 1`, `enable-write-tools: false`, `enable-subagent-tools: false`, `enable-mcp-tools: false`).
+     - Embedded `agents/repo-memory-distiller/agent.md` in `packaging/antigravity/templates.go` (`GenerateDistillerAgentMD()`) and wired `RunInstall` in `cmd/repo-memory/cmd_install.go` to write both `agents/repo-memory-distiller/agent.md` and `agents/repo-memory-distiller.md` in the workspace plugin bundle.
+  2. **Harness & Job Stage Wiring (`internal/harness/types.go`, `internal/core/jobs/types.go`, `internal/harness/antigravity/executor.go`):**
+     - Added `StageDistill` and `StageConsolidate` to `harness.Stage`, and `KindFallback` and `KindConsolidate` to `jobs.Kind`.
+     - Updated `Housekeeper.Run` in `internal/harness/antigravity/executor.go` so `StageDistill` and `StageConsolidate` pass `--agent repo-memory-distiller`, set both `REPO_MEMORY_HOUSEKEEPING=1` and `REPO_MEMORY_INTERNAL=1`, pass string prompt envelopes directly without JSON marshaling, and preserve full YAML/markdown + `echo_token:` output without stripping around `{ ... }`.
+  3. **Stage 1c Sidecar Fallback (`internal/core/tick/fallback.go`, `internal/core/tick/pipeline.go`, `internal/core/episode/store.go`, `internal/core/state/marks.go`, `internal/core/inbox/note.go`):**
+     - Implemented `PipelineExecutor.RunSidecarFallback(ctx)` and wired it into `PipelineExecutor.Run(ctx)` after `HarvestFreeSources(ctx)`.
+     - Enforces `TurnNotesOff` skip, quota guard (`hasSufficientFlashQuota` >= `0.25` remaining fraction on Flash buckets), 2-hour idle threshold for main sessions (with immediate processing for subagent sessions and `turn_notes: fallback-only`), milestone eligibility (`>= 2` file edits + test/build/commit or `>= 6` steps), `distill.PrepareSession` envelope generation, `distill.ValidateDistillerOutput` validation (quarantining invalid output via `scrub.QuarantinePayload`), field scrubbing via `scrub.Scrub`, anchor checking via `inbox.CheckAnchors`, `inbox.Note` writing (`source: "sidecar"`), and mark advancement (`state.SaveMark`).
+  4. **Unit Tests (`internal/core/tick/fallback_test.go`, `internal/harness/antigravity/executor_test.go`, `packaging/antigravity/templates_test.go`, `cmd/repo-memory/install_test.go`):**
+     - Added unit tests covering idle milestone distillation, active session skip (`< 2h`), subagent and `fallback-only` immediate processing, Flash quota guard (`< 0.25`), validator rejection quarantine (`echo_token` omission and stubbed `[viewed ...]` line-number hallucination), `Housekeeper.Run` `StageDistill` CLI/env/output behavior, and `repo-memory-distiller` installation.
+- **Verification:**
+  - `go test ./internal/core/tick/... ./internal/harness/... ./cmd/repo-memory/... ./packaging/...` — PASSED
+  - `go test ./cmd/... ./internal/... ./packaging/...` — PASSED
+  - `go vet ./cmd/... ./internal/... ./packaging/...` — PASSED
+
