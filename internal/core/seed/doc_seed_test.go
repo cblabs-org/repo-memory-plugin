@@ -444,3 +444,136 @@ func TestParseDocToOps_NoPollutedScopes(t *testing.T) {
 		t.Errorf("expected RunOpsGC ScopesRepaired == 0 after SeedDocs, got %d", gcStats.ScopesRepaired)
 	}
 }
+
+func TestSeedDocs_ESP32SkillAndDeveloperDocs(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := t.TempDir()
+	opsDir := filepath.Join(repoRoot, ".memory", "ops")
+
+	// Create ESP32 App Foundation repository files across modules, interfaces, and root
+	writeTestFile(t, repoRoot, "platformio.ini", "[env:native]\nplatform = native\n")
+	writeTestFile(t, repoRoot, "include/AppFoundation.h", "#pragma once\n")
+	writeTestFile(t, repoRoot, "include/interfaces/IDataSource.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "include/interfaces/IWebContributor.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "include/interfaces/IMCPContributor.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "include/interfaces/IDisplayBoard.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "include/types/FetchContext.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/Application/Application.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/Application/Application.cpp", "// Application\n")
+	writeTestFile(t, repoRoot, "modules/DataManager/DataManager.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/DataManager/DataManager.cpp", "// DataManager\n")
+	writeTestFile(t, repoRoot, "modules/U8G2Display/U8G2Display.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/U8G2Display/U8G2Display.cpp", "// U8G2Display\n")
+	writeTestFile(t, repoRoot, "modules/WebServer/WebServer.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/MCPServer/MCPServer.hpp", "#pragma once\n")
+
+	frameworkExpertSkill := `---
+name: framework-expert
+description: Expert assistant for the ESP32 App Foundation firmware framework
+---
+# ESP32 App Foundation Expert
+
+## Quick Answers
+
+### How do I register a module?
+Call ` + "`app.registerModule(&myModule);`" + ` inside ` + "`setup()`" + ` before ` + "`app.begin()`" + ` so compile-time introspection wires every implemented contract.
+
+### What include do I use?
+Always use ` + "`#include \"AppFoundation.h\"`" + ` rather than coupling directly to internal framework header paths.
+
+## Data Source Resilience
+
+### The FetchContext Contract
+- **Shared TLS Client**: Always use ` + "`ctx.client`" + ` inside ` + "`IDataSource::fetchUpdate`" + ` managed by ` + "`DataManager`" + ` instead of constructing a raw TLS client.
+- **Display Boards**: Implement ` + "`IDisplayBoard`" + ` to register carousel pages with ` + "`U8G2DisplayModule`" + `.
+
+## Trigger Reference
+- **Getting started**: "how do I create a module", "register a module", "weather station".
+`
+	writeTestFile(t, repoRoot, ".agents/skills/framework-expert/SKILL.md", frameworkExpertSkill)
+
+	creatingModuleDoc := `# Creating a Module
+
+## 1. Module Registration Rules
+See [IDataSource](../../include/interfaces/IDataSource.hpp) and [IWebContributor](../../include/interfaces/IWebContributor.hpp).
+
+> [!IMPORTANT]
+> **Rule:** Every module header must be self-contained and use ` + "`#pragma once`" + ` while registering MCP tools via ` + "`IMCPContributor`" + `.
+
+- **Late Registration Panics**: Calling ` + "`app.registerModule()`" + ` after ` + "`app.begin()`" + ` triggers an immediate panic because registries are already locked.
+
+## 2. Native Unit Testing
+- **Run Native Tests**: Validate module contracts on the host before flashing hardware:
+` + "```bash\npio test -e native\n```" + `
+`
+	writeTestFile(t, repoRoot, "docs/developer/creating-a-module.md", creatingModuleDoc)
+
+	reader := ops.NewReader(opsDir)
+	writer := ops.NewWriter(opsDir)
+	opts := DocSeedOptions{
+		RepoRoot: repoRoot,
+		OpsDir:   opsDir,
+		RepoCfg:  config.DefaultRepoConfig(),
+	}
+
+	res, err := SeedDocs(ctx, opts, &config.ScopeConfig{}, reader, writer)
+	if err != nil {
+		t.Fatalf("SeedDocs failed: %v", err)
+	}
+	if res.FilesSeeded != 2 {
+		t.Fatalf("FilesSeeded = %d, want 2", res.FilesSeeded)
+	}
+	if res.EntriesAdded < 6 {
+		t.Fatalf("expected at least 6 entries extracted from framework-expert + creating-a-module, got %d", res.EntriesAdded)
+	}
+
+	foundPioRecipe := false
+	foundDataManagerScope := false
+	foundU8G2Scope := false
+	foundApplicationScope := false
+
+	for _, op := range res.Ops {
+		text, _ := op.Fields["text"].(string)
+		entryType, _ := op.Fields["entry_type"].(string)
+		if strings.Contains(text, "pio test -e native") && entryType == string(dossiers.EntryTypeRecipe) {
+			foundPioRecipe = true
+		}
+		if strings.Contains(text, "weather station") {
+			t.Errorf("Trigger Reference keyword catalog bullet should not be extracted: %q", text)
+		}
+		switch op.DossierScope {
+		case "modules/DataManager":
+			foundDataManagerScope = true
+		case "modules/U8G2Display":
+			foundU8G2Scope = true
+		case "modules/Application":
+			foundApplicationScope = true
+		}
+	}
+
+	if !foundPioRecipe {
+		t.Error("expected `pio test -e native` code fence to be extracted as a recipe entry")
+	}
+	if !foundDataManagerScope {
+		t.Error("expected DataManager / IDataSource rule to resolve to modules/DataManager scope")
+	}
+	if !foundU8G2Scope {
+		t.Error("expected IDisplayBoard / U8G2DisplayModule rule to resolve to modules/U8G2Display scope")
+	}
+	if !foundApplicationScope {
+		t.Error("expected app.registerModule rule to resolve to modules/Application scope")
+	}
+
+	// Ensure RunOpsGC agrees with all scopes and anchors (0 repairs, 0 removed)
+	gcStats, err := RunOpsGC(ctx, GCOptions{
+		OpsDir:     opsDir,
+		ConfigPath: filepath.Join(repoRoot, ".memory", "config.yaml"),
+		DryRun:     true,
+	})
+	if err != nil {
+		t.Fatalf("RunOpsGC failed: %v", err)
+	}
+	if gcStats.ScopesRepaired != 0 || gcStats.AnchorsRemoved != 0 {
+		t.Errorf("expected RunOpsGC ScopesRepaired=0 and AnchorsRemoved=0, got %+v", gcStats)
+	}
+}

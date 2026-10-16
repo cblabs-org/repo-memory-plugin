@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	opsGCRepoDir     string
 	opsGCOpsDir      string
 	opsGCDossiersDir string
 	opsGCConfigPath  string
@@ -29,26 +30,42 @@ var opsGCCmd = &cobra.Command{
 	Use:   "gc",
 	Short: "Prune junk/stale ops, sanitize anchors, repair scopes, and optionally re-render dossiers",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resolvePath := func(p string) string {
+		repoRoot, _ := gitops.FindRepoRoot(opsGCRepoDir)
+		resolvePath := func(p string, flagChanged bool) string {
 			if p == "" || filepath.IsAbs(p) {
 				return p
 			}
+			if repoRoot != "" {
+				inRepo := filepath.Join(repoRoot, p)
+				if !flagChanged {
+					return inRepo
+				}
+				if _, err := os.Stat(inRepo); err == nil {
+					return inRepo
+				}
+			}
 			if _, err := os.Stat(p); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
 				return p
 			}
-			if repoRoot, err := gitops.FindRepoRoot("."); err == nil && repoRoot != "" {
-				cand := filepath.Join(repoRoot, p)
-				if _, err := os.Stat(cand); err == nil {
-					return cand
+			if _, err := os.Stat(filepath.Dir(filepath.Clean(p))); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
 				}
+				return p
+			}
+			if repoRoot != "" {
+				return filepath.Join(repoRoot, p)
 			}
 			return p
 		}
 
 		opts := seed.GCOptions{
-			OpsDir:      resolvePath(opsGCOpsDir),
-			DossiersDir: resolvePath(opsGCDossiersDir),
-			ConfigPath:  resolvePath(opsGCConfigPath),
+			OpsDir:      resolvePath(opsGCOpsDir, cmd.Flags().Changed("ops-dir")),
+			DossiersDir: resolvePath(opsGCDossiersDir, cmd.Flags().Changed("dossiers-dir")),
+			ConfigPath:  resolvePath(opsGCConfigPath, cmd.Flags().Changed("config")),
 			PruneIDs:    opsGCPruneIDs,
 			DryRun:      opsGCDryRun,
 		}
@@ -78,6 +95,7 @@ var opsGCCmd = &cobra.Command{
 }
 
 func init() {
+	opsGCCmd.Flags().StringVar(&opsGCRepoDir, "repo", ".", "Path to the target repository root")
 	opsGCCmd.Flags().StringVar(&opsGCOpsDir, "ops-dir", ".memory/ops", "Path to the ops directory")
 	opsGCCmd.Flags().StringVar(&opsGCDossiersDir, "dossiers-dir", "", "Optional directory in which to re-render dossiers/ and ATLAS.md")
 	opsGCCmd.Flags().StringVar(&opsGCConfigPath, "config", ".memory/config.yaml", "Path to config.yaml")

@@ -67,7 +67,7 @@ func isPollutedScope(scope string) bool {
 	if idx := strings.IndexByte(s, '/'); idx >= 0 {
 		firstSeg = s[:idx]
 	}
-	if strings.Contains(firstSeg, ".") {
+	if strings.Contains(firstSeg, ".") || strings.Contains(s, ".") || strings.HasPrefix(s, "-") || strings.Contains(s, "/-") {
 		return true
 	}
 	return false
@@ -177,7 +177,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 			if rawAnchors, hasAnchors := extractOpAnchors(op.Fields); hasAnchors {
 				cleanAnchors := make([]string, 0, len(rawAnchors))
 				for _, a := range rawAnchors {
-					if !IsValidAnchorPathSyntax(a) {
+					if !IsValidAnchorPathSyntax(a) && !isValidDocDirAnchor(a) {
 						stats.AnchorsRemoved++
 						tb.modified = true
 						continue
@@ -206,7 +206,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("loading scope config: %w", err)
 	}
-	moduleScopes := config.DeriveModuleScopes(allValidAnchors)
+	moduleScopes := config.DeriveModuleScopes(expandSubmoduleAnchorsForScopes(allValidAnchors))
 	resolver := config.NewScopeResolver(scopeCfg, moduleScopes, nil)
 
 	for _, tb := range batches {
