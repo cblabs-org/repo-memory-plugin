@@ -137,6 +137,7 @@ func evaluateMilestoneGate(
 
 	// 9. Issue continuation request.
 	mark.PendingRequestStep = latestStepIdx
+	mark.PendingContinuation = true
 	_ = state.SaveMark(dataDir, repoID, mark)
 
 	hasCheckpoint := hasCheckpointAfterStep(steps, mark.StepIndex, isInitialMark)
@@ -266,6 +267,7 @@ func harvestTurnNote(
 		res.NoteID = noteID
 		mark.LastNoteAt = time.Now().UTC()
 		mark.NoteCount++
+		mark.NotesToday++
 		for _, it := range validItems {
 			if strings.TrimSpace(it.Title) != "" {
 				mark.NoteTitles = append(mark.NoteTitles, strings.TrimSpace(it.Title))
@@ -290,6 +292,7 @@ func advanceMarkAndClearPending(mark *state.Mark, latestStepIdx int, byteOffset 
 		mark.StepTimestamp = latestTimestamp
 	}
 	mark.PendingRequestStep = 0
+	mark.PendingContinuation = false
 }
 
 func transcriptDirFromPath(transcriptPath string) string {

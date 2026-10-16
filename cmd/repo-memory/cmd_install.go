@@ -147,6 +147,8 @@ func RunInstall(pluginDir, binPath string) error {
 		pluginDir,
 		filepath.Join(pluginDir, "sidecars", "tick"),
 		wsDir,
+		filepath.Join(wsDir, "agents"),
+		filepath.Join(wsDir, "agents", "repo-memory-distiller"),
 	}
 	for _, dir := range subdirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -166,6 +168,7 @@ func RunInstall(pluginDir, binPath string) error {
 
 	workspacePluginContent := antigravity.GenerateWorkspacePluginJSON()
 	mcpContent := antigravity.GenerateMCPConfigJSON(binPath)
+	distillerAgentContent := antigravity.GenerateDistillerAgentMD()
 
 	files := map[string]string{
 		// Daemon files
@@ -173,8 +176,10 @@ func RunInstall(pluginDir, binPath string) error {
 		filepath.Join(pluginDir, "config.json"):                      configContent,
 		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"): sidecarContent,
 		// Workspace files
-		filepath.Join(wsDir, "plugin.json"):                          workspacePluginContent,
-		filepath.Join(wsDir, "mcp_config.json"):                      mcpContent,
+		filepath.Join(wsDir, "plugin.json"):                                          workspacePluginContent,
+		filepath.Join(wsDir, "mcp_config.json"):                                      mcpContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"):          distillerAgentContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):                   distillerAgentContent,
 	}
 
 	for path, content := range files {

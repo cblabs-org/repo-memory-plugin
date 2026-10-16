@@ -20,15 +20,17 @@ var (
 
 // Mark tracks the high-water distillation mark for a single conversation.
 type Mark struct {
-	ConversationID     string    `json:"conversation_id"`
-	StepIndex          int       `json:"step_index"`
-	ByteOffset         int64     `json:"byte_offset"`
-	StepTimestamp      string    `json:"step_timestamp,omitempty"`
-	LastNoteAt         time.Time `json:"last_note_at,omitempty"`
-	NoteTitles         []string  `json:"note_titles,omitempty"`
-	NoteCount          int       `json:"note_count"`
-	PendingRequestStep int       `json:"pending_request_step,omitempty"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ConversationID      string    `json:"conversation_id"`
+	StepIndex           int       `json:"step_index"`
+	ByteOffset          int64     `json:"byte_offset"`
+	StepTimestamp       string    `json:"step_timestamp,omitempty"`
+	LastNoteAt          time.Time `json:"last_note_at,omitempty"`
+	NoteTitles          []string  `json:"note_titles,omitempty"`
+	NoteCount           int       `json:"note_count"`
+	NotesToday          int       `json:"notes_today,omitempty"`
+	PendingRequestStep  int       `json:"pending_request_step,omitempty"`
+	PendingContinuation bool      `json:"pending_continuation,omitempty"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // SanitizeConversationID ensures the conversation ID is safe for use in a filesystem path.
@@ -135,7 +137,7 @@ func (m *Mark) ClampIfRewound(stepCount int, stepAtMarkTimestamp string) bool {
 	if m == nil {
 		return false
 	}
-	if m.StepIndex <= 0 && m.ByteOffset <= 0 && m.PendingRequestStep <= 0 {
+	if m.StepIndex <= 0 && m.ByteOffset <= 0 && m.PendingRequestStep <= 0 && !m.PendingContinuation {
 		return false
 	}
 
@@ -152,6 +154,7 @@ func (m *Mark) ClampIfRewound(stepCount int, stepAtMarkTimestamp string) bool {
 	m.ByteOffset = 0
 	m.StepTimestamp = ""
 	m.PendingRequestStep = 0
+	m.PendingContinuation = false
 	return true
 }
 

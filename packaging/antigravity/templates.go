@@ -20,6 +20,9 @@ var DaemonPluginJSONTemplate string
 //go:embed workspace_plugin.json
 var WorkspacePluginJSONTemplate string
 
+//go:embed agents/repo-memory-distiller/agent.md
+var DistillerAgentMDTemplate string
+
 // RenderTemplate replaces <bin> with the provided binary path.
 // Backslashes in the binary path (e.g. on Windows) are JSON-escaped.
 func RenderTemplate(tmpl, binPath string) string {
@@ -55,4 +58,9 @@ func GenerateWorkspacePluginJSON() string {
 // GenerateConfigJSON returns the static config.json content enabling the daemon plugin.
 func GenerateConfigJSON() string {
 	return "{\n  \"enabled\": true\n}\n"
+}
+
+// GenerateDistillerAgentMD returns the static repo-memory-distiller agent definition markdown.
+func GenerateDistillerAgentMD() string {
+	return DistillerAgentMDTemplate
 }

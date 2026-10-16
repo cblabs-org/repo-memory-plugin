@@ -16,6 +16,8 @@ const (
 	StageReconcile
 	StageVerify
 	StagePublish
+	StageDistill
+	StageConsolidate
 )
 
 func (s Stage) String() string {
@@ -34,6 +36,10 @@ func (s Stage) String() string {
 		return "verify"
 	case StagePublish:
 		return "publish"
+	case StageDistill:
+		return "distill"
+	case StageConsolidate:
+		return "consolidate"
 	default:
 		return fmt.Sprintf("stage-%d", int(s))
 	}

@@ -92,6 +92,7 @@ type Header struct {
 	Status           string            `json:"status,omitempty"`
 	StepCount        int               `json:"step_count,omitempty"`
 	Checkpoints      map[string]string `json:"checkpoints,omitempty"`
+	Exposures        []string          `json:"exposures,omitempty"`
 	Metadata         map[string]any    `json:"metadata,omitempty"`
 }
 
@@ -878,6 +879,23 @@ func (s *Store) ListHeaders(year ...int) ([]*Header, error) {
 		headers = append(headers, h)
 	}
 	return headers, nil
+}
+
+// ListEpisodes returns all stored episodes in deterministic path order.
+func (s *Store) ListEpisodes(year ...int) ([]*Episode, error) {
+	paths, err := s.ListPaths(year...)
+	if err != nil {
+		return nil, err
+	}
+	episodes := make([]*Episode, 0, len(paths))
+	for _, p := range paths {
+		ep, err := s.ReadFromPath(p)
+		if err != nil {
+			return nil, fmt.Errorf("reading episode from %s: %w", p, err)
+		}
+		episodes = append(episodes, ep)
+	}
+	return episodes, nil
 }
 
 func readLineBytes(r *bufio.Reader) ([]byte, error) {

@@ -24,6 +24,8 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	expectedDirs := []string{
 		filepath.Join(tempPluginDir, "sidecars", "tick"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory"),
+		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents"),
+		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller"),
 	}
 	for _, dir := range expectedDirs {
 		info, err := os.Stat(dir)
@@ -78,6 +80,22 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		}
 		if !strings.Contains(string(data), ef.mustContain) {
 			t.Errorf("file %s does not contain expected substring %q", fullPath, ef.mustContain)
+		}
+	}
+
+	// Verify repo-memory-distiller agent markdown files exist in both directory and flat forms
+	distillerPaths := []string{
+		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller", "agent.md"),
+		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller.md"),
+	}
+	for _, dp := range distillerPaths {
+		data, err := os.ReadFile(dp)
+		if err != nil {
+			t.Errorf("expected distiller agent file %s to exist: %v", dp, err)
+			continue
+		}
+		if !strings.Contains(string(data), "name: repo-memory-distiller") || !strings.Contains(string(data), "echo_token:") {
+			t.Errorf("distiller agent file %s missing expected content", dp)
 		}
 	}
 
