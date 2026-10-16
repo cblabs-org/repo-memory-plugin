@@ -11,3 +11,6 @@
 - **WO2 (`wo2-backfill-and-reproject-cli`) — Completed (`6ec6794`):**
   - `repo-memory backfill` (alias `backfill-captures`, `cmd/repo-memory/cmd_backfill.go`, `internal/core/tick/backfill.go`) supports `--dry-run`, `--json`, `--force`, `--transcripts`, `--docs`, `--git`, and `--max-items`, guarded by A5 spend guards (`SpendConfig.Jobs["backfill"]`).
   - `repo-memory reproject` (`cmd/repo-memory/cmd_reproject.go`, `internal/core/dossiers/reproject.go`) deterministically replays `.memory/ops` (and optional `ops-local`/`user/ops`), checks that all pre-existing entry IDs, `verified` stamps, and human decisions survive (`ErrHumanDecisionLost`), and refreshes `.memory/dossiers/`, `.memory/ATLAS.md`, `.memory/QUESTIONS.md`, and `.agents/skills/rm-*/SKILL.md`.
+- **WO3 (`wo3-dogfood-rollout-and-ci-packaging`) — Completed (`d89c041`):**
+  - `repo-memory reproject` defaults to `<repoRoot>/.memory/ops` unless `--include-local` is set.
+  - Dogfooded `.memory/` state (`30` dossiers, `259` active entries, `225` human decisions preserved) with zero second-run churn and upgraded `.github/workflows/ci.yml`.

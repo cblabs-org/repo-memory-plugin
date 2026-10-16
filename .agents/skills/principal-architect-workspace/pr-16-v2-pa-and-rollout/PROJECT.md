@@ -44,8 +44,8 @@ Complete the final PR (`22/22`) of the `repo-memory` `v2.2` programme (`PR-16-v2
 |---|---|---|---|---|---|
 | 1 | [wo1-pa-summaries-and-workorder-briefs](wo1-pa-summaries-and-workorder-briefs/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo1-pa-summaries-and-workorder-briefs` | Implement `repo-memory summary <session-id>` ($\le 1.5\text{k}$ tokens) and `repo-memory brief --workorder <path>` / `--scope <scope>` with unit tests. | standard | ☑ Completed (`c52caed`) |
 | 2 | [wo2-backfill-and-reproject-cli](wo2-backfill-and-reproject-cli/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo2-backfill-and-reproject-cli` | Upgrade `repo-memory backfill` (`--dry-run`, `--json`, `--transcripts`, `--docs`, `--git`, A5 spend guards) and implement `repo-memory reproject` (`--dry-run`, `--json`, human-decision preservation check). | standard | ☑ Completed (`6ec6794`) |
-| 3 | [wo3-dogfood-rollout-and-ci-packaging](wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging` | Run full dogfood rollout on `repo-memory-plugin` (`seed`, `seed-docs`, `ops gc`, `reproject`, `promote-skills`, `reindex`, `doctor`) and update `.github/workflows/` CI checks. | standard | ☐ Ready |
-| 4 | [wo4-programme-closeout-and-handover](wo4-programme-closeout-and-handover/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover` | Update `README.md` CLI reference, run full verification (`go build`, `go vet`, `GOOS=windows`, `go test -race`), rebuild `~/.local/bin/repo-memory`, and finalize `PROJECT.md` for Step 6A PR Audit. | standard | ☐ Planned |
+| 3 | [wo3-dogfood-rollout-and-ci-packaging](wo3-dogfood-rollout-and-ci-packaging/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo3-dogfood-rollout-and-ci-packaging` | Run full dogfood rollout on `repo-memory-plugin` (`seed`, `seed-docs`, `ops gc`, `reproject`, `promote-skills`, `reindex`, `doctor`) and update `.github/workflows/` CI checks. | standard | ☑ Completed (`d89c041`) |
+| 4 | [wo4-programme-closeout-and-handover](wo4-programme-closeout-and-handover/WORKORDER.md) | `pr-16-v2-pa-and-rollout/wo4-programme-closeout-and-handover` | Update `README.md` CLI reference, run full verification (`go build`, `go vet`, `GOOS=windows`, `go test -race`), rebuild `~/.local/bin/repo-memory`, and finalize `PROJECT.md` for Step 6A PR Audit. | standard | ☐ Ready |
 
 ---
 
@@ -76,3 +76,8 @@ Complete the final PR (`22/22`) of the `repo-memory` `v2.2` programme (`PR-16-v2
 - Implemented `internal/core/tick/backfill.go` (`RunBackfill`, A5 spend guards, PA workspace import, doc seeding, git revert refutation notes) and upgraded `cmd/repo-memory/cmd_backfill.go` (`repo-memory backfill` with `backfill-captures` alias).
 - Implemented `internal/core/dossiers/reproject.go` (`Reproject` with `ErrHumanDecisionLost` preservation check) and `cmd/repo-memory/cmd_reproject.go` (`repo-memory reproject` coordinating dossiers, `ATLAS.md`, `QUESTIONS.md`, and graduated skills).
 - Verified all unit and race tests pass across `internal/core/tick`, `internal/core/dossiers`, and `cmd/repo-memory`.
+
+### 2026-10-16 — WO3 Completed (`d89c041`)
+- Added `--include-local` flag to `repo-memory reproject` so default reprojection replays `<repoRoot>/.memory/ops` deterministically across developer hosts and CI runners.
+- Executed full dogfood rollout on `repo-memory-plugin` (`seed`, `seed-docs`, `ops gc`, `reproject`, `promote-skills`, `reindex`, `doctor`), projecting 30 dossiers (259 active entries, 225 human decisions preserved), `.memory/ATLAS.md`, and `.memory/QUESTIONS.md` with 0 second-run churn and 0 doctor errors.
+- Upgraded `.github/workflows/ci.yml` to run `go vet`, `go build`, `go test -race`, `doctor .`, and `reproject --dry-run .`.
