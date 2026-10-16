@@ -3,7 +3,7 @@
 > **Programme:** repo-memory
 > **PR:** pr-10-eval-v2
 > **Base branch:** main (at `208b0e0`, post PR-09b merge)
-> **Status:** ☐ Active — WO1 ready
+> **Status:** 🔄 Active — WO4 complete (Layer 2 GO); WO5 ready for workstation Layer 3 execution
 > **Human approval:** Decomposition approved 2026-10-11T20:24 by the project owner.
 > **Design ref:** [memory-value-evaluation-proposal.md](../../../docs/evaluations/memory-value-evaluation-proposal.md) (v2, approved)
 > **Handover ref:** [chief-architect-handover.md](chief-architect-handover.md)
@@ -31,8 +31,8 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
 | 1 | [wo1-template-build](wo1-template-build/WORKORDER.md) | Build the esp32 evaluation template per §9: rsync working tree with exclusions, verify build (`pio run` + `pio test -e native`), squash history, create condition templates (tpl-a/b/c/d). Produce the template verification script. | standard | ✅ Complete |
 | 2 | [wo2-protection-harness](wo2-protection-harness/WORKORDER.md) | Implement §10 protection: env vars (`GH_TOKEN=invalid`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`), one-time verification check, BugFixer/sidecar disable instructions, run-copy procedure with APFS clonefile. Produce `eval_run.sh` orchestration script. | standard | ✅ Complete |
 | 3 | [wo3-index-build](wo3-index-build/WORKORDER.md) | Build the esp32 index from the PA workspace at HEAD. Seed dossiers from the 105 PA project dirs / 435 workorders. Verify non-trivial entry count and FTS search works. | standard | ✅ Complete |
-| 4 | [wo4-offline-retrieval](wo4-offline-retrieval/WORKORDER.md) | Stage 1: Offline retrieval quality check. Queries = task prompts + sample historical issue texts. Rate top-k injected entries for relevance. Compare against plain search over PA docs and code. Pre-set precision@k thresholds. | interactive | ☐ Planned |
-| 5 | [wo5-pilot](wo5-pilot/WORKORDER.md) | Stage 2a: Pilot run. 1 task × (a),(c) × 1 run. Validate harness (contamination check, protection, archival). Measure cost per run to set 2b's size. | interactive | ☐ Planned |
+| 4 | [wo4-offline-retrieval](wo4-offline-retrieval/WORKORDER.md) | Stage 1: Offline retrieval quality check. Queries = task prompts + sample historical issue texts. Rate top-k injected entries for relevance. Compare against plain search over PA docs and code. Pre-set precision@k thresholds. | interactive | ✅ Complete |
+| 5 | [wo5-pilot](wo5-pilot/WORKORDER.md) | Stage 2a: Pilot run. 1 task × (a),(c) × 1 run. Validate harness (contamination check, protection, archival). Measure cost per run to set 2b's size. | interactive | ☐ Ready (Workstation Layer 3) |
 | 6 | [wo6-main-evaluation](wo6-main-evaluation/WORKORDER.md) | Stage 2b: Main evaluation. 2-3 tasks × conditions × 2 replicates, interleaved and pre-registered. Final Q1/Q2 verdicts. Rubric grading, token accounting, cost/quality frontier. | interactive | ☐ Planned |
 | 7 | [wo7-report](wo7-report/WORKORDER.md) | Final evaluation report: aggregate results, cost/quality frontier, Q1/Q2 verdicts, confidence intervals, honesty clause, recommendations for the programme (continue to distillation / redirect / stop). | standard | ☐ Planned |
 
@@ -117,3 +117,10 @@ This PR covers Stages 0b through 3 of the evaluation proposal. Stage 0 (product 
   - **Decision: test real-world scenario.** No "read the docs" rule added to templates. This tests push vs pull, not memory vs docs.
 - **Product direction surfaced:** Doc-seeded dossiers (ingest curated docs as entries) + async freshness ("dreaming" — watch for doc changes, re-process dossiers). Gated on positive evaluation verdict. Added to programme plan backlog.
 - Stage 1 gate: PASS pending user confirmation.
+
+### 2026-10-16 — WO4 Complete & Layer 3 Workstation Handover Prepared (PR-14 / PR-15 WO1)
+- **v2.2 Combined Index (`PR-14/WO1`):** Combined `repo-memory seed` (`256` PA workorder entries) + `repo-memory seed-docs` (`1,027` curated developer guide & skill entries) into **`1,283` entries**, **`3,203` verified file anchors**, and **`54` projected subsystem dossiers** (`0` `ops gc` drops).
+- **Read-Side Multi-Invocation Micro-Probe (`PR-14/WO2`, `docs/evaluations/v2-2-read-side-micro-probe.md`):** Achieved **`90%–100%` Precision@10** on `MomentTaskStart`; persistent `UserMessage` delivery retained **`71` active entries** (Task 1) and **`86` active entries** (Task 2) at code edit time (covering `6/6` subsystem rubric contracts), restored `30`/`39` entries post-`CHECKPOINT`, and re-armed `68`/`82` entries post-`/rewind`.
+- **Write-Side Distillation & Consolidation Micro-Probe (`PR-14/WO3`, `docs/evaluations/v2-2-write-side-micro-probe.md`):** Verified **`21.69%` (`18/83`)** `Stop` milestone selectivity across 25 real transcripts, `0`-token Stage 1b harvest (`6` items, `100%` idempotent), **`62.30%` corpus / `74.2%–94.0%` top-session `PrepareSession` byte reduction**, `4/4` adversarial validator rejections, `4/4` secret classes redacted, and Stage 2 consolidation (`P13` echo filter + `VD18` corroboration gate + Five-Tier routing + `memory/pending` worktree commit).
+- **Compiled-Binary 1-Task Pilot (`PR-14/WO4`, `docs/evaluations/v2-2-micro-probe-verdict.md`):** Verified §10 protection, Condition A (`0/5` architectural compliance) vs Condition C (`5/5` architectural compliance + `Stop` note harvest + warm consolidation), `0` contamination violations, and clean archival (**`VERDICT: GO`**).
+- **Layer 3 Workstation Handover (`PR-15/WO1`):** Committed `chief-architect-handover.md`, `wo4-offline-retrieval/WORKORDER.md` through `wo7-report/WORKORDER.md`, blind grading rubrics and automated scorer (`evaluation/eval-v2/rubrics/`), and copy-pasteable workstation bridge prompt (`evaluation/eval-v2/LAYER3_BRIDGE_PROMPT.md`). Ready for live `pio` + `agy` execution starting at `WO5`.

@@ -55,7 +55,7 @@ Use `read_file`, `write_file`, `edit_file`, and `run_command` for file creation,
 
 ## Line-Item Instructions
 
-- [ ] **1. Create `.agents/skills/principal-architect-workspace/pr-10-eval-v2/chief-architect-handover.md`:**
+- [x] **1. Create `.agents/skills/principal-architect-workspace/pr-10-eval-v2/chief-architect-handover.md`:**
   - Document the complete `v2.2` evaluation architecture and handover context referenced by `.agents/skills/principal-architect-workspace/pr-10-eval-v2/PROJECT.md`:
     1. **Executive Overview & Research Questions (`Q1` & `Q2`):**
        - `Q1`: Is `repo-memory v2.2` better than no memory (`Condition C` vs `Condition A`) on quality, architectural compliance, and token efficiency?
@@ -65,7 +65,7 @@ Use `read_file`, `write_file`, `edit_file`, and `run_command` for file creation,
     3. **Workstation Execution Sequence (`WO5` $\to$ `WO6` $\to$ `WO7`):**
        - Detail how the macOS workstation operator or agent runs `WO5` (Stage 2a live 1-task pilot with `pio test -e native` and `agy` CLI), `WO6` (Stage 2b pre-registered 2×2 factorial evaluation across Task 1 and Task 2, Conditions A, B, C, D, 2 interleaved replicates, blind rubric grading via `evaluation/eval-v2/rubrics/grade_run.sh`), and `WO7` (final statistical synthesis in `docs/evaluations/eval-v2-report.md` per Addendum A §9 A10).
 
-- [ ] **2. Create the 4 remaining `WORKORDER.md` files under `.agents/skills/principal-architect-workspace/pr-10-eval-v2/`:**
+- [x] **2. Create the 4 remaining `WORKORDER.md` files under `.agents/skills/principal-architect-workspace/pr-10-eval-v2/`:**
   - **`wo4-offline-retrieval/WORKORDER.md`:**
     - Frontmatter: `name: pr-10-eval-v2-wo4`, `description: Handoff instructions for Work Order 4 — Stage 1 & Layer 2 Offline Retrieval and Write-Side Micro-Probes`, `complexity: standard`.
     - Document the Stage 1 offline retrieval check, the 77-session static doc read-rate audit (1–8% voluntary pull rate), and the Layer 2 read-side and write-side micro-probes executed in `PR-14`.
@@ -83,12 +83,12 @@ Use `read_file`, `write_file`, `edit_file`, and `run_command` for file creation,
     - Step-by-step instructions for synthesizing all archived Stage 2a/2b run scorecards, token ledgers, and test results into `docs/evaluations/eval-v2-report.md` following Addendum A §9 (A10): paired differences per task × replicate, Wilcoxon signed-rank / paired t-test, Holm step-down multiple-testing correction, 95% confidence intervals, read-side + write-side token accounting, cost/quality frontier table, explicit `Q1` and `Q2` verdicts, and the mandatory `## What this does not show` honesty clause.
     - Include the blank `## Completion Report` template at the bottom.
 
-- [ ] **3. Update `.agents/skills/principal-architect-workspace/pr-10-eval-v2/PROJECT.md`:**
+- [x] **3. Update `.agents/skills/principal-architect-workspace/pr-10-eval-v2/PROJECT.md`:**
   - Update the top `> **Status:**` line to `🔄 Active — WO4 complete (Layer 2 GO); WO5 ready for workstation Layer 3 execution`.
   - In the `## Work Order Ledger` table, mark `wo4-offline-retrieval` as `✅ Complete` and `wo5-pilot` as `☐ Ready (Workstation Layer 3)`.
   - Append a `### 2026-10-16 — WO4 Complete & Layer 3 Workstation Handover Prepared (PR-14 / PR-15 WO1)` entry to the `## Session Log` summarizing the `v2.2` combined index (`1,283` entries, `3,203` anchors, `54` dossiers), the Read-Side (`90%–100%` Precision@10, `71`/`86` persistent entries) and Write-Side (`21.69%` milestone selectivity, `74.2%–94.0%` `PrepareSession` reduction) micro-probes, the compiled-binary 1-task pilot (`VERDICT: GO`), and the committed `WO4`–`WO7` workorders, blind rubrics (`evaluation/eval-v2/rubrics/`), and `evaluation/eval-v2/LAYER3_BRIDGE_PROMPT.md`.
 
-- [ ] **4. Create blind grading rubrics and scorer in `evaluation/eval-v2/rubrics/`:**
+- [x] **4. Create blind grading rubrics and scorer in `evaluation/eval-v2/rubrics/`:**
   - **`evaluation/eval-v2/rubrics/task-1-temperature-module.yaml`:**
     - Structured YAML blind convention & pitfall rubric for `task-1-temperature-module.txt` (Waterproof DS18B20-Compatible Temperature Sensor Module), authored blind to condition from `esp32-app-foundation` project rules and interfaces:
       1. `id: t1_data_source_and_config` (`weight: 20`): Implements `IDataSource` (`fetchUpdate(const FetchContext&)` or `fetchUpdate`) and `IConfigurable` storing update interval in `/mod/<ns>.json` clamped to `[1s, 15m]` (`1000`–`900000` ms or `1`–`900` s).
@@ -112,7 +112,7 @@ Use `read_file`, `write_file`, `edit_file`, and `run_command` for file creation,
     - Evaluates each rubric check deterministically for Task 1 or Task 2, checks for `native_test_result.txt` / `pio test -e native` pass status if recorded, checks `check_contamination.sh` on `transcript.jsonl` if present, extracts token usage from `transcript.jsonl` if present, and outputs a clean JSON scorecard (`scorecard.json`) and Markdown report (`scorecard.md`).
     - Test `grade_run.sh` against the archived pilot runs (`evaluation/eval-v2/runs/pilot-t1-a-v22/archive` and `evaluation/eval-v2/runs/pilot-t1-c-v22/archive` if present, or a synthetic test fixture in `/tmp`) to verify it runs cleanly with exit code `0`.
 
-- [ ] **5. Create `evaluation/eval-v2/LAYER3_BRIDGE_PROMPT.md`:**
+- [x] **5. Create `evaluation/eval-v2/LAYER3_BRIDGE_PROMPT.md`:**
   - Author a comprehensive, copy-pasteable workstation guide and agent bridge prompt containing:
     1. **Workstation Prerequisites:** macOS (or Linux) machine with `git`, `go` ($\ge 1.22$), `sqlite3`, `python3`, PlatformIO CLI (`pio`), and Antigravity CLI (`agy`) installed, plus network access to clone `matthewmcneill/esp32-app-foundation` during template staging (`prepare_templates.sh`).
     2. **Step-by-Step Terminal Pre-Flight Commands (copy-pasteable block):**

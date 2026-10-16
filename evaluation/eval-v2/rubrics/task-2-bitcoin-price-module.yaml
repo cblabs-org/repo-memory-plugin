@@ -1,0 +1,85 @@
+# Blind Architectural & Convention Grading Rubric — Task 2
+# Task: Bitcoin Price Ticker Module (CoinMarketCap API Once Per Hour)
+# Prompt: evaluation/eval-v2/tasks/task-2-bitcoin-price-module.txt
+# Authored blind to evaluation condition from esp32-app-foundation framework interfaces and ADRs.
+
+task_id: 2
+task_slug: task-2-bitcoin-price-module
+title: "Bitcoin Price Module via CoinMarketCap API (Hourly + U8G2 + Portal + MCP)"
+prompt_file: "evaluation/eval-v2/tasks/task-2-bitcoin-price-module.txt"
+max_score: 100
+
+criteria:
+  - id: t2_data_source_and_hourly_tier
+    title: "IDataSource & Hourly Cadence (PriorityTier::Low / 3600s) with UpdateStatus"
+    weight: 20
+    description: >
+      Implements IDataSource (fetchUpdate(const FetchContext&)) scheduled once per hour via
+      PriorityTier::Low (or 3600s / 3600000ms cadence) and returns accurate UpdateStatus
+      (Success, RateLimited, FetchError, etc.).
+    required_signals:
+      - "IDataSource"
+      - "fetchUpdate"
+      - "PriorityTier::Low|3600000|3600"
+      - "UpdateStatus::"
+
+  - id: t2_tls_and_streaming_json_safety
+    title: "Shared FetchContext TLS Safety (No setInsecure(), No Member WiFiClientSecure) & Bounded JSON Parsing"
+    weight: 20
+    description: >
+      Uses FetchContext shared transport for https://pro-api.coinmarketcap.com without calling
+      setInsecure() and without allocating a class-member or stack WiFiClientSecure; parses the
+      payload safely (e.g. JsonStreamingParser or bounded ArduinoJson document).
+    required_signals:
+      - "FetchContext"
+      - "coinmarketcap\\.com"
+      - "JsonStreamingParser|ArduinoJson|deserializeJson"
+    forbidden_signals:
+      - "setInsecure\\s*\\("
+      - "WiFiClientSecure"
+
+  - id: t2_u8g2_carousel_board
+    title: "U8G2Display IDisplayBoard Permanent Carousel Screen"
+    weight: 15
+    description: >
+      Implements IDisplayBoard with render(U8G2&), isExpired() returning false for permanent
+      carousel residency, and fast non-blocking native U8G2 drawing calls.
+    required_signals:
+      - "IDisplayBoard"
+      - "render\\s*\\(\\s*U8G2"
+      - "isExpired"
+
+  - id: t2_web_portal_contributor
+    title: "IWebContributor Portal Route & Status Exposure"
+    weight: 15
+    description: >
+      Implements IWebContributor (registerRoutes(PsychicHttpServer&), getApiPrefix()) and
+      exposes Bitcoin price status in the web portal.
+    required_signals:
+      - "IWebContributor"
+      - "registerRoutes"
+      - "getApiPrefix"
+
+  - id: t2_mcp_contributor_stateless
+    title: "IMCPContributor On-Device MCP Tool with Stateless Lambda ([]) & mutatesState = false"
+    weight: 15
+    description: >
+      Implements IMCPContributor::registerMCPTools(MCPToolRegistry&) using a stateless
+      non-capturing lambda ([]) and mutatesState = false for the Bitcoin price read tool.
+    required_signals:
+      - "IMCPContributor"
+      - "registerMCPTools"
+      - "MCPToolRegistry"
+      - "mutatesState"
+      - "\\[\\s*\\]\\s*\\("
+
+  - id: t2_application_and_native_tests
+    title: "Application::registerModule() Static Scope Wiring, Native Tests & No delay()"
+    weight: 15
+    description: >
+      Wires the module via Application::registerModule() at static scope (ADR-16), includes
+      unit tests under test/ or passes pio test -e native, and avoids blocking delay() calls.
+    required_signals:
+      - "registerModule"
+    forbidden_signals:
+      - "\\bdelay\\s*\\("
