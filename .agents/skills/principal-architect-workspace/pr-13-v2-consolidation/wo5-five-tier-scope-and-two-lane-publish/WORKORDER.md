@@ -137,19 +137,22 @@ Run all tests (`go test -v -race ./internal/core/config/... ./internal/core/inde
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/config/layout.go` — Added `user-dossiers`, `user-dossiers/ops`, `user-dossiers/dossiers`, and `worktrees` to `DataDirSubdirectories`, and implemented `EnsureMemoryGitignore` ensuring `.memory/.gitignore` ignores `.cache/`, `.enrolled`, and `local/`.
+- `internal/core/index/rebuild.go` — Added `RebuildFromOpLogs(ctx, opsReaders...)` merging projected dossiers and alias maps across multiple op-log readers in a single SQLite transaction.
+- `internal/core/gitops/worktree.go` & `internal/core/gitops/worktree_test.go` — Implemented `CloneID`, `EnsureMemoryWorktree`, and `PublishToMemoryWorktree` committing shared `repo:` op batches and rendered dossiers onto `memory/pending` inside `<data-dir>/<repo-id>/worktrees/<clone-id>/` without disturbing the primary checkout.
+- `internal/core/consolidate/publish.go` & `internal/core/consolidate/publish_test.go` — Implemented `UserTierBaseDir`, `BranchTierOpsDir`, `BranchTierDossiersDir`, `RepoTierBaseDir`, `RecordUserTier`, `RecordBranchTier`, `RecordRepoTier`, `PromoteMergedBranchOps`, and `RebuildMultiTierIndex` with unit tests.
 
 ### Decisions Made
-- Decision description and rationale
+- In `RecordBranchTier`, rendered `.md` and `.history.md` files both under `<branchDossiersDir>/dossiers/` (via `dossiers.NewWriter`) and directly at `<branchDossiersDir>/<scope>.md` so both `SPEC.md` §5.4 direct inspection and `dossiers.NewWriter` conventions succeed.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+(none)
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+(none)
 
 ### Blockers
 (none)
