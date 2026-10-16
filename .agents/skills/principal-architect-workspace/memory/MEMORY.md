@@ -1,15 +1,15 @@
 # Principal Architect Memory
-<!-- Last updated: 2026-10-16T19:05:00Z -->
+<!-- Last updated: 2026-10-16T19:23:00Z -->
 
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan executing (20/22 complete, PR-15 active).** **PR-10a** (PR #17), **PR-10b** (PR #18 APPROVED), **PR-11-v2-doc-seeding-and-lifecycles** (PR #19 APPROVED), **PR-12-v2-distillation** (6/6 WOs, PR #20 APPROVED), **PR-13-v2-consolidation** (6/6 WOs, PR #21 APPROVED), and **PR-14-v2-micro-probes-and-pilot** (4/4 WOs, PR #22 APPROVED) complete. Active: **PR-15-v2-learning** (`WO1`–`WO5`). |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan executing (20/22 complete, PR-15 awaiting PR audit).** **PR-10a** (PR #17), **PR-10b** (PR #18 APPROVED), **PR-11-v2-doc-seeding-and-lifecycles** (PR #19 APPROVED), **PR-12-v2-distillation** (6/6 WOs, PR #20 APPROVED), **PR-13-v2-consolidation** (6/6 WOs, PR #21 APPROVED), and **PR-14-v2-micro-probes-and-pilot** (4/4 WOs, PR #22 APPROVED) complete. Active: **PR-15-v2-learning** (5/5 WOs complete, awaiting Cold-Firewall PR Audit). |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-15-v2-learning | **Active — WO4/5 complete, WO5/5 ready** (5-WO decomposition approved) | Layer 3 Eval Bridge (`eval-v2`), Skills (`graduate`, `tracker`), Tick (`closes_when`, `gardening`), Coverage/Gaps & Spend Guards (`mcpserver`, `coverage`, `config`), Doctor Lint | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
+| pr-15-v2-learning | **Active — 5/5 WOs complete, awaiting PR audit** (`WO1`–`WO5` complete) | Layer 3 Eval Bridge (`eval-v2`), Skills (`graduate`, `tracker`), Tick (`closes_when`, `gardening`), Coverage/Gaps & Spend Guards (`mcpserver`, `coverage`, `config`), Doctor Lint | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
 | pr-10-eval-v2 | **Paused at WO4/7 complete, WO5/7 ready (Stage 1 & WO4 complete; WO5–WO7 bridge prompt & rubrics committed in PR-15 WO1)** — Ready for Stage 2a/2b multi-replicate workstation runs | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
