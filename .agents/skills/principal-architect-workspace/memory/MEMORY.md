@@ -4,12 +4,13 @@
 ## Active Programs
 | Program | Plan | Status |
 |---|---|---|
-| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan executing (20/22 complete).** **PR-10a** (PR #17), **PR-10b** (PR #18 APPROVED), **PR-11-v2-doc-seeding-and-lifecycles** (PR #19 APPROVED), **PR-12-v2-distillation** (6/6 WOs, PR #20 APPROVED), **PR-13-v2-consolidation** (6/6 WOs, PR #21 APPROVED), and **PR-14-v2-micro-probes-and-pilot** (4/4 WOs, PR #22 APPROVED) complete. Next active work: **PR-15-v2-learning** (Procedural Skill Graduation) and **PR-10-eval-v2** Stage 2b (`WO5`–`WO7`). |
+| repo-memory | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) | **v2.2 plan executing (20/22 complete, PR-15 active).** **PR-10a** (PR #17), **PR-10b** (PR #18 APPROVED), **PR-11-v2-doc-seeding-and-lifecycles** (PR #19 APPROVED), **PR-12-v2-distillation** (6/6 WOs, PR #20 APPROVED), **PR-13-v2-consolidation** (6/6 WOs, PR #21 APPROVED), and **PR-14-v2-micro-probes-and-pilot** (4/4 WOs, PR #22 APPROVED) complete. Active: **PR-15-v2-learning** (`WO1`–`WO5`). |
 
 ## Active Projects
 | Project | Status | Modules | Context |
 |---|---|---|---|
-| pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete; Layer 2 probes & 1-Task Pilot complete in PR-14)** — Ready for Stage 2b multi-replicate workstation runs | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
+| pr-15-v2-learning | **Active — WO1/5 ready** (5-WO decomposition approved) | Layer 3 Eval Bridge (`eval-v2`), Skills (`graduate`, `tracker`), Tick (`closes_when`, `gardening`), Coverage/Gaps & Spend Guards (`mcpserver`, `coverage`, `config`), Doctor Lint | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
+| pr-10-eval-v2 | **Paused at WO3/7 (Stage 1 complete; Layer 2 probes & 1-Task Pilot complete in PR-14; WO4–WO7 bridge prompt & rubrics being committed in PR-15 WO1)** — Ready for Stage 2b multi-replicate workstation runs | Evaluation, esp32 template, harness, seeded index | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
 
 ## Recently Completed (last 5)
 | Project | Completed | Modules | Key Outcome |
