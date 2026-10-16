@@ -24,6 +24,10 @@ var DataDirSubdirectories = []string{
 	"state",
 	filepath.Join("state", "marks"),
 	"quarantine",
+	"user-dossiers",
+	filepath.Join("user-dossiers", "ops"),
+	filepath.Join("user-dossiers", "dossiers"),
+	"worktrees",
 }
 
 // RepoMemorySubdirectories lists the subdirectories under <repoRoot>/.memory/.
@@ -75,22 +79,73 @@ func EnsureRepoLayout(repoRoot string) error {
 		}
 	}
 
+	return EnsureMemoryGitignore(repoRoot)
+}
+
+// EnsureMemoryGitignore ensures <repoRoot>/.memory/.gitignore exists and contains
+// .cache/, .enrolled, and local/ without clobbering existing lines.
+func EnsureMemoryGitignore(repoRoot string) error {
+	if repoRoot == "" {
+		repoRoot = "."
+	}
+
+	memoryDir := filepath.Join(repoRoot, ".memory")
+	if err := os.MkdirAll(memoryDir, 0755); err != nil {
+		return fmt.Errorf("creating directory %s: %w", memoryDir, err)
+	}
+
 	gitignorePath := filepath.Join(memoryDir, ".gitignore")
-	if bGit, err := os.ReadFile(gitignorePath); err == nil {
-		if !strings.Contains(string(bGit), ".enrolled") {
-			f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
-			if err == nil {
-				if len(bGit) > 0 && bGit[len(bGit)-1] != '\n' {
-					f.WriteString("\n")
-				}
-				f.WriteString(".enrolled\n")
-				f.Close()
+	required := []string{".cache/", ".enrolled", "local/"}
+
+	bGit, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			content := strings.Join(required, "\n") + "\n"
+			if wErr := os.WriteFile(gitignorePath, []byte(content), 0644); wErr != nil {
+				return fmt.Errorf("creating gitignore in %s: %w", memoryDir, wErr)
+			}
+			return nil
+		}
+		return fmt.Errorf("reading gitignore in %s: %w", memoryDir, err)
+	}
+
+	existingContent := string(bGit)
+	lines := strings.Split(strings.ReplaceAll(existingContent, "\r\n", "\n"), "\n")
+	hasEntry := func(entry string) bool {
+		cleanEntry := strings.TrimSuffix(entry, "/")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == entry || strings.TrimSuffix(trimmed, "/") == cleanEntry {
+				return true
 			}
 		}
-	} else if os.IsNotExist(err) {
-		content := []byte(".cache/\n.enrolled\n")
-		if err := os.WriteFile(gitignorePath, content, 0644); err != nil {
-			return fmt.Errorf("creating gitignore in %s: %w", memoryDir, err)
+		return false
+	}
+
+	var missing []string
+	for _, req := range required {
+		if !hasEntry(req) {
+			missing = append(missing, req)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("updating gitignore in %s: %w", memoryDir, err)
+	}
+	defer f.Close()
+
+	if len(bGit) > 0 && bGit[len(bGit)-1] != '\n' {
+		if _, err := f.WriteString("\n"); err != nil {
+			return fmt.Errorf("writing newline to gitignore in %s: %w", memoryDir, err)
+		}
+	}
+	for _, entry := range missing {
+		if _, err := f.WriteString(entry + "\n"); err != nil {
+			return fmt.Errorf("writing %s to gitignore in %s: %w", entry, memoryDir, err)
 		}
 	}
 
