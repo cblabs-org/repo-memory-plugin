@@ -4,7 +4,7 @@
 > **Branch:** `pr-15-v2-learning/wo4-coverage-gaps-short-term-recall-and-spend-guards`
 > **Base Branch:** `pr-15-v2-learning/wo3-closes-when-and-gardening`
 > **Complexity:** `standard`
-> **Status:** 🔄 Active
+> **Status:** ✅ Complete
 
 ---
 
@@ -68,13 +68,13 @@ Implement **Addendum A §6 A5 (`min_interval` + `max_items` spend guards & dry-r
 
 ## 2. Checklist
 
-- [ ] Extend `internal/core/config/config.go` with `SpendConfig`, `JobSpendConfig`, `DefaultSpendConfig()`, and `GapsConfig`.
-- [ ] Create `internal/core/tick/spend.go` (`SpendGuardState`, `CheckSpendGuard`, `RecordSpendRun`) and wire `max_items` / `min_interval` into `internal/core/tick/fallback.go` and `internal/core/tick/consolidate.go`.
-- [ ] Extend `FreshnessState` in `internal/core/tick/consolidate.go` and update `PipelineExecutor.Run` to refresh `freshness.json`.
-- [ ] Create `internal/core/coverage/coverage.go` (`ComputeCoverage`, `FormatGapLinesForScope`, `GenerateQuestionsMarkdown`, `WriteQuestionsFile`).
-- [ ] Update `internal/mcpserver/tools.go` (`HandleMemoryBrief`, `HandleMemoryWhy`, `HandleMemorySearch`) with the 1-line A6 freshness header, unconsolidated inbox note recall, and coverage gap lines.
-- [ ] Write unit tests in `internal/core/coverage/coverage_test.go`, `internal/core/tick/spend_test.go`, and `internal/mcpserver/tools_test.go`.
-- [ ] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/config/... ./internal/core/coverage/... ./internal/core/tick/... ./internal/mcpserver/...`.
+- [x] Extend `internal/core/config/config.go` with `SpendConfig`, `JobSpendConfig`, `DefaultSpendConfig()`, and `GapsConfig`.
+- [x] Create `internal/core/tick/spend.go` (`SpendGuardState`, `CheckSpendGuard`, `RecordSpendRun`) and wire `max_items` / `min_interval` into `internal/core/tick/fallback.go` and `internal/core/tick/consolidate.go`.
+- [x] Extend `FreshnessState` in `internal/core/tick/consolidate.go` and update `PipelineExecutor.Run` to refresh `freshness.json`.
+- [x] Create `internal/core/coverage/coverage.go` (`ComputeCoverage`, `FormatGapLinesForScope`, `GenerateQuestionsMarkdown`, `WriteQuestionsFile`).
+- [x] Update `internal/mcpserver/tools.go` (`HandleMemoryBrief`, `HandleMemoryWhy`, `HandleMemorySearch`) with the 1-line A6 freshness header, unconsolidated inbox note recall, and coverage gap lines.
+- [x] Write unit tests in `internal/core/coverage/coverage_test.go`, `internal/core/tick/spend_test.go`, and `internal/mcpserver/tools_test.go`.
+- [x] Run `go build ./...`, `go vet ./...`, and `go test -race ./internal/core/config/... ./internal/core/coverage/... ./internal/core/tick/... ./internal/mcpserver/...`.
 
 ---
 
@@ -95,3 +95,25 @@ Implement **Addendum A §6 A5 (`min_interval` + `max_items` spend guards & dry-r
 - **Verification Output:**
   - `go test -race ...`
 ```
+
+---
+
+## Completion Report (`wo4-coverage-gaps-short-term-recall-and-spend-guards`)
+
+- **Files Created / Modified:**
+  - `internal/core/config/config.go`
+  - `internal/core/config/config_test.go`
+  - `internal/core/tick/spend.go`
+  - `internal/core/tick/spend_test.go`
+  - `internal/core/tick/consolidate.go`
+  - `internal/core/tick/fallback.go`
+  - `internal/core/tick/pipeline.go`
+  - `internal/core/coverage/coverage.go`
+  - `internal/core/coverage/coverage_test.go`
+  - `internal/mcpserver/tools.go`
+  - `internal/mcpserver/tools_test.go`
+- **Verification Output:**
+  - `go build ./...` -> PASS
+  - `go vet ./cmd/... ./internal/...` -> PASS
+  - `go test -race ./internal/core/config/... ./internal/core/coverage/... ./internal/core/tick/... ./internal/mcpserver/...` -> PASS (`ok internal/core/config 1.215s`, `ok internal/core/coverage 1.073s`, `ok internal/core/tick 17.382s`, `ok internal/mcpserver 4.756s`)
+

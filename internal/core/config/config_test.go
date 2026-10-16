@@ -560,4 +560,91 @@ func TestRepoConfig_TurnNotes(t *testing.T) {
 	}
 }
 
+func TestSpendAndGapsConfig(t *testing.T) {
+	defSpend := DefaultSpendConfig()
+	if defSpend.QuotaFloor != 0.25 {
+		t.Errorf("expected default QuotaFloor 0.25, got %v", defSpend.QuotaFloor)
+	}
+	expectedJobs := map[string]JobSpendConfig{
+		"fallback":      {MinInterval: "1h", MaxItems: 10},
+		"consolidation": {MinInterval: "24h", MaxItems: 40},
+		"backfill":      {MinInterval: "6h", MaxItems: 25},
+		"gardening":     {MinInterval: "168h", MaxItems: 20},
+	}
+	for k, want := range expectedJobs {
+		got, ok := defSpend.Jobs[k]
+		if !ok {
+			t.Errorf("missing default job %q", k)
+			continue
+		}
+		if got != want {
+			t.Errorf("default job %q: got %+v, want %+v", k, got, want)
+		}
+	}
+
+	// MachineConfig partial override preserves other job defaults
+	tmpMachine := t.TempDir()
+	machineYAML := `
+enabled: true
+spend:
+  quota_floor: 0.35
+  jobs:
+    consolidation:
+      max_items: 15
+`
+	if err := os.WriteFile(filepath.Join(tmpMachine, "config.yaml"), []byte(machineYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mCfg, err := LoadMachineConfig(tmpMachine)
+	if err != nil {
+		t.Fatalf("LoadMachineConfig failed: %v", err)
+	}
+	if mCfg.Spend.QuotaFloor != 0.35 {
+		t.Errorf("machine QuotaFloor: got %v, want 0.35", mCfg.Spend.QuotaFloor)
+	}
+	if mCfg.Spend.Jobs["consolidation"].MaxItems != 15 {
+		t.Errorf("machine consolidation MaxItems: got %d, want 15", mCfg.Spend.Jobs["consolidation"].MaxItems)
+	}
+	if mCfg.Spend.Jobs["consolidation"].MinInterval != "24h" {
+		t.Errorf("machine consolidation MinInterval: got %q, want '24h'", mCfg.Spend.Jobs["consolidation"].MinInterval)
+	}
+	if mCfg.Spend.Jobs["fallback"].MaxItems != 10 {
+		t.Errorf("machine fallback MaxItems: got %d, want 10", mCfg.Spend.Jobs["fallback"].MaxItems)
+	}
+
+	// RepoConfig spend and gaps parsing
+	tmpRepo := t.TempDir()
+	memDir := filepath.Join(tmpRepo, ".memory")
+	if err := os.MkdirAll(memDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	repoYAML := `
+spend:
+  jobs:
+    fallback:
+      min_interval: 2h
+      max_items: 5
+gaps:
+  threshold: 0.65
+  push: true
+`
+	if err := os.WriteFile(filepath.Join(memDir, "config.yaml"), []byte(repoYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rCfg, err := LoadRepoConfig(tmpRepo)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig failed: %v", err)
+	}
+	if rCfg.Spend.Jobs["fallback"].MinInterval != "2h" || rCfg.Spend.Jobs["fallback"].MaxItems != 5 {
+		t.Errorf("repo fallback spend config: got %+v", rCfg.Spend.Jobs["fallback"])
+	}
+	if rCfg.Spend.Jobs["consolidation"].MaxItems != 40 {
+		t.Errorf("repo consolidation default MaxItems: got %d, want 40", rCfg.Spend.Jobs["consolidation"].MaxItems)
+	}
+	if rCfg.Gaps.Threshold != 0.65 || !rCfg.Gaps.Push {
+		t.Errorf("repo gaps config: got %+v, want {Threshold:0.65 Push:true}", rCfg.Gaps)
+	}
+}
+
+
 

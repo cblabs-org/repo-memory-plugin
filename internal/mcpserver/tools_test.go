@@ -8,6 +8,7 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/mcpserver"
@@ -573,3 +574,123 @@ func TestHandleMemoryHistory_Empty(t *testing.T) {
 		t.Errorf("expected empty message, got: %s", resp.Result)
 	}
 }
+
+func TestShortTermRecallAndCoverageGaps_PullTools(t *testing.T) {
+	ctx := context.Background()
+	idx, err := index.NewIndex(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create in-memory index: %v", err)
+	}
+	defer idx.Close()
+
+	dataDir := t.TempDir()
+	repoRoot := t.TempDir()
+	repoID := "repo-short-term-test"
+	inboxStore := inbox.NewStore(dataDir, repoID)
+
+	// Write an unconsolidated inbox note for scope "payments" on branch "feat/checkout"
+	note := &inbox.Note{
+		Source:         inbox.SourceTurnNote,
+		ConversationID: "conv-123",
+		Branch:         "feat/checkout",
+		Items: []inbox.NoteItem{
+			{
+				Type:     dossiers.EntryTypeGotcha,
+				Title:    "Stripe webhook signature header",
+				Why:      "Raw body is mutated by JSON middleware before signature check",
+				Do:       "Read raw body bytes before unmarshaling",
+				Anchors:  []string{"internal/payments/webhook.go"},
+				Evidence: "Verified in webhook_test.go",
+				Scope:    "payments",
+			},
+		},
+	}
+	if _, err := inboxStore.Write(note); err != nil {
+		t.Fatalf("inboxStore.Write failed: %v", err)
+	}
+
+	// Add a suspect entry in scope "legacy" to trigger low coverage gap line
+	if err := idx.UpsertEntry(ctx, dossiers.Entry{
+		ID:           "got-legacy-1",
+		Type:         dossiers.EntryTypeGotcha,
+		DossierScope: "legacy",
+		Text:         "Legacy adapter timeout",
+		StaleSuspect: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := mcpserver.NewServer(
+		idx,
+		mcpserver.WithInboxStore(inboxStore),
+		mcpserver.WithRepoContext(dataDir, repoID, repoRoot),
+	)
+
+	// 1. HandleMemoryBrief on "payments": should include 1-line A6 freshness header + unconsolidated note
+	briefPayments, err := srv.HandleMemoryBrief(ctx, mcpserver.MemoryBriefRequest{Scope: "payments"})
+	if err != nil {
+		t.Fatalf("HandleMemoryBrief(payments) failed: %v", err)
+	}
+	for _, want := range []string{
+		"memory: index current to op-log · HEAD matches last build · 1 notes not yet consolidated · 1 entries suspect",
+		"Unconsolidated Inbox Notes (unconsolidated):",
+		"[unconsolidated " + note.ID + "] (feat/checkout) gotcha: Stripe webhook signature header — Raw body is mutated by JSON middleware before signature check / Read raw body bytes before unmarshaling",
+	} {
+		if !strings.Contains(briefPayments.Result, want) {
+			t.Errorf("HandleMemoryBrief(payments) missing %q in:\n%s", want, briefPayments.Result)
+		}
+	}
+
+	// 2. HandleMemoryBrief on uncovered scope "unknown-mod": should include explicit SPEC §5.2 gap line
+	briefUnknown, err := srv.HandleMemoryBrief(ctx, mcpserver.MemoryBriefRequest{Scope: "unknown-mod"})
+	if err != nil {
+		t.Fatalf("HandleMemoryBrief(unknown-mod) failed: %v", err)
+	}
+	wantNoMem := "No memory covers unknown-mod. Absence of memory is not evidence; read the code."
+	if !strings.Contains(briefUnknown.Result, wantNoMem) {
+		t.Errorf("HandleMemoryBrief(unknown-mod) missing %q in:\n%s", wantNoMem, briefUnknown.Result)
+	}
+
+	// 3. HandleMemoryBrief on low-coverage scope "legacy": should include low-coverage gap line
+	briefLegacy, err := srv.HandleMemoryBrief(ctx, mcpserver.MemoryBriefRequest{Scope: "legacy"})
+	if err != nil {
+		t.Fatalf("HandleMemoryBrief(legacy) failed: %v", err)
+	}
+	wantLowCov := "Low memory coverage for legacy (score 0.00). Absence of memory is not evidence; read the code."
+	if !strings.Contains(briefLegacy.Result, wantLowCov) {
+		t.Errorf("HandleMemoryBrief(legacy) missing %q in:\n%s", wantLowCov, briefLegacy.Result)
+	}
+
+	// 4. HandleMemoryWhy on unconsolidated note ID: should return Status: unconsolidated
+	whyResp, err := srv.HandleMemoryWhy(ctx, mcpserver.MemoryWhyRequest{EntryID: note.ID})
+	if err != nil {
+		t.Fatalf("HandleMemoryWhy(%s) failed: %v", note.ID, err)
+	}
+	for _, want := range []string{
+		"memory: index current to op-log",
+		"Note: " + note.ID,
+		"Status: unconsolidated",
+		"Branch: feat/checkout",
+		"Title: Stripe webhook signature header",
+		"Anchors: internal/payments/webhook.go",
+	} {
+		if !strings.Contains(whyResp.Result, want) {
+			t.Errorf("HandleMemoryWhy(%s) missing %q in:\n%s", note.ID, want, whyResp.Result)
+		}
+	}
+
+	// 5. HandleMemorySearch matching unconsolidated note
+	searchResp, err := srv.HandleMemorySearch(ctx, mcpserver.MemorySearchRequest{Query: "Stripe webhook"})
+	if err != nil {
+		t.Fatalf("HandleMemorySearch failed: %v", err)
+	}
+	for _, want := range []string{
+		"memory: index current to op-log",
+		"[unconsolidated] " + note.ID + " (payments, branch: feat/checkout): Stripe webhook signature header",
+	} {
+		if !strings.Contains(searchResp.Result, want) {
+			t.Errorf("HandleMemorySearch missing %q in:\n%s", want, searchResp.Result)
+		}
+	}
+}
+
