@@ -4,8 +4,8 @@
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
 > **Release:** 1 (Antigravity)
 > **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review) · **v2.2:** 2026-10-15 (post-X6-lite & Stage 1 synthesis, session 21)
-> **Total PRs:** 22 (20 complete, 1 ready to resume at WO5/7, 1 planned).
-> **Base branch:** `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis` (`1c8e7a0`, ahead of `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification` `3fd99ae`, `pr-12-v2-distillation/wo6-managed-instruction-block-and-verification` `e6ee499`, `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` `860610f`, `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` `4abdc55`, `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
+> **Total PRs:** 22 (21 complete, 1 ready to resume at WO5/7, 1 active).
+> **Base branch:** `pr-15-v2-learning/wo5-verification-and-skill-lint` (`cb2bc10`, ahead of `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis` `e3415c4`, `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification` `3fd99ae`, `pr-12-v2-distillation/wo6-managed-instruction-block-and-verification` `e6ee499`, `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` `860610f`, `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` `4abdc55`, `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
 > **Dependency model:**
 > - **PR-10a-v2-2-docs-and-specs** upgrades `SPEC.md` (v1.0), `docs/design-v2-distillation-retrieval.md` (Rev 4), `docs/addendum-a-provenance-and-hardening.md` (Rev 3), `docs/antigravity-hooks-reference.md`, and `README.md` first.
 > - **PR-10b-delivery-and-storage-fixes** fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` persistence regression, wires `DetectRewind`, and resolves open storage/seeder issues (`#10`–`#13`, `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
@@ -104,10 +104,10 @@ PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#16 ✅ COMPL
         PR-14-v2      Layer 2 Micro-Probes & esp32 1-Task Pilot        ✅ COMPLETE (PR #22)
           │
           ▼
-        PR-15-v2      Procedural Validation, Skill Graduation & Learn  🔄 READY NEXT
+        PR-15-v2      Procedural Validation, Skill Graduation & Learn  ✅ COMPLETE (PR #23)
           │
           ▼
-        PR-16-v2      PA Integration & Full Repository Rollout         ☐
+        PR-16-v2      PA Integration & Full Repository Rollout         🔄 ACTIVE NEXT
 ```
 
 ---

@@ -73,13 +73,13 @@
 | pr-05b-dogfood-pilot ✅ | B5 evaluation, pipeline cost (~112k/episode) | [PROJECT.md](../pr-05b-dogfood-pilot/PROJECT.md) |
 | pr-05-v2-foundation ✅ | Cost telemetry, `gen_metadata` reader, `/usage` quota-guard library | [PROJECT.md](../pr-05-v2-foundation/PROJECT.md) |
 | pr-09-v2-x6-lite ✅ | X6 replay harness, time-cut dossier evaluation (92 runs), 231-session PA retrieval study | [PROJECT.md](../pr-09-v2-x6-lite/PROJECT.md) |
-| pr-10-eval-v2 (paused WO3/7) | 2×2 forward-task evaluation on `esp32-app-foundation` (Stage 0b & Stage 1 complete; Stage 2 resumes after `pr-10b`) | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
-| pr-14-v2-pilot (planned) | Live distillation & consolidation paired evaluation, cost report | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
-| pr-15-v2-learning (planned) | `PostToolUse` procedural validation, `.agents/skills/rm-<slug>/SKILL.md` graduation, `closes_when` & gardening | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
+| pr-10-eval-v2 (paused WO4/7) | 2×2 forward-task evaluation on `esp32-app-foundation` (Stage 0b, Stage 1 & WO4 complete; Layer 3 bridge prompt & rubrics committed in `pr-15-v2-learning` WO1) | [PROJECT.md](../pr-10-eval-v2/PROJECT.md) |
+| pr-14-v2-micro-probes-and-pilot ✅ | Layer 2 Read-Side & Write-Side Micro-Probes, dynamic `repoSymbolIndex`, and `esp32` 1-Task Pilot (`VERDICT: GO`) (PR #22) | [PROJECT.md](../pr-14-v2-micro-probes-and-pilot/PROJECT.md) |
+| pr-15-v2-learning ✅ | `PostToolUse` procedural validation, `.agents/skills/rm-<slug>/SKILL.md` graduation, `closes_when`, `garden`, A5/A6 spend guards & short-term recall (PR #23) | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
 
 ## Review & Governance
 | Project | Scope | Context |
 |---|---|---|
 | pr-13-v2-consolidation ✅ | Two-lane publish (`memory/pending` worktree), Five-Tier scope isolation (`user:`, `branch:`, `repo:`), branch-merge promotion (`PromoteMergedBranchOps`) (PR #21) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
-| pr-15-v2-learning (planned) | Close conditions, gardening, elicitation questions, weekly review | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
-| pr-16-v2-pa-and-rollout (planned) | Episode summaries, WORKORDER briefs, PA compatibility mode (cross-repo) | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
+| pr-15-v2-learning ✅ | Close conditions (`closes_when`), gardening (`repo-memory garden`), elicitation questions (`.memory/QUESTIONS.md`), skill lint (`repo-memory doctor`) (PR #23) | [PROJECT.md](../pr-15-v2-learning/PROJECT.md) |
+| pr-16-v2-pa-and-rollout (active) | Episode summaries (`summary`), WORKORDER briefs (`brief --workorder`), `backfill`, `reproject`, full dogfood rollout | [PROJECT.md](../pr-16-v2-pa-and-rollout/PROJECT.md) |
