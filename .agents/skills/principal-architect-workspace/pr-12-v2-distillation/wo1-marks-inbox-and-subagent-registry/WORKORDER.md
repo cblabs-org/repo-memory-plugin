@@ -37,11 +37,11 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
 
 ## Line-Item Instructions
 
-- [ ] **1. `internal/core/config/layout.go` — Add `state/marks`, `evidence/notes`, and `quarantine` subdirectories**
+- [x] **1. `internal/core/config/layout.go` — Add `state/marks`, `evidence/notes`, and `quarantine` subdirectories**
   - Add `filepath.Join("state", "marks")`, `filepath.Join("evidence", "notes")`, and `"quarantine"` to `DataDirSubdirectories` in `internal/core/config/layout.go`.
   - Verify existing tests in `internal/core/config/` pass (updating any exact subdirectory slice assertions if present).
 
-- [ ] **2. `internal/core/state/marks.go` — Per-conversation Marks & Rewind Clamping**
+- [x] **2. `internal/core/state/marks.go` — Per-conversation Marks & Rewind Clamping**
   - Create package `state` in `internal/core/state/marks.go`.
   - Define `Mark`:
     ```go
@@ -68,7 +68,7 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
       - When rewound: if `stepCount < 0`, `stepCount = 0`; set `m.StepIndex = 0` (or if `stepCount > 0` and only `stepCount <= m.StepIndex`, clamp `m.StepIndex = 0`), `m.ByteOffset = 0`, `m.StepTimestamp = ""`, `m.PendingRequestStep = 0`, and return `true`. (Note: checkpoints never move the mark.)
     - `CountTurnNotesToday(dataDir, repoID string, now time.Time) (int, error)` (and alias `CountNotesToday(dataDir, repoID string, now time.Time) (int, error)`): scans `<dataDir>/<repoID>/evidence/notes/*.json` and counts notes created on `now.UTC()`'s calendar date (`YYYY-MM-DD`) where `source == "turn-note"` (for `CountTurnNotesToday`) or any source (for `CountNotesToday`). If the directory doesn't exist, return `0, nil`.
 
-- [ ] **3. `internal/core/inbox/note.go` — Structured Inbox Note Store & Anchor Verification**
+- [x] **3. `internal/core/inbox/note.go` — Structured Inbox Note Store & Anchor Verification**
   - Create package `inbox` in `internal/core/inbox/note.go`.
   - Define `NoteSource` string type and constants:
     - `SourceTurnNote NoteSource = "turn-note"`
@@ -136,7 +136,7 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
     - `(s *Store) MarkConsolidated(id string) error`: loads note `id`, sets `Consolidated = true`, and re-writes atomically.
     - `(s *Store) HasDedupKey(dedupKey string) (bool, error)`: returns `true` if any existing note in the store has `n.DedupKey == dedupKey`.
 
-- [ ] **4. `internal/core/state/subagents.go` & `internal/harness/antigravity/posttooluse.go` — Subagent Registry**
+- [x] **4. `internal/core/state/subagents.go` & `internal/harness/antigravity/posttooluse.go` — Subagent Registry**
   - Create `internal/core/state/subagents.go` backed by `modernc.org/sqlite` at `<dataDir>/<repoID>/state/subagents.sqlite` (`journal_mode(WAL)`, `busy_timeout(5000)`):
     - Table schema:
       ```sql
@@ -167,7 +167,7 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
       - If `childConvID != ""` and `input.ConversationID != ""` and `childConvID != input.ConversationID`, call `_ = state.RecordSubagent(ctx, dataDir, repoID, childConvID, input.ConversationID, role)`.
       - Return `[]byte("{}"), nil` (unless `isError` is also true).
 
-- [ ] **5. `internal/mcpserver/` & `cmd/repo-memory/cmd_mcp.go` — `memory_note` Inbox/Mark Integration & `memory_status`**
+- [x] **5. `internal/mcpserver/` & `cmd/repo-memory/cmd_mcp.go` — `memory_note` Inbox/Mark Integration & `memory_status`**
   - In `internal/mcpserver/tools.go`:
     - Expand `validEntryTypes` to include all `v2.2` canonical entry types: `EntryTypeInvariant`, `EntryTypeContract`, `EntryTypeConvention`, `EntryTypeRuledOut`, `EntryTypeFailureSignature`, `EntryTypeGotcha`, `EntryTypeExternalBehaviour`, `EntryTypeDecision`, `EntryTypeProcedure`, `EntryTypeRecipe`, `EntryTypeInterface`, `EntryTypeOpenIssue`.
     - Extend `MemoryNoteRequest` with optional fields:
@@ -202,7 +202,7 @@ Implement the `v2.2` Stage 1 foundational stores and hooks: per-conversation Mar
   - In `cmd/repo-memory/cmd_mcp.go`:
     - Pass `mcpserver.WithRepoContext(dataDir, repoID, repoRoot)` when constructing `mcpserver.NewServer` for an enrolled repo.
 
-- [ ] **6. Unit Tests**
+- [x] **6. Unit Tests**
   - Create `internal/core/state/marks_test.go`: test `LoadMark`/`SaveMark`, path sanitization, `ClampIfRewound` (step count shrink, timestamp mismatch, no-op when unchanged), and `CountTurnNotesToday`/`CountNotesToday`.
   - Create `internal/core/inbox/note_test.go`: test `Write`, `Read`, `ListAll`, `ListUnconsolidated`, `MarkConsolidated`, `HasDedupKey`, and `CheckAnchors` (including `path#symbol` and `path:line` stripping and missing files).
   - Create `internal/core/state/subagents_test.go`: test `RecordSubagent`, `IsSubagent` (including non-existent DB fast return), and `ListSubagentChildren`.
@@ -221,4 +221,11 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+- **Status:** Completed and verified (`go vet ./cmd/... ./internal/...` and `go test -race ./cmd/... ./internal/...` 100% green).
+- **Files Created / Modified:**
+  - `internal/core/config/layout.go`: Added `evidence/notes`, `state/marks`, and `quarantine` to `DataDirSubdirectories`.
+  - `internal/core/state/marks.go` & `internal/core/state/marks_test.go`: Implemented `Mark`, `MarkPath`, `LoadMark`, `SaveMark`, `ClampIfRewound`, `CountTurnNotesToday`, and `CountNotesToday`.
+  - `internal/core/inbox/note.go` & `internal/core/inbox/note_test.go`: Implemented `NoteSource`, `AnchorCheck`, `NoteItem`, `Note`, `NewNoteID`, `CheckAnchors`, and `Store` (`Write`, `Read`, `ListAll`, `ListUnconsolidated`, `MarkConsolidated`, `HasDedupKey`).
+  - `internal/core/state/subagents.go` & `internal/core/state/subagents_test.go`: Implemented SQLite `SubagentStore` (`RecordSubagent`, `IsSubagent` with zero-creation fast exit on absent DB, `ListSubagentChildren`).
+  - `internal/harness/antigravity/posttooluse.go` & `internal/harness/antigravity/posttooluse_test.go`: Wired `invoke_subagent` detection in `HandlePostToolUse` to extract child conversation IDs and roles and record them in `subagents.sqlite`.
+  - `internal/mcpserver/tools.go`, `internal/mcpserver/server.go`, `internal/mcpserver/server_test.go`, and `cmd/repo-memory/cmd_mcp.go`: Expanded `validEntryTypes` to all 12 `v2.2` entry types, extended `MemoryNoteRequest` to write `source: "mcp-note"` inbox notes with anchor checks and advance conversation marks, and added `memory_status` (`memory_stats`, `memory.status`, `memory.stats`).

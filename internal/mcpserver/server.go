@@ -6,15 +6,20 @@ import (
 	"fmt"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
 // Server represents the MCP server instance providing memory tools over the index.
 type Server struct {
-	idx       *index.Index
-	ledger    *delivery.Ledger
-	opsWriter *ops.Writer
+	idx        *index.Index
+	ledger     *delivery.Ledger
+	opsWriter  *ops.Writer
+	dataDir    string
+	repoID     string
+	repoRoot   string
+	inboxStore *inbox.Store
 }
 
 // ServerOption is a functional option for configuring a Server.
@@ -38,6 +43,25 @@ func WithOpsWriter(w *ops.Writer) ServerOption {
 func WithOpsDir(dir string) ServerOption {
 	return func(s *Server) {
 		s.opsWriter = ops.NewWriter(dir)
+	}
+}
+
+// WithInboxStore attaches an inbox note store to the server.
+func WithInboxStore(store *inbox.Store) ServerOption {
+	return func(s *Server) {
+		s.inboxStore = store
+	}
+}
+
+// WithRepoContext configures the repository data directory, ID, and root path.
+func WithRepoContext(dataDir, repoID, repoRoot string) ServerOption {
+	return func(s *Server) {
+		s.dataDir = dataDir
+		s.repoID = repoID
+		s.repoRoot = repoRoot
+		if s.inboxStore == nil && dataDir != "" && repoID != "" {
+			s.inboxStore = inbox.NewStore(dataDir, repoID)
+		}
 	}
 }
 
@@ -67,6 +91,7 @@ var SupportedTools = []string{
 	"memory_history",
 	"memory_search",
 	"memory_note",
+	"memory_status",
 }
 
 // MemoryAskRequest represents the input to the legacy memory.ask tool.
@@ -170,11 +195,25 @@ func ToolSchemas() []ToolSchema {
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"scope": map[string]any{"type": "string", "description": "The dossier scope for the note"},
-					"text":  map[string]any{"type": "string", "description": "The note text to record"},
-					"type":  map[string]any{"type": "string", "description": "Entry type (decision, invariant, gotcha, etc.)"},
+					"scope":          map[string]any{"type": "string", "description": "The dossier scope for the note"},
+					"text":           map[string]any{"type": "string", "description": "The note text to record"},
+					"type":           map[string]any{"type": "string", "description": "Entry type (decision, invariant, contract, convention, gotcha, recipe, etc.)"},
+					"title":          map[string]any{"type": "string", "description": "Optional short title for the note"},
+					"why":            map[string]any{"type": "string", "description": "Optional rationale or cause"},
+					"do":             map[string]any{"type": "string", "description": "Optional actionable remediation or steps"},
+					"anchors":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional repository path anchors"},
+					"conversationId": map[string]any{"type": "string", "description": "Optional conversation ID"},
+					"stepIndex":      map[string]any{"type": "integer", "description": "Optional step index in the conversation"},
 				},
 				"required": []string{"scope", "text"},
+			},
+		},
+		{
+			Name:        "memory_status",
+			Description: "Get repository memory status, entry counts by cognitive lifecycle, and pending inbox note count",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
 			},
 		},
 	}
@@ -217,6 +256,14 @@ func (s *Server) DispatchTool(ctx context.Context, name string, params json.RawM
 			return nil, fmt.Errorf("parsing memory_note params: %w", err)
 		}
 		return s.HandleMemoryNote(ctx, req)
+	case "memory_status", "memory_stats", "memory.status", "memory.stats":
+		var req MemoryStatusRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, fmt.Errorf("parsing memory_status params: %w", err)
+			}
+		}
+		return s.HandleMemoryStatus(ctx, req)
 	case "memory_ask", "memory.ask":
 		var req MemoryAskRequest
 		if err := json.Unmarshal(params, &req); err != nil {
