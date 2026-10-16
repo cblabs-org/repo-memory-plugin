@@ -192,4 +192,23 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 ---
 
 ## Completion Report
-<!-- Written by the worker at task completion -->
+
+### Status
+complete
+
+### Changes Made
+- `internal/core/consolidate/filter.go` — Implemented text/anchor normalization helpers (`NormalizeTitle`, `ExtractEntryTitle`, `ExtractEntryDo`, `StripAnchorSymbol`, `AnchorsOverlap`, `FlattenActiveEntries`), the deterministic P13 Echo Filter (`FilterEchoes`, `IsUnknownExposureNote`, `IsEchoReconfirmed`, `HasPassingBuildOrTestAfterEdit`, `IsEditToAnchoredFile`, `IsPassingBuildOrTestStep`, `IsBuildOrTestCommand`), and the `VD18` Pre-Consolidation Corroboration Gate (`EnforceCorroborationGate`, `RequiresCorroboration`, `IsVerifiedStamp`, `HasVerifiedStaticAnchor`, `HasExplicitUserConfirmation`).
+- `internal/core/consolidate/filter_test.go` — Added unit tests covering helper utilities, unedited echo suppression, edited echo suppression without passing test, reconfirmed echo retention after edit + passing test, unknown exposure external capture (`Addendum A §11.2`), uncorroborated rule downgrades to `open-issue` with deterministic `ClosesWhen`, and corroboration via passing test, verified static file/symbol anchor, and explicit human confirmation (rejecting `SYSTEM_SDK` `[repo-memory ...]` steps).
+
+### Decisions Made
+- Exported `NormalizeTitle`, `ExtractEntryTitle`, `ExtractEntryDo`, `StripAnchorSymbol`, `AnchorsOverlap`, and `FlattenActiveEntries` so downstream consolidation stages (`WO2` routing/exact-duplicate merge and `WO4` op validation) share identical normalization semantics.
+- In `HasVerifiedStaticAnchor`, non-numeric `#symbol` or `:symbol` suffixes are verified against the file contents on disk when `repoRoot` is provided, preventing hallucinated symbols on real files from passing static anchor corroboration.
+
+### Dead Ends & Warnings
+- Ensure `SYSTEM_SDK` or `[repo-memory ...]` prefixed `StepKindUser` steps are always excluded in `HasExplicitUserConfirmation`, as Antigravity `PreInvocation` `userMessage` pushes are logged as `USER_INPUT` with `source: SYSTEM_SDK`.
+
+### Out-of-Scope Findings
+(none)
+
+### Blockers
+(none)
