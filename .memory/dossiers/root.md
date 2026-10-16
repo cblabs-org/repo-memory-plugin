@@ -114,7 +114,13 @@
 ### [seed-c06ddb4e] Kept both `memory_status` and `memory_stats` documented as aliases in §7.7 / §18.1 so existing tests and documentation references resolve seamlessly.
 `decision · kind: episodic`
 
+### [seed-c9aa1eab] Validated custom rules from `.memory/scrub.yaml` and `scrub.local.yaml` at the start of `Scrub` so malformed configs or forbidden keys (`allow`, `disable`, `whitelist`) fail closed deterministically even on empty strings.
+`decision · kind: episodic`
+
 ### [seed-ddbd0e48] Selected WOs: 8 work orders from PR-07 (5) and PR-08 (3): wo1-op-log, wo2-dossier-schema-renderer, wo3-scopes-aliases, wo4-index-migration, wo6-seeding, wo1-ledger-engine, wo4-gates, wo6-pull-tools.
+`decision · kind: episodic`
+
+### [seed-ed66fa39] Expressed the $\ge 1024$-byte contiguous blob pattern in Go's `regexp` package as `[A-Za-z0-9+/=]{512,}[A-Za-z0-9+/=]{512,}` and deferred $\ge 1024$-char hex strings from Layer 2 to Layer 4 because Go's RE2 engine caps `{min,max}` repeat quantifiers at `1000`.
 `decision · kind: episodic`
 
 ### [seed-f4bac002] Preserved `G1`/`P1` ("zero user or agent cooperation required") throughout §1, §4, and §5.1 by keeping the milestone-gated `Stop` continuation (`NO_TOOL_CALL`, `executionNum == 0`) as the primary automatic Stage 1 mechanism while framing `memory_note` strictly as an optional mid-turn override that advances the conversation mark.

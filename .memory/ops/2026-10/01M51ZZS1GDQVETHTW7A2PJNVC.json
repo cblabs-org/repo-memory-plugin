@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-1b7ecca5",
+      "dossier_scope": "core/consolidate",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/consolidate/filter.go",
+          "internal/core/consolidate/filter_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "Exported `NormalizeTitle`, `ExtractEntryTitle`, `ExtractEntryDo`, `StripAnchorSymbol`, `AnchorsOverlap`, and `FlattenActiveEntries` so downstream consolidation stages (`WO2` routing/exact-duplicate merge and `WO4` op validation) share identical normalization semantics."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-1ac2897d",
+      "dossier_scope": "core/consolidate",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/consolidate/filter.go",
+          "internal/core/consolidate/filter_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `HasVerifiedStaticAnchor`, non-numeric `#symbol` or `:symbol` suffixes are verified against the file contents on disk when `repoRoot` is provided, preventing hallucinated symbols on real files from passing static anchor corroboration."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-782f6c28",
+      "dossier_scope": "core/consolidate",
+      "timestamp": "2026-10-16T09:16:46Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/consolidate/filter.go",
+          "internal/core/consolidate/filter_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Ensure `SYSTEM_SDK` or `[repo-memory ...]` prefixed `StepKindUser` steps are always excluded in `HasExplicitUserConfirmation`, as Antigravity `PreInvocation` `userMessage` pushes are logged as `USER_INPUT` with `source: SYSTEM_SDK`."
+      }
+    }
+  ],
+  "created_at": "2026-10-16T09:16:46Z",
+  "batch_id": "01M51ZZS1GDQVETHTW7A2PJNVC"
+}

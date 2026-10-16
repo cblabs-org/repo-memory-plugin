@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-f5fb667a",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-15T19:25:06Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/convert.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/seed/gc_test.go",
+          "internal/core/delivery/ledger.go",
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/dossiers/projector.go",
+          "internal/core/dossiers/writer.go",
+          "internal/core/dossiers/dossiers_test.go",
+          "internal/core/seed/parser.go",
+          "internal/core/seed/scanner.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/index/index.go"
+        ],
+        "entry_type": "decision",
+        "text": "Preserved unmarshaled `InjectedSet` in `loadLedgerLocked` whenever `\"injected_set\"` is present in JSON (even when empty `{}`), falling back to reconstructing from post-checkpoint non-`about-to-edit:` `Injections` only when loading legacy JSON files where `InjectedSet == nil`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-b70d0bb4",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-15T19:25:06Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/convert.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/seed/gc_test.go",
+          "internal/core/delivery/ledger.go",
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/dossiers/projector.go",
+          "internal/core/dossiers/writer.go",
+          "internal/core/dossiers/dossiers_test.go",
+          "internal/core/seed/parser.go",
+          "internal/core/seed/scanner.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/index/index.go"
+        ],
+        "entry_type": "decision",
+        "text": "Derived `CheckpointStepIdx` in `DetectCompaction` from the preceding non-checkpoint step index when a raw `CHECKPOINT` line has `StepIndex == 0`, and reset `LastHandledCheckpointStep = -1` on rewind when no checkpoint remains or `LastHandledCheckpointStep \u003e maxRemainingStepIdx`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-c0864a54",
+      "dossier_scope": "core/seed",
+      "timestamp": "2026-10-15T19:25:06Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/core/seed/convert.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/seed/gc_test.go",
+          "internal/core/delivery/ledger.go",
+          "internal/harness/antigravity/ledger_store.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/preinvocation_test.go",
+          "internal/core/dossiers/projector.go",
+          "internal/core/dossiers/writer.go",
+          "internal/core/dossiers/dossiers_test.go",
+          "internal/core/seed/parser.go",
+          "internal/core/seed/scanner.go",
+          "internal/core/seed/seed_test.go",
+          "internal/core/index/index.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "Raw `CHECKPOINT` lines parsed by `ParseTranscript` have `StepIndex == 0` unless derived from the preceding step; relying on `steps[checkpointIdx].StepIndex` directly caused `LastHandledCheckpointStep` to remain `0` instead of the actual checkpoint position."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T19:25:06Z",
+  "batch_id": "01M50GCYJGBPAC8V88W81YPFE6"
+}

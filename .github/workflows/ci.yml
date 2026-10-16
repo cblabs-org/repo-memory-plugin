@@ -26,5 +26,21 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Run tests
+      - name: Run go vet
+        run: go vet ./cmd/... ./internal/... ./packaging/...
+
+      - name: Build CLI
+        run: go build ./cmd/repo-memory
+
+      - name: Run tests (with race detector)
+        if: runner.os != 'Windows'
+        run: go test -race ./cmd/... ./internal/... ./packaging/...
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
         run: go test ./cmd/... ./internal/... ./packaging/...
+
+      - name: Verify doctor lint and reprojection integrity
+        run: |
+          go run ./cmd/repo-memory doctor .
+          go run ./cmd/repo-memory reproject --dry-run .

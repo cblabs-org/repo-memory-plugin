@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "seed-8b551d6d",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-15T19:03:21Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `preinvocation.go`, when a single file is touched in a turn (e.g. `internal/core/auth/token.go`), `config.DeriveModuleScopes([]string{rel})` rolls single-file directories (`fileCount \u003c= 2`) up to their parent (`core`), whereas repository-wide seeding creates submodule dossiers (e.g. `core/auth`) whenever the directory has `\u003e 2` files in the repo. Including both the direct module scope (`config.DeriveModuleScopes([]string{rel, rel + \".1\", rel + \".2\"})`) and the rolled-up scope (`config.DeriveModuleScopes(relTouchedFiles)`) ensures `MomentFirstEntry` matches submodule dossiers as well as rolled-up parent dossiers."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-6b2f4c2f",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-15T19:03:21Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation_test.go"
+        ],
+        "entry_type": "decision",
+        "text": "In `compaction.go`, `BuildReinjection` operates strictly on `lost` injection records that were already selected and injected earlier in the conversation; passing `minScore = 0` to `SelectWithinBudget` preserves rank ordering and token budgeting while preventing unverified `gotcha`/`decision`/`procedure` entries from being silently filtered out when `targetAnchors` is `nil`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-670fd05e",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-15T19:03:21Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation_test.go"
+        ],
+        "entry_type": "ruled-out",
+        "text": "`entries_fts` indexes `dossier_scope` in addition to `id` and `text`, and `RankEntries` awards `+100` (`anchorMatch = \"scope\"`) to unanchored entries (`len(e.Anchors) == 0`). When testing `MomentFirstEntry` independently of `MomentTaskStart`, ensure the initial `userPrompt` at `MomentTaskStart` does not contain tokens matching the `dossier_scope` of unanchored entries intended to fire first at `MomentFirstEntry`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "seed-b634fade",
+      "dossier_scope": "harness/antigravity",
+      "timestamp": "2026-10-15T19:03:21Z",
+      "source": "seed",
+      "fields": {
+        "anchors": [
+          "internal/harness/antigravity/preinvocation.go",
+          "internal/harness/antigravity/compaction.go",
+          "internal/harness/antigravity/preinvocation_test.go"
+        ],
+        "entry_type": "open-issue",
+        "text": "None (both findings discovered during WO5 verification were incorporated into WO5 with Principal Architect approval)."
+      }
+    }
+  ],
+  "created_at": "2026-10-15T19:03:21Z",
+  "batch_id": "01M50F5458SQF2H7H3NQM422G6"
+}
