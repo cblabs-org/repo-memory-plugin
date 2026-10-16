@@ -27,7 +27,7 @@ Implement Step 6 of the Stage 2 Warm Batch Consolidation pipeline (`SPEC.md` §6
   - Do NOT modify any files outside `internal/core/consolidate/record.go` and `internal/core/consolidate/record_test.go`.
   - Do NOT change git branches or rebase.
   - `internal/core/consolidate` MUST NOT import `internal/harness/antigravity`.
-  - **External GitHub Hygiene:** NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or `/usr/local/google/...`) in code, comments, or commit messages.
+  - **External GitHub Hygiene:** NEVER include any internal references (internal monorepo paths, shortlinks, internal codenames, or local home paths) in code, comments, or commit messages.
   - Use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"` when committing.
 
 ## Tooling Constraints
