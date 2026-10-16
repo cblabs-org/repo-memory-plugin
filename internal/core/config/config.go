@@ -164,11 +164,27 @@ type SubsystemConfig struct {
 
 // RepoConfig represents the repository-level configuration (<repoRoot>/.memory/config.yaml).
 type RepoConfig struct {
-	Enabled    *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	DocSeeds   []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`
-	Subsystems map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
-	Budgets    BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`
-	Extra      map[string]any             `json:"extra,omitempty" yaml:",inline"`
+	Enabled             *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	TurnNotes           string                     `json:"turn_notes,omitempty" yaml:"turn_notes,omitempty"`
+	TurnNotesRoleOptOut []string                   `json:"turn_notes_role_opt_out,omitempty" yaml:"turn_notes_role_opt_out,omitempty"`
+	DocSeeds            []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`
+	Subsystems          map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
+	Budgets             BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`
+	Extra               map[string]any             `json:"extra,omitempty" yaml:",inline"`
+}
+
+// TurnNotesMode returns the normalized turn_notes mode ("on", "fallback-only", or "off").
+// Defaults to "on" when unset or unrecognized.
+func (c RepoConfig) TurnNotesMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.TurnNotes))
+	switch mode {
+	case "off", "false", "disabled":
+		return "off"
+	case "fallback-only", "fallback_only":
+		return "fallback-only"
+	default:
+		return "on"
+	}
 }
 
 // IsEnabled returns whether memory is enabled for this repository.

@@ -93,6 +93,9 @@ type StopResult struct {
 	SpoolEntry           *spool.Entry      `json:"spool_entry,omitempty"`
 	CopyResult           *spool.CopyResult `json:"copy_result,omitempty"`
 	ArtifactsCopied      int               `json:"artifacts_copied,omitempty"`
+	Decision             string            `json:"decision,omitempty"`
+	ContinueReason       string            `json:"continue_reason,omitempty"`
+	NoteID               string            `json:"note_id,omitempty"`
 	Duration             time.Duration     `json:"duration_ms"`
 }
 
@@ -165,9 +168,15 @@ func HandleStop(ctx context.Context, rawPayload []byte, opts ...HookOption) ([]b
 	}
 	payload.Normalize()
 
-	_, err := HandleStopEvent(ctx, &payload, opts...)
+	res, err := HandleStopEvent(ctx, &payload, opts...)
 	if err != nil {
 		return nil, err
+	}
+	if res != nil && res.Decision == "continue" && res.ContinueReason != "" {
+		return json.Marshal(map[string]string{
+			"decision": "continue",
+			"reason":   res.ContinueReason,
+		})
 	}
 
 	return []byte("{}"), nil
@@ -213,11 +222,18 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
-	// 3. REPO_MEMORY_HOUSEKEEPING guard (Step B: skip housekeeping runs per SPEC §6.2 / E07)
+	// 3. REPO_MEMORY_HOUSEKEEPING & REPO_MEMORY_INTERNAL guard (Step B: skip housekeeping/internal runs per SPEC §6.2 / E07)
 	if os.Getenv("REPO_MEMORY_HOUSEKEEPING") == "1" || strings.EqualFold(os.Getenv("REPO_MEMORY_HOUSEKEEPING"), "true") {
 		return &StopResult{
 			Skipped:  true,
 			Reason:   "housekeeping run skipped (REPO_MEMORY_HOUSEKEEPING)",
+			Duration: time.Since(start),
+		}, nil
+	}
+	if os.Getenv("REPO_MEMORY_INTERNAL") == "1" || strings.EqualFold(os.Getenv("REPO_MEMORY_INTERNAL"), "true") {
+		return &StopResult{
+			Skipped:  true,
+			Reason:   "internal run skipped (REPO_MEMORY_INTERNAL)",
 			Duration: time.Since(start),
 		}, nil
 	}
@@ -395,8 +411,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}
 	}
 
-	duration := time.Since(start)
-	return &StopResult{
+	result := &StopResult{
 		Skipped:              false,
 		ConversationID:       convID,
 		ParentConversationID: parentConvID,
@@ -408,8 +423,13 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		SpoolEntry:           &captureEntry,
 		CopyResult:           copyResult,
 		ArtifactsCopied:      artifactsCopied,
-		Duration:             duration,
-	}, nil
+	}
+
+	// 8. Stage 1 Warm-Cache Stop Distillation (Milestone Gate on executionNum == 0, Harvest on executionNum >= 1)
+	evaluateStopDistillation(ctx, payload, result, dataDir, repoID, repoRoot, repoCfg, transcriptPath)
+
+	result.Duration = time.Since(start)
+	return result, nil
 }
 
 func isHousekeepingPath(path string) bool {
