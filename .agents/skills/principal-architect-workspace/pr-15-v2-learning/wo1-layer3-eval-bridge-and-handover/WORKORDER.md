@@ -145,28 +145,33 @@ If you discover a defect, upstream bug, or concern *outside your boundary box*, 
 
 ---
 
-## Completion Report (written by the worker at task completion)
-
-```markdown
----
 ## Completion Report
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/chief-architect-handover.md` — Authored comprehensive `v2.2` Layer 3 evaluation architecture and handover context (`Q1` & `Q2`, 2×2 factorial matrix, Stage 0/0b/1 foundations, `PR-10a`–`PR-13` `v2.2` upgrades, `PR-14` Layer 2 micro-probe & compiled-binary pilot verdict, and `WO5` $\to$ `WO6` $\to$ `WO7` workstation execution sequence).
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/wo4-offline-retrieval/WORKORDER.md` — Authored `WO4` workorder with completed `## Completion Report` (`status: complete`) referencing `docs/evaluations/v2-2-read-side-micro-probe.md`, `docs/evaluations/v2-2-write-side-micro-probe.md`, and `docs/evaluations/v2-2-micro-probe-verdict.md`.
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/wo5-pilot/WORKORDER.md` — Authored `WO5` workorder for Stage 2a live 1-task workstation pilot (`pilot-t1-a-live` vs `pilot-t1-c-live`) with `pio test -e native`, `eval_run.sh --archive`, `check_contamination.sh`, `grade_run.sh`, and 7.5M token cap sizing.
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/wo6-main-evaluation/WORKORDER.md` — Authored `WO6` workorder for Stage 2b pre-registered counterbalanced interleaved 2×2 factorial evaluation across Task 1 and Task 2 (Replicate 1 & Replicate 2 reversed).
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/wo7-report/WORKORDER.md` — Authored `WO7` workorder for final statistical synthesis (`docs/evaluations/eval-v2-report.md`) per Addendum A §9 (A10), including Wilcoxon / paired t-test, Holm step-down correction, 95% confidence intervals, read+write cost/quality frontier, and mandatory `## What this does not show` section.
+- `.agents/skills/principal-architect-workspace/pr-10-eval-v2/PROJECT.md` — Updated status to `🔄 Active — WO4 complete (Layer 2 GO); WO5 ready for workstation Layer 3 execution`, updated Work Order Ledger (`wo4-offline-retrieval` `✅ Complete`, `wo5-pilot` `☐ Ready (Workstation Layer 3)`), and appended the `2026-10-16` Session Log entry.
+- `evaluation/eval-v2/rubrics/task-1-temperature-module.yaml` — Created blind 6-criterion (100-point) architectural & convention rubric for `task-1-temperature-module.txt`.
+- `evaluation/eval-v2/rubrics/task-2-bitcoin-price-module.yaml` — Created blind 6-criterion (100-point) architectural & convention rubric for `task-2-bitcoin-price-module.txt`.
+- `evaluation/eval-v2/rubrics/grade_run.sh` — Created executable (`chmod +x`) blind grading script that inspects `git-diff-baseline.patch` and untracked source files (excluding `.memory/`, `.agents/`, `GEMINI.md`, `CLAUDE.md`, and `AGENTS.md`), checks `native_test_result.txt` / transcript test outcomes, runs `check_contamination.sh`, extracts token telemetry, and writes `scorecard.json` and `scorecard.md`.
+- `evaluation/eval-v2/LAYER3_BRIDGE_PROMPT.md` — Authored workstation prerequisites, copy-pasteable terminal pre-flight commands, background daemon disable/restore procedures, and the self-contained agent bridge prompt for `WO5` $\to$ `WO6` $\to$ `WO7`.
 
 ### Decisions Made
-- Decision description and rationale
+- Excluded `.memory/`, `.agents/`, `GEMINI.md`, `CLAUDE.md`, and `AGENTS.md` from `grade_run.sh`'s source inspection corpus so that seeded dossiers and managed instruction blocks in Condition C/D archives never leak into source-code rubric evaluation, preserving strict blindness to condition.
+- Stripped C/C++ line and block comments (`strip_cpp_comments`) before evaluating forbidden patterns (`<svg[\s>]`, `\bdelay\s*\(`, `\bsetInsecure\s*\(`) so explanatory comments (e.g., `// no outer <svg> tag`) do not trigger false-positive penalties.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+- In Python, `rel_path.lstrip("./")` strips any leading `.` or `/` characters, turning `".memory/ATLAS.md"` into `"memory/ATLAS.md"` and bypassing a `".memory/"` prefix filter. Used explicit prefix stripping (`while rel.startswith("./"): rel = rel[2:]`) in `grade_run.sh` to ensure dot-directories (`.memory/`, `.agents/`, `.git/`, `.pio/`) are reliably excluded.
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+- Pre-existing `evaluation/eval-v2/PROTECTION.md` line 70 (authored in `pr-10-eval-v2/wo2-protection-harness`) contains a hardcoded `/Users/...` example path alongside the portable `~/Documents/Projects/esp32-app-foundation` path; left untouched as `PROTECTION.md` is outside `WO1`'s Strict Boundary Box.
 
 ### Blockers
 (none)
-```
