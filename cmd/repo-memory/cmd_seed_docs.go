@@ -16,6 +16,7 @@ import (
 )
 
 var (
+	seedDocsRepoDir    string
 	seedDocsOpsDir     string
 	seedDocsConfigPath string
 	seedDocsDryRun     bool
@@ -26,19 +27,38 @@ var seedDocsCmd = &cobra.Command{
 	Use:   "seed-docs [doc-paths...]",
 	Short: "Seed dossier entries from curated repository markdown documentation and skills",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		repoRoot, err := gitops.FindRepoRoot(".")
+		repoRoot, err := gitops.FindRepoRoot(seedDocsRepoDir)
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
 		}
 
-		resolve := func(p string) string {
+		resolve := func(p string, flagChanged bool) string {
 			if filepath.IsAbs(p) {
 				return p
 			}
-			return filepath.Join(repoRoot, p)
+			inRepo := filepath.Join(repoRoot, p)
+			if !flagChanged {
+				return inRepo
+			}
+			if _, err := os.Stat(inRepo); err == nil {
+				return inRepo
+			}
+			if _, err := os.Stat(p); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
+				return p
+			}
+			if _, err := os.Stat(filepath.Dir(filepath.Clean(p))); err == nil {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
+				return p
+			}
+			return inRepo
 		}
-		resolvedOpsDir := resolve(seedDocsOpsDir)
-		resolvedConfigPath := resolve(seedDocsConfigPath)
+		resolvedOpsDir := resolve(seedDocsOpsDir, cmd.Flags().Changed("ops-dir"))
+		resolvedConfigPath := resolve(seedDocsConfigPath, cmd.Flags().Changed("config"))
 
 		repoCfg, err := config.LoadRepoConfig(resolvedConfigPath)
 		if err != nil && !os.IsNotExist(err) {
@@ -108,6 +128,7 @@ var seedDocsCmd = &cobra.Command{
 }
 
 func init() {
+	seedDocsCmd.Flags().StringVar(&seedDocsRepoDir, "repo", ".", "Path to the target repository root")
 	seedDocsCmd.Flags().StringVar(&seedDocsOpsDir, "ops-dir", ".memory/ops/", "Path to the ops directory")
 	seedDocsCmd.Flags().StringVar(&seedDocsConfigPath, "config", ".memory/config.yaml", "Path to config.yaml")
 	seedDocsCmd.Flags().BoolVar(&seedDocsDryRun, "dry-run", false, "Preview what would be seeded without writing")

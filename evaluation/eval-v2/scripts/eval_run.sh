@@ -25,8 +25,19 @@ TASK_FILE=""
 RUN_ID=""
 EVAL_ROOT=""
 DO_ARCHIVE=false
+DRY_RUN=false
 TRANSCRIPT_PATH=""
 CONVERSATION_ID=""
+
+clone_tree_portable() {
+  local src="$1"
+  local dst="$2"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    cp -c -R "${src}" "${dst}"
+  else
+    cp --reflink=auto -a "${src}" "${dst}" 2>/dev/null || cp -a "${src}" "${dst}"
+  fi
+}
 
 usage() {
   cat <<'EOF'
@@ -49,6 +60,7 @@ Required for post-run archival:
 
 Options:
   -e, --eval-root <path>      Path to eval-v2 root (default: directory above scripts/)
+  --dry-run                   Execute full setup/staging verification without invoking agy
   --transcript <path>         Path to conversation transcript file (for --archive)
   --conversation-id <id>      Antigravity conversation ID to locate transcript
   -h, --help                  Show this usage guide
@@ -86,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --archive)
       DO_ARCHIVE=true
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=true
       shift
       ;;
     --transcript)
@@ -163,6 +179,7 @@ if [ "${DO_ARCHIVE}" = true ]; then
       fi
 
       git -C "${REPO_DIR}" diff "${BASE_REF}" > "${ARCHIVE_DIR}/git-diff-baseline.patch" 2>/dev/null || true
+      cp "${ARCHIVE_DIR}/git-diff-baseline.patch" "${ARCHIVE_DIR}/git-diff.patch" 2>/dev/null || true
       git -C "${REPO_DIR}" diff "${BASE_REF}" --stat > "${ARCHIVE_DIR}/git-diff-stat.txt" 2>/dev/null || true
       git -C "${REPO_DIR}" status --porcelain > "${ARCHIVE_DIR}/git-status.txt" 2>/dev/null || true
 
@@ -226,11 +243,12 @@ if [ "${DO_ARCHIVE}" = true ]; then
     echo "  ⚠️ No transcript found. Provide --transcript or --conversation-id if available."
   fi
 
-  # 3. Archive delivery ledger
-  echo "[3/4] Archiving delivery ledger..."
-  mkdir -p "${ARCHIVE_DIR}/ledger"
+  # 3. Archive delivery ledger, marks, inbox notes, and freshness state
+  echo "[3/4] Archiving delivery ledger and v2.2 state..."
+  mkdir -p "${ARCHIVE_DIR}/ledger" "${ARCHIVE_DIR}/marks" "${ARCHIVE_DIR}/notes" "${ARCHIVE_DIR}/data-dir"
   LEDGER_FOUND=false
   if [ -d "${DATA_DIR}" ]; then
+    cp -R "${DATA_DIR}/." "${ARCHIVE_DIR}/data-dir/" 2>/dev/null || true
     # Find all ledgers in data dir
     while IFS= read -r ledger_file; do
       [ -z "${ledger_file}" ] && continue
@@ -238,13 +256,34 @@ if [ "${DO_ARCHIVE}" = true ]; then
       LEDGER_FOUND=true
     done < <(find "${DATA_DIR}" -path "*/ledgers/*.json" -type f 2>/dev/null || true)
 
+    # Archive v2.2 state/marks/*.json
+    while IFS= read -r mark_file; do
+      [ -z "${mark_file}" ] && continue
+      mkdir -p "${ARCHIVE_DIR}/marks"
+      cp "${mark_file}" "${ARCHIVE_DIR}/marks/"
+      LEDGER_FOUND=true
+    done < <(find "${DATA_DIR}" -path "*/state/marks/*.json" -type f 2>/dev/null || true)
+
+    # Archive v2.2 evidence/notes/*.json
+    while IFS= read -r note_file; do
+      [ -z "${note_file}" ] && continue
+      mkdir -p "${ARCHIVE_DIR}/notes"
+      cp "${note_file}" "${ARCHIVE_DIR}/notes/"
+    done < <(find "${DATA_DIR}" -path "*/evidence/notes/*.json" -type f 2>/dev/null || true)
+
+    # Archive v2.2 state/freshness.json
+    while IFS= read -r freshness_file; do
+      [ -z "${freshness_file}" ] && continue
+      cp "${freshness_file}" "${ARCHIVE_DIR}/freshness.json"
+    done < <(find "${DATA_DIR}" -path "*/state/freshness.json" -type f 2>/dev/null || true)
+
     if [ -f "${DATA_DIR}/registry.json" ]; then
       cp "${DATA_DIR}/registry.json" "${ARCHIVE_DIR}/ledger/registry.json"
     fi
   fi
 
   if [ "${LEDGER_FOUND}" = true ]; then
-    echo "  ✓ Ledger files archived to ${ARCHIVE_DIR}/ledger/"
+    echo "  ✓ Ledger and state files archived to ${ARCHIVE_DIR}/"
   else
     cat > "${ARCHIVE_DIR}/ledger/NO_LEDGER.txt" <<LEOF
 Condition: ${CONDITION:-unknown}
@@ -336,9 +375,9 @@ if [ -d "${REPO_DIR}" ]; then
 fi
 mkdir -p "${RUN_ROOT}"
 
-# 3. Copy appropriate template via APFS clonefile (cp -c -R)
-echo "[3/6] Copying template via APFS clonefile..."
-cp -c -R "${TEMPLATE_SRC}" "${REPO_DIR}"
+# 3. Copy appropriate template via portable clone helper
+echo "[3/6] Copying template via clone_tree_portable..."
+clone_tree_portable "${TEMPLATE_SRC}" "${REPO_DIR}"
 
 # Ensure 'baseline' tag exists in the run's git repository
 if [ -d "${REPO_DIR}/.git" ]; then
@@ -366,6 +405,31 @@ case "${CONDITION}" in
     REPO_MEMORY_DATA_DIR="${DATA_DIR}" "${REPO_MEMORY_BIN}" enroll "${REPO_DIR}" >/dev/null 2>&1 || {
       echo "  ⚠️ Warning: repo-memory enroll returned non-zero. Check binary permissions."
     }
+
+    # Populate pre-built v2.2 seed artifacts from ${EVAL_ROOT}/seed if present
+    mkdir -p "${REPO_DIR}/.memory"
+    if [ -d "${EVAL_ROOT}/seed/ops" ]; then
+      rm -rf "${REPO_DIR}/.memory/ops"
+      cp -R "${EVAL_ROOT}/seed/ops" "${REPO_DIR}/.memory/ops"
+      echo "  ✓ Copied seed ops into ${REPO_DIR}/.memory/ops"
+    fi
+    if [ -d "${EVAL_ROOT}/seed/dossiers" ]; then
+      rm -rf "${REPO_DIR}/.memory/dossiers"
+      cp -R "${EVAL_ROOT}/seed/dossiers" "${REPO_DIR}/.memory/dossiers"
+      echo "  ✓ Copied seed dossiers into ${REPO_DIR}/.memory/dossiers"
+    fi
+    if [ -f "${EVAL_ROOT}/seed/ATLAS.md" ]; then
+      cp "${EVAL_ROOT}/seed/ATLAS.md" "${REPO_DIR}/.memory/ATLAS.md"
+      echo "  ✓ Copied seed ATLAS.md into ${REPO_DIR}/.memory/ATLAS.md"
+    fi
+
+    # Rebuild per-run index.db so Condition C/D has the full v2.2 index active on Turn 1
+    if [ -d "${REPO_DIR}/.memory/ops" ]; then
+      REPO_MEMORY_DATA_DIR="${DATA_DIR}" "${REPO_MEMORY_BIN}" reindex "${REPO_DIR}" >/dev/null 2>&1 || {
+        echo "  ⚠️ Warning: repo-memory reindex returned non-zero."
+      }
+      echo "  ✓ Rebuilt v2.2 index in ${DATA_DIR}"
+    fi
 
     # Setup per-run plugin files
     cat > "${PLUGIN_DIR}/plugin.json" <<'EOF'
@@ -495,6 +559,10 @@ chmod +x "${LAUNCH_SCRIPT}"
 
 # Print launch command
 echo "[6/6] Run preparation complete!"
+if [ "${DRY_RUN}" = true ]; then
+  echo "  ✓ [DRY-RUN] Verified staged workspace at ${REPO_DIR} (skipping agy execution)."
+  exit 0
+fi
 echo ""
 echo "======================================================================"
 echo "                     AGENT LAUNCH COMMAND"

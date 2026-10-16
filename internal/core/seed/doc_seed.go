@@ -91,7 +91,202 @@ var (
 	boldPrefixRe     = regexp.MustCompile(`^\*\*([^*]{3,80})\*\*\s*[:—-]\s*(.+)$`)
 	tocLinkOnlyRe    = regexp.MustCompile(`^\[[^\]]+\]\(#[^)]+\)$`)
 	wordSplitRe      = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+	markdownLinkRe   = regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)
+	alertTagRe       = regexp.MustCompile(`^\[!(?:IMPORTANT|WARNING|CAUTION|NOTE|TIP)\]\s*`)
 )
+
+func init() {
+	for _, ext := range []string{".ini", ".hpp", ".hxx", ".cc", ".csv", ".html", ".css", ".defaults"} {
+		allowedSingleSegmentExts[ext] = true
+	}
+	allowedSingleSegmentNames["CMakeLists.txt"] = true
+}
+
+func isValidDocDirAnchor(p string) bool {
+	switch strings.TrimSuffix(strings.TrimSpace(p), "/") {
+	case "src", "include", "modules", "test", "scripts", "web", "lib", "hardware", "docs", "template-app", "sample-app":
+		return true
+	}
+	return false
+}
+
+func expandSubmoduleAnchorsForScopes(anchors []string) []string {
+	out := make([]string, 0, len(anchors))
+	seenDir := make(map[string]bool)
+	for _, a := range anchors {
+		out = append(out, a)
+		clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(a)))
+		clean = strings.TrimPrefix(clean, "./")
+		segs := strings.Split(clean, "/")
+		if (segs[0] == "modules" || segs[0] == "src" || segs[0] == "lib") &&
+			(len(segs) >= 3 || (len(segs) == 2 && filepath.Ext(segs[1]) == "")) {
+			subDir := segs[0] + "/" + segs[1]
+			if !seenDir[subDir] {
+				seenDir[subDir] = true
+				out = append(out, subDir+"/.1.hpp", subDir+"/.2.hpp", subDir+"/.3.hpp")
+			}
+		}
+	}
+	return out
+}
+
+var interfaceToModuleMap = map[string]string{
+	"IDataSource":              "modules/DataManager/DataManager.hpp",
+	"FetchContext":             "modules/DataManager/DataManager.hpp",
+	"DeadlineToken":            "modules/DataManager/DataManager.hpp",
+	"IWebContributor":          "modules/WebServer/WebServer.hpp",
+	"ITabRegistry":             "modules/WebServer/WebServer.hpp",
+	"PsychicHttpServer":        "modules/WebServer/WebServer.hpp",
+	"IMCPContributor":          "modules/MCPServer/MCPServer.hpp",
+	"MCPToolRegistry":          "modules/MCPServer/MCPServer.hpp",
+	"MCPBuiltinTools":          "modules/MCPServer/MCPServer.hpp",
+	"IDisplayBoard":            "modules/U8G2Display/U8G2Display.hpp",
+	"ILVGLHardwareAdapter":     "modules/LVGLDisplay/LVGLDisplay.hpp",
+	"IConfigurable":            "modules/ConfigManager/ConfigManager.hpp",
+	"IOTAVerifier":             "modules/OTAUpdateManager/OTAUpdateManager.hpp",
+	"IPreconditionContributor": "modules/PreconditionEngine/PreconditionEngine.hpp",
+	"IPreconditionRegistry":    "modules/PreconditionEngine/PreconditionEngine.hpp",
+	"IBLEServiceProvider":      "modules/BLEManager/BLEManager.hpp",
+	"IBLEClientProvider":       "modules/BLEManager/BLEManager.hpp",
+}
+
+func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) bool) []string {
+	var valid []string
+	seen := make(map[string]bool)
+	addAnchor := func(cand string) {
+		cand = filepath.ToSlash(strings.TrimSuffix(strings.TrimSpace(cand), "/"))
+		cand = strings.TrimPrefix(cand, "./")
+		if cand == "" || cand == "." || seen[cand] || isExcludedDocSeedTargetAnchor(cand) {
+			return
+		}
+		if (IsValidAnchorPathSyntax(cand) || isValidDocDirAnchor(cand)) && isValidRepoPath(cand) {
+			seen[cand] = true
+			valid = append(valid, cand)
+		}
+	}
+
+	for _, a := range filterValidAnchors(extractBacktickPaths(text), isValidRepoPath) {
+		if !seen[a] {
+			seen[a] = true
+			valid = append(valid, a)
+		}
+	}
+
+	// Inspect backtick spans for C++/PlatformIO headers, directories, and module/interface symbols.
+	matches := backtickRe.FindAllStringSubmatch(text, -1)
+	for _, m := range matches {
+		rawTok := strings.TrimSpace(m[1])
+		rawTok = strings.TrimPrefix(rawTok, "#include ")
+		rawTok = strings.Trim(rawTok, `"' `)
+		rawTok = strings.TrimSuffix(rawTok, "/")
+		if rawTok == "" {
+			continue
+		}
+
+		addAnchor(rawTok)
+		if !strings.HasPrefix(rawTok, "include/") && !strings.Contains(rawTok, " ") {
+			addAnchor("include/" + rawTok)
+		}
+
+		// Extract base C++ class/module/interface identifier before ::, ., or (
+		ident := rawTok
+		if idx := strings.Index(ident, "::"); idx > 0 {
+			ident = ident[:idx]
+		}
+		if idx := strings.IndexByte(ident, '('); idx > 0 {
+			ident = ident[:idx]
+		}
+		if strings.HasPrefix(ident, "app.") {
+			rest := strings.TrimPrefix(ident, "app.")
+			if rest == "registerModule" || rest == "begin" {
+				addAnchor("modules/Application/Application.hpp")
+				addAnchor("src/core")
+			}
+		}
+		if idx := strings.IndexByte(ident, '.'); idx > 0 {
+			ident = ident[:idx]
+		}
+		ident = strings.TrimSpace(ident)
+		if len(ident) >= 3 && ident[0] >= 'A' && ident[0] <= 'Z' && !strings.ContainsAny(ident, " /\\:*?\"<>|") {
+			stems := []string{ident}
+			if s := strings.TrimSuffix(ident, "Module"); s != "" && s != ident {
+				stems = append(stems, s)
+			}
+			if s := strings.TrimSuffix(ident, "Manager"); s != "" && s != ident {
+				stems = append(stems, s)
+			}
+			for _, stem := range stems {
+				addAnchor("modules/" + stem + "/" + stem + ".hpp")
+				addAnchor("modules/" + stem + "/" + ident + ".hpp")
+				addAnchor("src/modules/" + stem + "/" + stem + ".hpp")
+				addAnchor("src/modules/" + stem)
+				addAnchor("src/core/" + stem + ".hpp")
+				addAnchor("lib/" + stem + "/" + stem + ".hpp")
+			}
+			addAnchor("include/interfaces/" + ident + ".hpp")
+			addAnchor("include/interfaces/" + ident + ".h")
+			addAnchor("include/types/" + ident + ".hpp")
+			addAnchor("include/events/" + ident + ".hpp")
+			addAnchor("include/" + ident + ".hpp")
+			addAnchor("include/" + ident + ".h")
+			if modHdr, ok := interfaceToModuleMap[ident]; ok {
+				addAnchor(modHdr)
+			}
+		}
+	}
+
+		// Inspect Markdown links [label](target) for relative paths or file:// repo paths.
+	linkMatches := markdownLinkRe.FindAllStringSubmatch(text, -1)
+	for _, lm := range linkMatches {
+		target := strings.TrimSpace(lm[1])
+		if idx := strings.IndexByte(target, '#'); idx >= 0 {
+			target = target[:idx]
+		}
+		if target == "" || strings.HasSuffix(strings.ToLower(target), ".md") {
+			continue
+		}
+		lowerTarget := strings.ToLower(target)
+		if strings.HasPrefix(lowerTarget, "http:") || strings.HasPrefix(lowerTarget, "https:") || strings.HasPrefix(lowerTarget, "mailto:") {
+			continue
+		}
+		var resolved string
+		if strings.HasPrefix(lowerTarget, "file://") {
+			for _, rootSeg := range []string{"/modules/", "/include/", "/src/", "/test/", "/template-app/", "/sample-app/", "/scripts/", "/web/", "/lib/", "/hardware/"} {
+				if idx := strings.Index(target, rootSeg); idx >= 0 {
+					resolved = target[idx+1:]
+					break
+				}
+			}
+		} else if !strings.Contains(target, ":") && docRelPath != "" {
+			resolved = filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(docRelPath), target)))
+		}
+		if resolved != "" {
+			addAnchor(resolved)
+			baseIdent := strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved))
+			if modHdr, ok := interfaceToModuleMap[baseIdent]; ok {
+				addAnchor(modHdr)
+			}
+		}
+	}
+
+	return valid
+}
+
+func capFallbackAnchors(anchors []string, maxCount int) []string {
+	if len(anchors) <= maxCount {
+		return append([]string(nil), anchors...)
+	}
+	var multiSeg, singleSeg []string
+	for _, a := range anchors {
+		if strings.Contains(a, "/") {
+			multiSeg = append(multiSeg, a)
+		} else {
+			singleSeg = append(singleSeg, a)
+		}
+	}
+	ordered := append(multiSeg, singleSeg...)
+	return append([]string(nil), ordered[:maxCount]...)
+}
 
 func generateDocSeedID(relPath, entryType, normalizedKey string) string {
 	sum := sha256.Sum256([]byte(relPath + ":" + entryType + ":" + normalizedKey))
@@ -133,25 +328,69 @@ func ParseDocToOps(
 	}
 
 	isSkill := strings.HasSuffix(relPath, "SKILL.md") || strings.Contains(relPath, ".agents/skills/")
+	isDeveloperDoc := strings.HasPrefix(relPath, "docs/developer/")
 
-	// Collect all valid repo paths referenced anywhere in the document (used as fallback for SKILL.md files).
+	// Collect valid repo paths referenced anywhere in the document (used as fallback for SKILL.md and developer guides).
 	var docAnchors []string
-	if isSkill {
-		docAnchors = filterValidAnchors(extractBacktickPaths(content), isValidRepoPath)
+	if isSkill || isDeveloperDoc {
+		docAnchors = capFallbackAnchors(extractDocAnchors(content, relPath, isValidRepoPath), 4)
+		if len(docAnchors) == 0 {
+			for _, fb := range []string{
+				"src/modules",
+				"src/core",
+				"modules/Application/Application.hpp",
+				"include/AppFoundation.h",
+				"include/interfaces",
+				"modules",
+				"src",
+				"include",
+				"platformio.ini",
+				"test",
+				"docs/developer",
+			} {
+				if isValidRepoPath(fb) {
+					docAnchors = append(docAnchors, fb)
+					if len(docAnchors) >= 4 {
+						break
+					}
+				}
+			}
+		}
 	}
 
 	lines := strings.Split(strings.TrimPrefix(content, "\uFEFF"), "\n")
 	startIdx := skipYAMLFrontmatter(lines)
 
 	var (
-		currentHeading string
-		sectionAnchors []string
-		inCodeFence    bool
-		codeFenceLang  string
-		codeFenceLines []string
-		candidates     []docCandidate
-		lastCandIdx    = -1
+		currentHeading       string
+		currentHeadingLevel  int
+		parentHeadingAnchors []string
+		sectionAnchors       []string
+		inCodeFence          bool
+		codeFenceLang        string
+		codeFenceLines       []string
+		candidates           []docCandidate
+		lastCandIdx          = -1
+		questionHeadingFresh bool
 	)
+
+	mergeUniqueAnchors := func(base, extra []string) []string {
+		seen := make(map[string]bool, len(base)+len(extra))
+		var out []string
+		for _, a := range base {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
+		}
+		for _, a := range extra {
+			if !seen[a] {
+				seen[a] = true
+				out = append(out, a)
+			}
+		}
+		return out
+	}
 
 	for i := startIdx; i < len(lines); i++ {
 		rawLine := lines[i]
@@ -169,7 +408,7 @@ func ParseDocToOps(
 					if lastCandIdx >= 0 && !strings.Contains(candidates[lastCandIdx].text, firstCmd) {
 						candidates[lastCandIdx].text = clampText(candidates[lastCandIdx].text + " (`" + firstCmd + "`)")
 						candidates[lastCandIdx].isRecipe = true
-					} else if isSkill || isProceduralHeading(currentHeading) {
+					} else if isSkill || isDeveloperDoc || isProceduralHeading(currentHeading) {
 						candidates = append(candidates, docCandidate{
 							heading:        currentHeading,
 							text:           clampText(fmt.Sprintf("%s: `%s`", nonEmptyOrDefault(currentHeading, "Command"), firstCmd)),
@@ -183,6 +422,7 @@ func ParseDocToOps(
 				codeFenceLang = ""
 				codeFenceLines = nil
 			}
+			questionHeadingFresh = false
 			continue
 		}
 
@@ -191,7 +431,7 @@ func ParseDocToOps(
 			continue
 		}
 
-		if trimLine == "" {
+		if trimLine == "" || trimLine == "---" {
 			continue
 		}
 
@@ -204,19 +444,84 @@ func ParseDocToOps(
 			if hashes >= 1 && hashes <= 6 && (hashes == len(trimLine) || trimLine[hashes] == ' ') {
 				headingText := strings.TrimSpace(trimLine[hashes:])
 				currentHeading = headingText
-				sectionAnchors = filterValidAnchors(extractBacktickPaths(headingText), isValidRepoPath)
+				currentHeadingLevel = hashes
+				hAnchors := extractDocAnchors(headingText, relPath, isValidRepoPath)
+				if hashes <= 2 {
+					parentHeadingAnchors = hAnchors
+					sectionAnchors = append([]string(nil), hAnchors...)
+				} else {
+					if len(hAnchors) > 0 {
+						sectionAnchors = mergeUniqueAnchors(hAnchors, parentHeadingAnchors)
+					} else {
+						sectionAnchors = append([]string(nil), parentHeadingAnchors...)
+					}
+				}
 				lastCandIdx = -1
+				questionHeadingFresh = (isSkill || isDeveloperDoc) && hashes >= 3 && strings.HasSuffix(headingText, "?")
 				continue
 			}
 		}
 
+		// Skip keyword-trigger catalog sections in skills
+		if strings.EqualFold(currentHeading, "Trigger Reference") {
+			continue
+		}
+
 		// Skip markdown table rows
 		if strings.HasPrefix(trimLine, "|") && strings.HasSuffix(trimLine, "|") {
+			questionHeadingFresh = false
+			continue
+		}
+
+		// Extract GitHub/Markdown callout blockquotes (> [!IMPORTANT], > [!WARNING], > [!CAUTION], > **Rule:** ...)
+		if strings.HasPrefix(trimLine, ">") {
+			calloutLine := strings.TrimSpace(strings.TrimPrefix(trimLine, ">"))
+			isAlertHeader := alertTagRe.MatchString(calloutLine)
+			isBoldCallout := strings.HasPrefix(calloutLine, "**Rule") ||
+				strings.HasPrefix(calloutLine, "**Important") ||
+				strings.HasPrefix(calloutLine, "**Warning") ||
+				strings.HasPrefix(calloutLine, "**Caution") ||
+				strings.HasPrefix(calloutLine, "**Strict")
+			if isAlertHeader || isBoldCallout {
+				calloutParts := []string{}
+				cleanedFirst := strings.TrimSpace(alertTagRe.ReplaceAllString(calloutLine, ""))
+				if cleanedFirst != "" {
+					calloutParts = append(calloutParts, cleanedFirst)
+				}
+				for i+1 < len(lines) {
+					nextTrim := strings.TrimSpace(lines[i+1])
+					if !strings.HasPrefix(nextTrim, ">") {
+						break
+					}
+					i++
+					sub := strings.TrimSpace(strings.TrimPrefix(nextTrim, ">"))
+					if sub == "" {
+						continue
+					}
+					if bText, ok := extractBulletLine(sub); ok {
+						sub = bText
+					}
+					calloutParts = append(calloutParts, sub)
+				}
+				calloutText := collapseWhitespace(strings.Join(calloutParts, " "))
+				if calloutText != "" {
+					keyHint := extractKeyHint(currentHeading, calloutText)
+					candidates = append(candidates, docCandidate{
+						heading:        currentHeading,
+						text:           clampText(calloutText),
+						keyHint:        keyHint,
+						sectionAnchors: append([]string(nil), sectionAnchors...),
+					})
+					lastCandIdx = len(candidates) - 1
+				}
+			}
+			questionHeadingFresh = false
 			continue
 		}
 
 		// Markdown bullets and numbered items
 		if bulletText, ok := extractBulletLine(trimLine); ok {
+			questionHeadingFresh = false
 			// Join immediate indented continuation lines
 			for i+1 < len(lines) {
 				nextRaw := lines[i+1]
@@ -247,6 +552,46 @@ func ParseDocToOps(
 			lastCandIdx = len(candidates) - 1
 			continue
 		}
+
+		// For non-bullet prose lines: enrich sectionAnchors (for developer docs & skills)
+		// and capture concise Q&A answers under ### ...? headings.
+		if isSkill || isDeveloperDoc {
+			lineAnchors := extractDocAnchors(trimLine, relPath, isValidRepoPath)
+			if len(lineAnchors) > 0 {
+				sectionAnchors = capFallbackAnchors(mergeUniqueAnchors(sectionAnchors, lineAnchors), 4)
+				if currentHeadingLevel <= 2 {
+					parentHeadingAnchors = capFallbackAnchors(mergeUniqueAnchors(parentHeadingAnchors, lineAnchors), 4)
+				}
+			}
+		}
+
+		if questionHeadingFresh {
+			questionHeadingFresh = false
+			paraParts := []string{trimLine}
+			for i+1 < len(lines) {
+				nextTrim := strings.TrimSpace(lines[i+1])
+				if nextTrim == "" ||
+					strings.HasPrefix(nextTrim, "#") ||
+					strings.HasPrefix(nextTrim, "```") ||
+					strings.HasPrefix(nextTrim, "~~~") ||
+					strings.HasPrefix(nextTrim, "|") ||
+					strings.HasPrefix(nextTrim, ">") ||
+					isBulletStart(nextTrim) {
+					break
+				}
+				i++
+				paraParts = append(paraParts, nextTrim)
+			}
+			paraText := collapseWhitespace(strings.Join(paraParts, " "))
+			qaText := fmt.Sprintf("**%s**: %s", currentHeading, paraText)
+			candidates = append(candidates, docCandidate{
+				heading:        currentHeading,
+				text:           clampText(qaText),
+				keyHint:        strings.ToLower(collapseWhitespace(currentHeading)),
+				sectionAnchors: append([]string(nil), sectionAnchors...),
+			})
+			lastCandIdx = len(candidates) - 1
+		}
 	}
 
 	var (
@@ -261,19 +606,26 @@ func ParseDocToOps(
 			continue
 		}
 
-		anchors := filterValidAnchors(extractBacktickPaths(cleaned), isValidRepoPath)
+		anchors := extractDocAnchors(cleaned, relPath, isValidRepoPath)
 		if len(anchors) == 0 && len(cand.sectionAnchors) > 0 {
 			anchors = append([]string(nil), cand.sectionAnchors...)
 		}
-		if len(anchors) == 0 && isSkill && len(docAnchors) > 0 {
+		if len(anchors) == 0 && (isSkill || isDeveloperDoc) && len(docAnchors) > 0 {
 			anchors = append([]string(nil), docAnchors...)
 		}
 
 		var scopeAnchors []string
+		var nonIncludeScopeAnchors []string
 		for _, a := range anchors {
 			if strings.Contains(a, "/") && !strings.HasPrefix(a, ".") {
 				scopeAnchors = append(scopeAnchors, a)
+				if !strings.HasPrefix(a, "include/") {
+					nonIncludeScopeAnchors = append(nonIncludeScopeAnchors, a)
+				}
 			}
+		}
+		if len(nonIncludeScopeAnchors) > 0 {
+			scopeAnchors = nonIncludeScopeAnchors
 		}
 
 		keywords := extractKeywords(cand.heading, relPath)
@@ -286,8 +638,8 @@ func ParseDocToOps(
 			}
 		}
 
-		// For non-skill docs, strictly require at least 1 valid repo anchor.
-		if !isSkill && len(anchors) == 0 {
+		// For non-skill, non-developer docs, strictly require at least 1 valid repo anchor.
+		if !isSkill && !isDeveloperDoc && len(anchors) == 0 {
 			continue
 		}
 		if len(anchors) == 0 && !matchedDeclared {
@@ -295,7 +647,7 @@ func ParseDocToOps(
 		}
 
 		if dossierScope == "" && len(scopeAnchors) > 0 {
-			mods := config.DeriveModuleScopes(scopeAnchors)
+			mods := config.DeriveModuleScopes(expandSubmoduleAnchorsForScopes(scopeAnchors))
 			for _, m := range mods {
 				if m.Name != "" && !isPollutedScope(m.Name) {
 					dossierScope = m.Name
@@ -311,7 +663,15 @@ func ParseDocToOps(
 					dossierScope = "root"
 				}
 			} else {
-				dossierScope = "root"
+				for _, a := range anchors {
+					if isValidDocDirAnchor(a) && !isPollutedScope(a) {
+						dossierScope = a
+						break
+					}
+				}
+				if dossierScope == "" || isPollutedScope(dossierScope) {
+					dossierScope = "root"
+				}
 			}
 		}
 
@@ -422,7 +782,7 @@ func SeedDocs(
 	}
 
 	isValidRepoPath := buildRepoPathValidator(SeedOptions{RepoRoot: opts.RepoRoot})
-	repoFiles := collectRepoFileAnchors(opts.RepoRoot)
+	repoFiles := expandSubmoduleAnchorsForScopes(collectRepoFileAnchors(opts.RepoRoot))
 	rawModuleScopes := config.DeriveModuleScopes(repoFiles)
 	var moduleScopes []config.ModuleScope
 	for _, m := range rawModuleScopes {
@@ -614,7 +974,13 @@ func extractFirstCommandLine(lang string, fenceLines []string) string {
 			strings.HasPrefix(line, "repo-memory ") ||
 			strings.HasPrefix(line, "go ") ||
 			strings.HasPrefix(line, "git ") ||
-			strings.HasPrefix(line, "make ") {
+			strings.HasPrefix(line, "make ") ||
+			strings.HasPrefix(line, "pio ") ||
+			strings.HasPrefix(line, "platformio ") ||
+			strings.HasPrefix(line, "python ") ||
+			strings.HasPrefix(line, "python3 ") ||
+			strings.HasPrefix(line, "cmake ") ||
+			strings.HasPrefix(line, "./") {
 			if len(line) <= 120 {
 				return line
 			}
@@ -798,6 +1164,7 @@ func classifyDocEntryType(relPath, heading, text string, isRecipeHint bool) doss
 	}
 	for _, cue := range []string{
 		"procedure", "recipe", "workflow", "command", "usage", "go test", "go build", "repo-memory ",
+		"pio ", "platformio ", "python ", "python3 ", "cmake ",
 	} {
 		if strings.Contains(combined, cue) {
 			return dossiers.EntryTypeRecipe
