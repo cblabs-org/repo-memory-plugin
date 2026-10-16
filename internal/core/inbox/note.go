@@ -64,6 +64,7 @@ type Note struct {
 	Branch         string                    `json:"branch,omitempty"`
 	HeadCommit     string                    `json:"head_commit,omitempty"`
 	ExposureList   []delivery.ExposureRecord `json:"exposure_list,omitempty"`
+	AnchorChecks   []AnchorCheck             `json:"anchor_checks,omitempty"`
 	Items          []NoteItem                `json:"items"`
 	CreatedAt      time.Time                 `json:"created_at"`
 	Consolidated   bool                      `json:"consolidated"`

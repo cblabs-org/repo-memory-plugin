@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/telemetry"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
@@ -34,6 +34,10 @@ type PipelineExecutor struct {
 	budgetLimit int
 	budgetUsed  int
 	mu          sync.Mutex
+
+	FallbackIdleThreshold time.Duration // defaults to 2 * time.Hour when <= 0
+	QuotaChecker          func(context.Context) (*telemetry.QuotaStatus, error)
+	Now                   func() time.Time
 }
 
 func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
@@ -86,18 +90,34 @@ func (p *PipelineExecutor) checkBudget(cost *jobs.Cost) error {
 
 // NewPipelineExecutor creates a PipelineExecutor for pipeline processing.
 func NewPipelineExecutor(dataDir, repoRoot, repoID string, store *jobs.Store, epStore *episode.Store) *PipelineExecutor {
+	var cfg config.RepoConfig
+	if repoRoot != "" {
+		if loaded, err := config.LoadRepoConfig(repoRoot); err == nil {
+			cfg = loaded
+		}
+	}
 	return &PipelineExecutor{
-		dataDir:  dataDir,
-		repoRoot: repoRoot,
-		repoID:   repoID,
-		store:    store,
-		epStore:  epStore,
+		dataDir:     dataDir,
+		repoRoot:    repoRoot,
+		repoID:      repoID,
+		store:       store,
+		epStore:     epStore,
+		cfg:         cfg,
+		budgetLimit: cfg.Budgets.DailyTokens,
 	}
 }
 
 // SetHousekeeper sets the housekeeper harness for the executor.
 func (p *PipelineExecutor) SetHousekeeper(hk harness.Housekeeper) {
 	p.hk = hk
+}
+
+// SetConfig sets the repository configuration on the executor.
+func (p *PipelineExecutor) SetConfig(cfg config.RepoConfig) {
+	p.cfg = cfg
+	if cfg.Budgets.DailyTokens > 0 {
+		p.budgetLimit = cfg.Budgets.DailyTokens
+	}
 }
 
 type usageTracker struct {
@@ -150,6 +170,10 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
+	if _, err := p.RunSidecarFallback(ctx); err != nil {
+		return err
+	}
+
 	if err := p.checkDocFreshness(ctx); err != nil {
 		return err
 	}
@@ -163,8 +187,6 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 			}
 		}
 	}
-
-	log.Println("v1 pipeline stages removed; v2 distillation not yet implemented")
 
 	return nil
 }

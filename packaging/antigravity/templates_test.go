@@ -189,3 +189,22 @@ func TestWindowsPathsEscaping(t *testing.T) {
 		t.Fatalf("Windows path produced invalid sidecar JSON: %v", err)
 	}
 }
+
+func TestGenerateDistillerAgentMD(t *testing.T) {
+	content := antigravity.GenerateDistillerAgentMD()
+	for _, want := range []string{
+		"name: repo-memory-distiller",
+		"model: flash",
+		"enable_write_tools: false",
+		"enable_mcp_tools: false",
+		"enable_subagent_tools: false",
+		"<session-log-<token>>",
+		"```repo-memory-note",
+		"step_citations",
+		"echo_token:",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("GenerateDistillerAgentMD missing %q", want)
+		}
+	}
+}
