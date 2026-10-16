@@ -3,7 +3,7 @@
 > **Project:** [PROJECT.md](../PROJECT.md) (`pr-14-v2-micro-probes-and-pilot`)
 > **Branch:** `pr-14-v2-micro-probes-and-pilot/wo3-write-side-distillation-consolidation-probe`
 > **Base Branch:** `pr-14-v2-micro-probes-and-pilot/wo2-read-side-offline-retrieval-probe`
-> **Status:** Ready for Execution
+> **Status:** Complete
 
 ---
 
@@ -49,7 +49,7 @@ Build and execute the repeatable **Layer 2 Write-Side Distillation & Consolidati
 
 ## 3. Detailed Implementation Checklist
 
-- [ ] **Task 1: Create `internal/core/tick/eval_v2_write_probe_test.go` (`TestEvalV2WriteSideMicroProbe`)**
+- [x] **Task 1: Create `internal/core/tick/eval_v2_write_probe_test.go` (`TestEvalV2WriteSideMicroProbe`)**
   - Inspect real sessions under `evaluation/repo-memory-transcripts/` when present on disk (and provide a deterministic fallback fixture when absent so `go test ./...` passes in any clean CI checkout).
   - **Sub-probe 1 — Real Corpus Milestone Scan & Stage 1a `Stop` Hook Probe (`antigravity.ParseTranscript`, `antigravity.DetectMilestones`, `antigravity.HandleStop`):**
     - Scan up to 25 real conversation transcripts in `evaluation/repo-memory-transcripts/` using `antigravity.ParseTranscript` and `antigravity.DetectMilestones` to measure real-world milestone trigger rates across commit, PR, multi-file edit+test, error resolution, and PA `WORKORDER.md` completion turns.
@@ -76,9 +76,9 @@ Build and execute the repeatable **Layer 2 Write-Side Distillation & Consolidati
       6. **Five-Tier Routing (3 items):** Workstation-local `user:` preference (`~/.ssh/config`), unmerged branch `branch:` finding (`feature/ds18b20-probe`), and shared `repo:` architectural decision (`main`) $\to$ verify strict tier isolation (`user-dossiers/` vs `.memory/local/ops/feature__ds18b20-probe/` vs `.memory/ops/`);
       7. **Validation & Guardrails (2 malformed/secret items):** One candidate op exceeding the 6-line entry cap and one containing a raw secret token $\to$ verify rejected by `ValidateAndPrepareOps` (`OpsRejected`) and quarantined without aborting valid ops;
       8. **Worktree Publish, Multi-Tier Index & Freshness:** Verify `PublishToMemoryWorktree` commits to `memory/pending`, `RebuildMultiTierIndex` indexes `repo:`, `branch:`, and `user:` entries into `<dataDir>/<repoID>/index.db`, `dossiers.LintDossier` reports `0` cap violations, and `state/freshness.json` records `UnconsolidatedNotes == 0`.
-- [ ] **Task 2: Create `evaluation/eval-v2/scripts/run_write_probe.sh`**
+- [x] **Task 2: Create `evaluation/eval-v2/scripts/run_write_probe.sh`**
   - Create an executable script (`chmod +x`) that runs `go test -v -run TestEvalV2WriteSideMicroProbe ./internal/core/tick/...` and prints a clear PASS summary.
-- [ ] **Task 3: Write `docs/evaluations/v2-2-write-side-micro-probe.md`**
+- [x] **Task 3: Write `docs/evaluations/v2-2-write-side-micro-probe.md`**
   - Document the complete empirical findings from `TestEvalV2WriteSideMicroProbe` and `./evaluation/eval-v2/scripts/run_write_probe.sh`, including:
     1. Executive Summary & Comparison against `v2.1` Failure Modes (`X2` cold synthesis, `X4` uncorroborated rule promotion & echo amplification, `X10` PA `SKILL.md`/`WORKORDER.md` instruction ingestion);
     2. Real Transcript Corpus Scan (`evaluation/repo-memory-transcripts/` milestone trigger distribution & Stage 1a `Stop` hook latency/yield);
@@ -86,6 +86,30 @@ Build and execute the repeatable **Layer 2 Write-Side Distillation & Consolidati
     4. Stage 1c Preparation Layer (`X10`) & 4-Layer Security/Grounding Gate Metrics (raw vs. prepared bytes/tokens, `>70%` payload reduction table, `ValidateDistillerOutput` 4-gate rejection matrix, and `scrub.Scrub` secret/identifier results);
     5. Stage 2 Warm Batch Consolidation Funnel Metrics (`P13` Echo Filter suppression vs. reconfirmation, `VD18` Corroboration Gate downgrade vs. promotion, `OpAmend` duplicate coalescing, Five-Tier routing isolation, `ValidateAndPrepareOps` cap/scrubber rejections, `memory/pending` worktree commit, and sample rendered dossier entries);
     6. Readiness Verdict for `WO4` (Live `esp32` Pilot & Final Synthesis).
-- [ ] **Task 4: Verify Full Test Suite & Append Completion Report**
+- [x] **Task 4: Verify Full Test Suite & Append Completion Report**
   - Run `./evaluation/eval-v2/scripts/run_write_probe.sh` and `go test -race ./cmd/... ./internal/... ./packaging/...`.
   - Append a `## Completion Report` section to this `WORKORDER.md`, commit all changes on branch `pr-14-v2-micro-probes-and-pilot/wo3-write-side-distillation-consolidation-probe` with author `matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>`, and message the Principal Architect.
+
+---
+
+## Completion Report
+
+### Summary of Changes
+
+1. **Created `internal/core/tick/eval_v2_write_probe_test.go` (`TestEvalV2WriteSideMicroProbe`):**
+   - Implemented the 4-stage `v2.2` Write-Side Distillation & Consolidation Micro-Probe in `package tick` (with zero imports of `internal/harness/*`, preserving `TestCoreImportBoundaries`):
+     - **`SubProbe1_Stage1a_StopHookAndMilestoneDetection`:** Scanned all 25 real transcripts in `evaluation/repo-memory-transcripts/` across 83 assistant turn boundaries (`18` milestone turns triggered = `21.69%`, `65` routine turns skipped = `78.31%`; categories: `commit: 11`, `multi_file_edit_test: 6`, `pa_workorder_done: 5`, `pr: 1`). Exercised the compiled `repo-memory hook antigravity Stop` binary end-to-end across routine turns (`decision: ""`), subagent turns (`decision: ""`), milestone `executionNum == 0` (`decision: "continue"` with `BuildTurnNoteRequestPrompt`), and continuation `executionNum == 1` (harvesting 1 valid item, dropping 1 incomplete item via `LintNoteItems`, redacting inline AWS secret `AKIAIOSFODNN7EXAMPLE` $\to$ `«secret:aws»`, attaching `ExposureList` and `AnchorChecks`, and advancing `state/stop-marks.json`).
+     - **`SubProbe2_Stage1b_FreeZeroTokenHarvest`:** Exercised `inbox.HarvestCheckpointsAndArtifacts` twice over `CHECKPOINT` summaries and `brain/` artifacts (`implementation_plan.md`, `walkthrough.md`), verifying 0 LLM calls (`0` tokens), 3 notes created on Run 1 (`3` checkpoint items + `3` artifact items), and 0 duplicate notes on Run 2 (`100%` idempotency).
+     - **`SubProbe3_Stage1c_PreparationScrubberAndFallback`:** Measured `prepare.PrepareTranscript` across all 25 real transcripts (`3,518,270` $\to$ `1,326,524` bytes = `62.30%` overall reduction; up to `74.20%` reduction on top instruction-heavy session `323730fe-d5d9-47d8-aecd-997c6a82ca6a` with `55` stubbed reads; and `93.96%` reduction on the PA benchmark session), `100%` stripping of `[repo-memory ...]` exposures and prior continuation prompts, `100%` stubbing of instruction file reads, 5-case verification of `prepare.ValidateDistillerOutput`, 4-layer `scrub.Scrub` redaction/allow-list preservation, and quota-gated `tick.RunSidecarFallback` (`78%` quota $\to$ `1` `sidecar` note).
+     - **`SubProbe4_Stage2_ConsolidationFunnelAndPublish`:** Executed `consolidate.RunConsolidationWithOptions` (both `DryRun: true` and live publish) across 6 notes (`13` candidate items), verifying `EchoesDropped == 3` (`P13`), `EchoesReconfirmed == 1` (`reconfirmed`), `DowngradedToIssue == 3` (`VD18`), `CorroboratedPromoted == 3` (`test-pass`, `anchor-verified`, `user-confirmed`), `ExactDuplicatesAmend == 1` (`OpAmend`), Five-Tier routing (`1` `user:`, `1` `branch:`, `8` `repo:`), `OpsRejected == 3` (`1` quarantine batch), `0` `LintDossier` errors across 5 rendered dossiers, `memory/pending` worktree commit, and multi-tier `index.db` FTS5 search (`11` entries across `repo:` + `branch:` + `user:` tiers).
+2. **Created `evaluation/eval-v2/scripts/run_write_probe.sh`:**
+   - Added executable one-command runner (`chmod +x`) executing `go test -v -run TestEvalV2WriteSideMicroProbe ./internal/core/tick/...`.
+3. **Created `docs/evaluations/v2-2-write-side-micro-probe.md`:**
+   - Authored the empirical evaluation report covering all Stage 1a/1b/1c and Stage 2 metrics (`X2`, `X10`, `X4`), real transcript corpus breakdown, consolidation funnel table, and verbatim projected dossier samples across `repo:`, `branch:`, and `user:` tiers.
+
+### Verification Commands & Results
+
+- `./evaluation/eval-v2/scripts/run_write_probe.sh` $\to$ **PASS** (`TestEvalV2WriteSideMicroProbe` all 4 sub-probes passed).
+- `go test -v -run TestCoreImportBoundaries ./internal/core/...` $\to$ **PASS** (`162` Go files scanned, `0` boundary violations).
+- `go test -race ./cmd/... ./internal/... ./packaging/...` $\to$ **PASS**.
+
