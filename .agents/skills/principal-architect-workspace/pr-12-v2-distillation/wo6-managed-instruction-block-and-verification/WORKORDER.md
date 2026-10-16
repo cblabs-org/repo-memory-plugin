@@ -129,3 +129,20 @@ Create `internal/core/config/managed_block.go` implementing Addendum A §8 (`A8:
   - `GOOS=windows go build ./...`: Passed.
   - `go test -race ./cmd/... ./internal/... ./packaging/...`: Passed (all 30 packages green).
   - External GitHub hygiene check: 0 internal references found.
+
+## Audit Remediation (PR #20 Cold-Firewall Audit)
+
+- **Code Commit:** `e038f91` (`fix(distill): address PR #20 cold-firewall audit minor findings (MINOR-1..3)`)
+- **Fixes Applied:**
+  1. **`[MINOR-1]` `internal/mcpserver/tools.go` (`HandleMemoryNote`):**
+     - Attached `s.ledger.GetExposureList()` to `inboxNote.ExposureList` when `s.ledger != nil` on `source: "mcp-note"` inbox notes so Stage 2 Echo Filter (`P13`) receives conversation exposures for MCP-originated notes.
+     - Verified with `TestMemoryNote_V2EntryTypesInboxAndMark` in `internal/mcpserver/server_test.go`.
+  2. **`[MINOR-2]` `internal/harness/antigravity/stop_distill.go` (`harvestTurnNote`):**
+     - Added early return when `!mark.PendingContinuation && mark.PendingRequestStep == 0` on `executionNum >= 1` so unrequested continuations do not advance `mark.StepIndex` or scan replies.
+     - Updated harvest tests and added `unrequested executionNum >= 1 returns early without advancing mark.StepIndex` in `internal/harness/antigravity/stop_distill_test.go`.
+  3. **`[MINOR-3]` `internal/core/tick/fallback.go` (`RunSidecarFallback`) & `internal/core/state/marks.go`:**
+     - Added `LastFallbackAt` to `state.Mark`, populated `mark.StepTimestamp = lastStepTS` and `mark.LastFallbackAt = now` whenever `ValidateDistillerOutput` succeeds, and restricted `mark.LastNoteAt = now`, `mark.NoteCount++`, and `mark.NotesToday++` strictly to when `written > 0`.
+     - Added `TestRunSidecarFallback_NoneOutputAdvancesMarkWithoutIncrementingNoteCount` and updated assertions in `internal/core/tick/fallback_test.go`.
+- **Verification:**
+  - Rebuilt `~/.local/bin/repo-memory`.
+  - `go test -race ./cmd/... ./internal/... ./packaging/...` and `go vet ./cmd/... ./internal/... ./packaging/...` passed.
