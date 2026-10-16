@@ -4,8 +4,8 @@
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 + [v2 Design](../../../../docs/design-v2-distillation-retrieval.md) rev 4 / v2.2 + [Addendum A](../../../../docs/addendum-a-provenance-and-hardening.md) rev 3
 > **Release:** 1 (Antigravity)
 > **Created:** 2026-10-01 · **Revised:** 2026-10-04 (v2 pivot) · **v2.1:** 2026-10-04 (plan review) · **v2.2:** 2026-10-15 (post-X6-lite & Stage 1 synthesis, session 21)
-> **Total PRs:** 22 (18 complete, 1 ready to resume at WO4/7, 3 planned).
-> **Base branch:** `pr-12-v2-distillation/wo6-managed-instruction-block-and-verification` (ahead of `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` `860610f`, `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` `4abdc55`, `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
+> **Total PRs:** 22 (19 complete, 1 ready to resume at WO4/7, 2 planned).
+> **Base branch:** `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification` (ahead of `pr-12-v2-distillation/wo6-managed-instruction-block-and-verification` `e6ee499`, `pr-11-v2-doc-seeding-and-lifecycles/wo5-dogfood-doc-seed-and-verification` `860610f`, `pr-10b-delivery-and-storage-fixes/wo5-dry-run-verification` `4abdc55`, `pr-10a-v2-2-docs-and-specs/wo5-verification-and-handover` `723593b`, `pr-10-eval-v2/wo3-index-build` `ec96755`, and `main` `83edd25`).
 > **Dependency model:**
 > - **PR-10a-v2-2-docs-and-specs** upgrades `SPEC.md` (v1.0), `docs/design-v2-distillation-retrieval.md` (Rev 4), `docs/addendum-a-provenance-and-hardening.md` (Rev 3), `docs/antigravity-hooks-reference.md`, and `README.md` first.
 > - **PR-10b-delivery-and-storage-fixes** fixes the `8d7ad7b`+`d3ab994` `EphemeralMessage` $\to$ `UserMessage` persistence regression, wires `DetectRewind`, and resolves open storage/seeder issues (`#10`–`#13`, `#16`) **before** resuming `PR-10-eval-v2` at `WO4` (`wo4-dry-run`) and `WO5` (`wo5-pilot`).
@@ -98,10 +98,10 @@ PR-10b     Delivery Persistence (UserMessage, Rewind) & Issues #10-#16 ✅ COMPL
         PR-12-v2      Two-Stage Warm-Cache Distillation                ✅ COMPLETE (PR #20)
           │
           ▼
-        PR-13-v2      Warm Batch Consolidation & Scope Hierarchy       🔄 READY NEXT
+        PR-13-v2      Warm Batch Consolidation & Scope Hierarchy       ✅ COMPLETE (PR #21)
           │
           ▼
-        PR-14-v2      End-to-End Distillation & Consolidation Eval     ☐
+        PR-14-v2      End-to-End Distillation & Consolidation Eval     🔄 READY NEXT
           │
           ▼
         PR-15-v2      Procedural Validation, Skill Graduation & Learn  ☐
