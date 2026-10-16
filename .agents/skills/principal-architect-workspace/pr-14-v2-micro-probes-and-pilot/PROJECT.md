@@ -1,7 +1,7 @@
 # Project: `pr-14-v2-micro-probes-and-pilot` — Layer 2 Read-Side & Write-Side Micro-Probes and `esp32` 1-Task Pilot
 
 > **Programme:** [PROGRAM.md](../programme-repo-memory/PROGRAM.md) · [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
-> **Status:** Active (`WO1/4` ready to start)
+> **Status:** Active (`WO2/4` ready to start; `WO1` complete)
 > **Base Branch:** `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification` (`696a1b8`)
 > **Specifications:** [SPEC.md](../../../../SPEC.md) (§6–§8, §10) · [v2.2 Design Rev 4](../../../../docs/design-v2-distillation-retrieval.md) (§5–§10) · [Evaluation v2 Proposal](../../../../docs/evaluations/memory-value-evaluation-proposal.md)
 
@@ -35,10 +35,10 @@ Validate the complete `v2.2` Read-Side (`PR-10b`, `PR-11`) and Write-Side (`PR-1
 
 | # | Work Order | Branch | Scope & Deliverables |
 |---|---|---|---|
-| **WO1** | `wo1-esp32-doc-seeding-and-linux-harness` | `pr-14-v2-micro-probes-and-pilot/wo1-esp32-doc-seeding-and-linux-harness` | Fix Linux compatibility & `state/marks/` archival in `evaluation/eval-v2/scripts/eval_run.sh`, stage `esp32-app-foundation` (`45d4b5d`) templates, upgrade `build_index.sh` to combine `seed` (`source: pa`) + `seed-docs` (`source: doc-seed`) + `ops gc`, rebuild `evaluation/eval-v2/seed/index.db`, and update `evaluation/eval-v2/SEED_REPORT.md`. |
-| **WO2** | `wo2-read-side-offline-retrieval-probe` | `pr-14-v2-micro-probes-and-pilot/wo2-read-side-offline-retrieval-probe` | Implement and run the Read-Side Multi-Invocation Micro-Probe across `task-1-temperature-module.txt` and `task-2-bitcoin-price-module.txt` (`task-start`, `first-entry`, `first-touch`, `CHECKPOINT` re-injection, `DetectRewind`) against the combined `pa` + `doc-seed` `esp32` index; publish `docs/evaluations/v2-2-read-side-micro-probe.md`. |
-| **WO3** | `wo3-write-side-distillation-consolidation-probe` | `pr-14-v2-micro-probes-and-pilot/wo3-write-side-distillation-consolidation-probe` | Implement and run the Write-Side Distillation & Consolidation Micro-Probe (`X2`/`X4`/`X10`) over real `evaluation/repo-memory-transcripts/` sessions, measuring Stage 1 harvest, `P13` echo suppression, `VD18` corroboration gating, and dossier projection quality; publish `docs/evaluations/v2-2-write-side-micro-probe.md`. |
-| **WO4** | `wo4-live-esp32-pilot-and-synthesis` | `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis` | Execute the protected 1-Task Pilot (`Task 1: DS18B20 Temperature Module`, Condition A vs. Condition C) via `eval_run.sh`, verify zero contamination, grade against the `esp32` module rubric, and publish the consolidated verdict in `docs/evaluations/v2-2-micro-probe-verdict.md`. |
+| **WO1** | ✅ [wo1-esp32-doc-seeding-and-linux-harness](wo1-esp32-doc-seeding-and-linux-harness/WORKORDER.md) | `pr-14-v2-micro-probes-and-pilot/wo1-esp32-doc-seeding-and-linux-harness` | Fix Linux compatibility & `state/marks/` archival in `evaluation/eval-v2/scripts/eval_run.sh`, stage `esp32-app-foundation` (`45d4b5d`) templates, upgrade `build_index.sh` to combine `seed` (`source: seed`) + `seed-docs` (`source: doc-seed`) + `ops gc`, rebuild `evaluation/eval-v2/seed/index.db`, and update `evaluation/eval-v2/SEED_REPORT.md`. |
+| **WO2** | [wo2-read-side-offline-retrieval-probe](wo2-read-side-offline-retrieval-probe/WORKORDER.md) | `pr-14-v2-micro-probes-and-pilot/wo2-read-side-offline-retrieval-probe` | Implement and run the Read-Side Multi-Invocation Micro-Probe across `task-1-temperature-module.txt` and `task-2-bitcoin-price-module.txt` (`task-start`, `first-entry`, `first-touch`, `CHECKPOINT` re-injection, `DetectRewind`) against the combined `pa` + `doc-seed` `esp32` index; publish `docs/evaluations/v2-2-read-side-micro-probe.md`. |
+| **WO3** | [wo3-write-side-distillation-consolidation-probe](wo3-write-side-distillation-consolidation-probe/WORKORDER.md) | `pr-14-v2-micro-probes-and-pilot/wo3-write-side-distillation-consolidation-probe` | Implement and run the Write-Side Distillation & Consolidation Micro-Probe (`X2`/`X4`/`X10`) over real `evaluation/repo-memory-transcripts/` sessions, measuring Stage 1 harvest, `P13` echo suppression, `VD18` corroboration gating, and dossier projection quality; publish `docs/evaluations/v2-2-write-side-micro-probe.md`. |
+| **WO4** | [wo4-live-esp32-pilot-and-synthesis](wo4-live-esp32-pilot-and-synthesis/WORKORDER.md) | `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis` | Execute the protected 1-Task Pilot (`Task 1: DS18B20 Temperature Module`, Condition A vs. Condition C) via `eval_run.sh`, verify zero contamination, grade against the `esp32` module rubric, and publish the consolidated verdict in `docs/evaluations/v2-2-micro-probe-verdict.md`. |
 
 ---
 
@@ -49,3 +49,4 @@ Validate the complete `v2.2` Read-Side (`PR-10b`, `PR-11`) and Write-Side (`PR-1
 
 ## 4. Session Log
 - `2026-10-16`: Initialized `pr-14-v2-micro-probes-and-pilot` on base `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification` (`696a1b8`).
+- `2026-10-16` (`WO1` complete, `f623e65`): Added `--repo` flag to `seed`, `seed-docs`, and `ops gc`; made `eval_run.sh` and `verify_template.sh` Linux-portable (`clone_tree_portable`, `--dry-run`, `v2.2` `state/marks/`, `evidence/notes/`, and `state/freshness.json` archival); created `prepare_templates.sh` and staged `esp32-app-foundation` (`template/` and `tpl-{a,b,c,d}`); enhanced `doc_seed.go` for C++/PlatformIO interfaces, 2-file submodule scopes, and recipes; upgraded `build_index.sh` and built the combined `v2.2` corpus (`1,283` entries: `256` `seed` + `1,027` `doc-seed`, `3,190` anchors, `54` dossiers).
