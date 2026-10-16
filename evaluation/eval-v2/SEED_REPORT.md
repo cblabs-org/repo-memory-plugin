@@ -30,7 +30,7 @@ The build process is automated via the repeatable script:
 | **Op Batches Written** | 80 | 79 PA workorder batch files + 1 `doc-seed` batch file in `evaluation/eval-v2/seed/ops/` |
 | **Projected Dossier Scopes** | 54 | Rendered `.md` dossiers in `evaluation/eval-v2/seed/dossiers/` + `ATLAS.md` |
 | **Total Indexed Entries** | **1,283** | Rows in SQLite `entries` and `entries_fts` tables (`256` `seed` + `1,027` `doc-seed`) |
-| **Total Entry Anchors** | **3,190** | Rows in SQLite `entry_anchors` table mapping entries to verified repository paths |
+| **Total Entry Anchors** | **3,203** | Rows in SQLite `entry_anchors` table mapping entries to verified repository paths |
 
 ### Breakdown by Source
 
@@ -103,7 +103,7 @@ The SQLite index file `evaluation/eval-v2/seed/index.db` was validated against s
 The database contains all `v2.2` tables:
 - `entries` (1,283 rows)
 - `entries_fts` (1,283 rows indexed via FTS5)
-- `entry_anchors` (3,190 rows mapping entries to repository file paths)
+- `entry_anchors` (3,203 rows mapping entries to repository file paths)
 - `error_patterns`, `aliases`, `entry_history`
 
 ### FTS5 Search & Subsystem Query Verification

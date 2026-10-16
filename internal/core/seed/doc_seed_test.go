@@ -458,14 +458,14 @@ func TestSeedDocs_ESP32SkillAndDeveloperDocs(t *testing.T) {
 	writeTestFile(t, repoRoot, "include/interfaces/IMCPContributor.hpp", "#pragma once\n")
 	writeTestFile(t, repoRoot, "include/interfaces/IDisplayBoard.hpp", "#pragma once\n")
 	writeTestFile(t, repoRoot, "include/types/FetchContext.hpp", "#pragma once\n")
-	writeTestFile(t, repoRoot, "modules/Application/Application.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/Application/Application.hpp", "#pragma once\nclass Application { public: void registerModule(void*); void begin(); };\n")
 	writeTestFile(t, repoRoot, "modules/Application/Application.cpp", "// Application\n")
-	writeTestFile(t, repoRoot, "modules/DataManager/DataManager.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/DataManager/DataManager.hpp", "#pragma once\n#include \"interfaces/IDataSource.hpp\"\nclass DataManager { void add(IDataSource* s, FetchContext* c); };\n")
 	writeTestFile(t, repoRoot, "modules/DataManager/DataManager.cpp", "// DataManager\n")
-	writeTestFile(t, repoRoot, "modules/U8G2Display/U8G2Display.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/U8G2Display/U8G2Display.hpp", "#pragma once\n#include \"interfaces/IDisplayBoard.hpp\"\nclass U8G2Display { void addBoard(IDisplayBoard* b); };\n")
 	writeTestFile(t, repoRoot, "modules/U8G2Display/U8G2Display.cpp", "// U8G2Display\n")
-	writeTestFile(t, repoRoot, "modules/WebServer/WebServer.hpp", "#pragma once\n")
-	writeTestFile(t, repoRoot, "modules/MCPServer/MCPServer.hpp", "#pragma once\n")
+	writeTestFile(t, repoRoot, "modules/WebServer/WebServer.hpp", "#pragma once\n#include \"interfaces/IWebContributor.hpp\"\nclass WebServer { void add(IWebContributor* w); };\n")
+	writeTestFile(t, repoRoot, "modules/MCPServer/MCPServer.hpp", "#pragma once\n#include \"interfaces/IMCPContributor.hpp\"\nclass MCPServer { void add(IMCPContributor* m); };\n")
 
 	frameworkExpertSkill := `---
 name: framework-expert

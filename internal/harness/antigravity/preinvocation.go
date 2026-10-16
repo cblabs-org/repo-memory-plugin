@@ -20,40 +20,59 @@ import (
 
 var editIntentPattern = regexp.MustCompile(`(?i)\b(?:edit|modify|change|update|write\s+to|replace)\s+(?:the\s+file\s+|file\s+)?[` + "`" + `"'` + `]?([a-zA-Z0-9_\-./\\]+)`)
 
-var promptStopWords = map[string]bool{
-	"the": true, "and": true, "for": true, "are": true, "but": true,
-	"not": true, "you": true, "all": true, "can": true, "her": true,
-	"was": true, "one": true, "our": true, "out": true, "has": true,
-	"his": true, "how": true, "its": true, "may": true, "new": true,
-	"now": true, "old": true, "see": true, "way": true, "who": true,
-	"did": true, "get": true, "let": true, "say": true, "she": true,
-	"too": true, "use": true, "fix": true, "any": true, "had": true,
-	"that": true, "this": true, "with": true, "have": true, "from": true,
-	"they": true, "been": true, "will": true, "what": true, "when": true,
-	"your": true, "each": true, "make": true, "like": true, "just": true,
-	"into": true, "them": true, "than": true, "then": true, "some": true,
-	"also": true, "made": true, "after": true, "should": true, "would": true,
-	"could": true, "about": true, "which": true, "their": true, "there": true,
-	"write": true, "build": true, "using": true, "once": true, "per": true,
-	"between": true, "need": true, "added": true, "show": true, "top": true,
-	"level": true, "hour": true, "sec": true, "mins": true, "http": true,
-	"https": true, "com": true, "org": true, "net": true, "www": true,
-	"public": true, "simple": true, "ids": true, "pro": true,
-	"waterproof": true, "compatible": true, "device": true,
+var (
+	xmlTagPattern                 = regexp.MustCompile(`</?[A-Za-z_][A-Za-z0-9_-]*>`)
+	embeddedURLPattern            = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	compoundPrefixModifierPattern = regexp.MustCompile(`(?i)\b(?:on-device|in-memory|built-in|real-time|end-to-end|top-level)\b`)
+	compoundSuffixModifierPattern = regexp.MustCompile(`(?i)-(?:compatible|based|like|ready|style|aware|safe)\b`)
+	urlBoilerplateSegments        = map[string]bool{
+		"api": true, "public": true, "simple": true, "latest": true, "pro": true,
+		"v1": true, "v2": true, "v3": true, "v4": true, "v5": true,
+		"v6": true, "v7": true, "v8": true, "v9": true,
+	}
+)
+
+// sanitizePromptURLs strips URL query strings, fragments, schemes, and generic
+// API endpoint path/subdomain segments from embedded http/https URLs while
+// preserving domain/resource nouns (e.g., "coingecko", "price").
+func sanitizePromptURLs(s string) string {
+	return embeddedURLPattern.ReplaceAllStringFunc(s, func(rawURL string) string {
+		u := strings.TrimPrefix(strings.TrimPrefix(rawURL, "https://"), "http://")
+		if idx := strings.IndexAny(u, "?#"); idx >= 0 {
+			u = u[:idx]
+		}
+		parts := strings.FieldsFunc(u, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+		})
+		var kept []string
+		for _, p := range parts {
+			lower := strings.ToLower(p)
+			if urlBoilerplateSegments[lower] || delivery.IsStopWord(lower) {
+				continue
+			}
+			kept = append(kept, p)
+		}
+		return strings.Join(kept, " ")
+	})
 }
 
-// ExtractPromptTerms splits a user prompt on non-word characters (stripping
-// attached punctuation and URL boilerplate), filters common English stopwords,
-// and returns deduplicated terms of length >= 3.
+// ExtractPromptTerms strips XML/HTML wrapper tags, sanitizes embedded URLs and
+// generic hyphenated compound modifiers, splits on non-word characters, filters
+// shared stopwords, and returns deduplicated terms of length >= 3.
 func ExtractPromptTerms(prompt string) []string {
+	cleaned := xmlTagPattern.ReplaceAllString(prompt, " ")
+	cleaned = sanitizePromptURLs(cleaned)
+	cleaned = compoundPrefixModifierPattern.ReplaceAllString(cleaned, " ")
+	cleaned = compoundSuffixModifierPattern.ReplaceAllString(cleaned, " ")
+
 	seen := make(map[string]bool)
 	var terms []string
-	parts := strings.FieldsFunc(prompt, func(r rune) bool {
+	parts := strings.FieldsFunc(cleaned, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
 	})
 	for _, part := range parts {
 		lower := strings.ToLower(part)
-		if len(lower) < 3 || promptStopWords[lower] || seen[lower] {
+		if len(lower) < 3 || delivery.IsStopWord(lower) || seen[lower] {
 			continue
 		}
 		seen[lower] = true
