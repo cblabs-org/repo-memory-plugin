@@ -22,6 +22,70 @@ type BudgetsConfig struct {
 	Extra             map[string]any `json:"extra,omitempty" yaml:",inline"`
 }
 
+// JobSpendConfig defines rate limits and per-run item caps for a single LLM job kind (Addendum A §6.2).
+type JobSpendConfig struct {
+	MinInterval string `json:"min_interval,omitempty" yaml:"min_interval,omitempty"`
+	MaxItems    int    `json:"max_items,omitempty" yaml:"max_items,omitempty"`
+}
+
+// SpendConfig defines rate-limiting and quota guards for background LLM jobs (Addendum A §6.2).
+type SpendConfig struct {
+	QuotaFloor float64                   `json:"quota_floor,omitempty" yaml:"quota_floor,omitempty"`
+	Jobs       map[string]JobSpendConfig `json:"jobs,omitempty" yaml:"jobs,omitempty"`
+}
+
+// DefaultSpendConfig returns the Addendum A §6.2 default spend guard configuration.
+func DefaultSpendConfig() SpendConfig {
+	return SpendConfig{
+		QuotaFloor: 0.25,
+		Jobs: map[string]JobSpendConfig{
+			"fallback":      {MinInterval: "1h", MaxItems: 10},
+			"consolidation": {MinInterval: "24h", MaxItems: 40},
+			"backfill":      {MinInterval: "6h", MaxItems: 25},
+			"gardening":     {MinInterval: "168h", MaxItems: 20},
+		},
+	}
+}
+
+// MergeSpendConfig overlays non-zero fields from override onto base, returning a new SpendConfig.
+func MergeSpendConfig(base, override SpendConfig) SpendConfig {
+	out := SpendConfig{
+		QuotaFloor: base.QuotaFloor,
+		Jobs:       make(map[string]JobSpendConfig, len(base.Jobs)),
+	}
+	for k, v := range base.Jobs {
+		out.Jobs[k] = v
+	}
+	if override.QuotaFloor > 0 {
+		out.QuotaFloor = override.QuotaFloor
+	}
+	for k, ov := range override.Jobs {
+		cur := out.Jobs[k]
+		if ov.MinInterval != "" {
+			cur.MinInterval = ov.MinInterval
+		}
+		if ov.MaxItems > 0 {
+			cur.MaxItems = ov.MaxItems
+		}
+		out.Jobs[k] = cur
+	}
+	return out
+}
+
+// GapsConfig defines coverage gap detection and push delivery thresholds (SPEC.md §5.2 & §9.2).
+type GapsConfig struct {
+	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	Push      bool    `json:"push,omitempty" yaml:"push,omitempty"`
+}
+
+// DefaultGapsConfig returns the default repository coverage gap configuration.
+func DefaultGapsConfig() GapsConfig {
+	return GapsConfig{
+		Threshold: 0.5,
+		Push:      false,
+	}
+}
+
 // MachineConfig represents the machine-level configuration (<data-dir>/config.yaml).
 type MachineConfig struct {
 	Enabled              bool          `json:"enabled" yaml:"enabled"`
@@ -29,6 +93,7 @@ type MachineConfig struct {
 	ReportsSurface       string        `json:"reports_surface,omitempty" yaml:"reports_surface,omitempty"`
 	TickTrigger          string        `json:"tick_trigger,omitempty" yaml:"tick_trigger,omitempty"`
 	Budgets              BudgetsConfig `json:"budgets,omitempty" yaml:"budgets,omitempty"`
+	Spend                SpendConfig   `json:"spend,omitempty" yaml:"spend,omitempty"`
 }
 
 // DefaultMachineConfig returns a MachineConfig with recommended defaults.
@@ -39,6 +104,7 @@ func DefaultMachineConfig() MachineConfig {
 		ReportsSurface:       "agentapi",
 		TickTrigger:          "sidecar",
 		Budgets:              BudgetsConfig{},
+		Spend:                DefaultSpendConfig(),
 	}
 }
 
@@ -50,6 +116,7 @@ func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
 		ReportsSurface       string        `yaml:"reports_surface"`
 		TickTrigger          string        `yaml:"tick_trigger"`
 		Budgets              BudgetsConfig `yaml:"budgets"`
+		Spend                SpendConfig   `yaml:"spend"`
 
 		HousekeepingExecutorDot string `yaml:"housekeeping.executor"`
 		ReportsSurfaceDot       string `yaml:"reports.surface"`
@@ -100,6 +167,10 @@ func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	c.Budgets = raw.Budgets
+	if c.Spend.QuotaFloor == 0 && len(c.Spend.Jobs) == 0 {
+		c.Spend = DefaultSpendConfig()
+	}
+	c.Spend = MergeSpendConfig(c.Spend, raw.Spend)
 
 	return nil
 }
@@ -112,6 +183,7 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 		ReportsSurface       string        `json:"reports_surface"`
 		TickTrigger          string        `json:"tick_trigger"`
 		Budgets              BudgetsConfig `json:"budgets"`
+		Spend                SpendConfig   `json:"spend"`
 
 		Housekeeping struct {
 			Executor string `json:"executor"`
@@ -152,6 +224,10 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 	}
 
 	c.Budgets = raw.Budgets
+	if c.Spend.QuotaFloor == 0 && len(c.Spend.Jobs) == 0 {
+		c.Spend = DefaultSpendConfig()
+	}
+	c.Spend = MergeSpendConfig(c.Spend, raw.Spend)
 
 	return nil
 }
@@ -171,6 +247,8 @@ type RepoConfig struct {
 	DocSeeds            []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`
 	Subsystems          map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
 	Budgets             BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`
+	Spend               SpendConfig                `json:"spend,omitempty" yaml:"spend,omitempty"`
+	Gaps                GapsConfig                 `json:"gaps,omitempty" yaml:"gaps,omitempty"`
 	Extra               map[string]any             `json:"extra,omitempty" yaml:",inline"`
 }
 
@@ -201,6 +279,8 @@ func (c RepoConfig) IsEnabled() bool {
 func DefaultRepoConfig() RepoConfig {
 	return RepoConfig{
 		Subsystems: make(map[string]SubsystemConfig),
+		Spend:      DefaultSpendConfig(),
+		Gaps:       DefaultGapsConfig(),
 	}
 }
 
@@ -262,12 +342,19 @@ func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
 		return DefaultRepoConfig(), nil
 	}
 
-	cfg := DefaultRepoConfig()
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var raw RepoConfig
+	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return RepoConfig{}, fmt.Errorf("parsing repo config %s: %w", configFile, err)
 	}
+	if raw.Subsystems == nil {
+		raw.Subsystems = make(map[string]SubsystemConfig)
+	}
+	raw.Spend = MergeSpendConfig(DefaultSpendConfig(), raw.Spend)
+	if raw.Gaps.Threshold <= 0 {
+		raw.Gaps.Threshold = DefaultGapsConfig().Threshold
+	}
 
-	return cfg, nil
+	return raw, nil
 }
 
 // SaveMachineConfig saves the MachineConfig to <dataDir>/config.yaml.

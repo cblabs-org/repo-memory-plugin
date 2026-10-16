@@ -19,7 +19,6 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/pipeline/prepare"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/scrub"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/telemetry"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
@@ -46,50 +45,7 @@ func (p *PipelineExecutor) fallbackIdleThreshold() time.Duration {
 }
 
 func (p *PipelineExecutor) checkQuotaHeadroom(ctx context.Context) bool {
-	checker := p.QuotaChecker
-	if checker == nil {
-		checker = telemetry.CheckQuota
-	}
-
-	qs, err := checker(ctx)
-	if err != nil {
-		if errors.Is(err, harness.ErrQuotaExhausted) {
-			return false
-		}
-		// If agy is not installed or /usage is unavailable, treat quota as unknown/available.
-		return true
-	}
-	if qs == nil {
-		return true
-	}
-
-	var allBuckets []telemetry.QuotaBucket
-	allBuckets = append(allBuckets, qs.Buckets...)
-	for _, g := range qs.Groups {
-		allBuckets = append(allBuckets, g.Buckets...)
-	}
-	if len(allBuckets) == 0 {
-		return true
-	}
-
-	var flashBuckets []telemetry.QuotaBucket
-	for _, b := range allBuckets {
-		if strings.Contains(strings.ToLower(b.ID), "flash") || strings.Contains(strings.ToLower(b.Name), "flash") {
-			flashBuckets = append(flashBuckets, b)
-		}
-	}
-
-	targetBuckets := flashBuckets
-	if len(targetBuckets) == 0 {
-		targetBuckets = allBuckets
-	}
-
-	for _, b := range targetBuckets {
-		if b.RemainingFraction < MinFallbackQuotaFraction {
-			return false
-		}
-	}
-	return true
+	return p.checkQuotaWithFloor(ctx, p.effectiveSpendConfig().QuotaFloor)
 }
 
 // RunSidecarFallback executes Stage 1c Sidecar Fallback (SPEC.md §6.3.3 / design-v2 §5.4).
@@ -142,12 +98,26 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 	}
 
 	notesWritten := 0
+	distilledCount := 0
+	totalEstimatedTokens := 0
+	totalActualTokens := 0
 	idleThreshold := p.fallbackIdleThreshold()
 	now := p.now()
 
+	allowed, _, maxItems := p.CheckSpendGuard("fallback", false)
+	if !allowed {
+		return 0, nil
+	}
+
 	for _, ep := range episodes {
 		if err := ctx.Err(); err != nil {
+			if distilledCount > 0 {
+				p.RecordSpendRun("fallback", totalEstimatedTokens, totalActualTokens)
+			}
 			return notesWritten, err
+		}
+		if maxItems > 0 && distilledCount >= maxItems {
+			break
 		}
 		if ep == nil {
 			continue
@@ -231,6 +201,9 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 			continue
 		}
 
+		guardSt, _ := LoadSpendGuardState(p.dataDir, p.repoID)
+		estTokens := EstimateTokensCalibrated(scrubbedContainer.Text, guardSt)
+
 		res, err := p.hk.Run(ctx, harness.StageDistill, scrubbedContainer.Text)
 		cost := jobs.FromUsage(res.Usage)
 		_ = p.checkBudget(&cost)
@@ -240,6 +213,9 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 			}
 			continue
 		}
+		distilledCount++
+		totalEstimatedTokens += estTokens
+		totalActualTokens += res.Usage.InputTokens + res.Usage.OutputTokens
 
 		items, valErr := prepare.ValidateDistillerOutput(res.Payload, prepared)
 		if valErr != nil {
@@ -350,6 +326,10 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 			mark.NotesToday++
 		}
 		_ = state.SaveMark(p.dataDir, p.repoID, mark)
+	}
+
+	if distilledCount > 0 {
+		p.RecordSpendRun("fallback", totalEstimatedTokens, totalActualTokens)
 	}
 
 	return notesWritten, nil
