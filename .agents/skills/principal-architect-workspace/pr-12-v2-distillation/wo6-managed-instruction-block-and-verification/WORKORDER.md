@@ -108,8 +108,24 @@ Create `internal/core/config/managed_block.go` implementing Addendum A §8 (`A8:
 - Verify `git status -sb` is completely clean (no untracked `GEMINI.md` or test artifacts left in the `repo-memory-plugin` working tree).
 
 ## Verification Checklist
-- [ ] `internal/core/config/managed_block.go` and `managed_block_test.go` implemented and passing.
-- [ ] `cmd_enroll.go`, `cmd_unenroll.go`, and `cmd_doctor.go` wired and passing all tests in `cmd/repo-memory/...`.
-- [ ] `~/.local/bin/repo-memory` rebuilt from the `WO6` branch.
-- [ ] `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./cmd/... ./internal/... ./packaging/...` pass with zero errors.
-- [ ] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+- [x] `internal/core/config/managed_block.go` and `managed_block_test.go` implemented and passing.
+- [x] `cmd_enroll.go`, `cmd_unenroll.go`, and `cmd_doctor.go` wired and passing all tests in `cmd/repo-memory/...`.
+- [x] `~/.local/bin/repo-memory` rebuilt from the `WO6` branch.
+- [x] `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, and `go test -race ./cmd/... ./internal/... ./packaging/...` pass with zero errors.
+- [x] Zero Google-internal references (`cl/`, `b/`, `go/`, `jetski`, `@google.com`, `/usr/local/google`) in any file or commit message.
+
+## Completion Report
+
+- **Summary of Changes:**
+  - Created `internal/core/config/managed_block.go` implementing Addendum A §8 (`A8: Managed instruction blocks (v2)`): `CanonicalManagedBlockV2`, `ValidateInstructionBlock`, `EnsureInstructionBlock`, and `RemoveInstructionBlock`.
+  - Added `CreatedInstructionFile` (`json:"created_instruction_file,omitempty"`) to `RegistryEntry` and `SetCreatedInstructionFile` in `internal/core/config/registry.go`, preserving `CreatedInstructionFile` across repeated `RunEnroll` calls.
+  - Wired `EnsureInstructionBlock` into `RunEnroll` (`cmd/repo-memory/cmd_enroll.go`), `RemoveInstructionBlock` into `RunUnenroll` (`cmd/repo-memory/cmd_unenroll.go`), and marker validation / stale `v1` detection into `RunDoctor` (`cmd/repo-memory/cmd_doctor.go`).
+  - Added unit tests in `internal/core/config/managed_block_test.go` and updated `cmd/repo-memory/enrolment_test.go`.
+  - Rebuilt `~/.local/bin/repo-memory` and verified the full stack.
+- **Verification Results:**
+  - `go build -o ~/.local/bin/repo-memory ./cmd/repo-memory`: Passed.
+  - `go build ./...`: Passed.
+  - `go vet ./cmd/... ./internal/... ./packaging/...`: Passed.
+  - `GOOS=windows go build ./...`: Passed.
+  - `go test -race ./cmd/... ./internal/... ./packaging/...`: Passed (all 30 packages green).
+  - External GitHub hygiene check: 0 internal references found.

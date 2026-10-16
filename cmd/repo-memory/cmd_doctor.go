@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/spf13/cobra"
 )
@@ -80,6 +82,17 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 				fmt.Fprintf(cmd.OutOrStdout(), "⚠ Workspace plugin not found at %s.\n", pluginPath)
 				fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
 			}
+		}
+	}
+
+	geminiPath := filepath.Join(repoRoot, config.InstructionFilename)
+	if data, err := os.ReadFile(geminiPath); err == nil {
+		content := string(data)
+		if err := config.ValidateInstructionBlock(content); err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "⚠ GEMINI.md managed block error: %v\n", err)
+			fmt.Fprintln(cmd.OutOrStdout(), "  Fix the markers manually in GEMINI.md, then run: repo-memory enroll .")
+		} else if strings.Contains(content, "<!-- repo-memory:begin v1") {
+			fmt.Fprintln(cmd.OutOrStdout(), "⚠ GEMINI.md contains a v1 managed block; run 'repo-memory enroll .' to upgrade to v2.")
 		}
 	}
 
