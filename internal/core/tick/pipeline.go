@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/consolidate"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/evidence"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
-	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/telemetry"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
@@ -178,13 +179,17 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
-	if p.idx != nil && p.repoRoot != "" {
-		opsDir := filepath.Join(p.repoRoot, ".memory", "ops")
-		if fi, err := os.Stat(opsDir); err == nil && fi.IsDir() {
-			opsReader := ops.NewReader(opsDir)
-			if err := p.idx.RebuildFromOpLog(ctx, opsReader); err != nil {
-				return fmt.Errorf("rebuilding index from op log: %w", err)
-			}
+	if _, err := p.RunConsolidation(ctx, false); err != nil {
+		return err
+	}
+
+	if p.idx != nil {
+		var currentBranch string
+		if p.repoRoot != "" {
+			currentBranch, _ = gitops.GetCurrentBranchWithContext(ctx, p.repoRoot)
+		}
+		if err := consolidate.RebuildMultiTierIndex(ctx, p.idx, p.dataDir, p.repoID, p.repoRoot, currentBranch); err != nil {
+			return fmt.Errorf("rebuilding multi-tier index: %w", err)
 		}
 	}
 
