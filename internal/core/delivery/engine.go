@@ -108,6 +108,9 @@ func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
 		if ent.Retired {
 			continue
 		}
+		if ent.Type == dossiers.EntryTypeOpenIssue && strings.TrimSpace(ent.ClosesWhen) == "" {
+			continue
+		}
 		if len(ent.Anchors) > 0 {
 			verified, _ := VerifyAnchors(ent.Anchors, e.workspaceRoot)
 			if len(verified) == 0 {

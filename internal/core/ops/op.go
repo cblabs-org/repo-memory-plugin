@@ -28,6 +28,8 @@ const (
 	SourcePA            = "pa"
 	SourceHuman         = "human"
 	SourceConsolidation = "consolidation"
+	SourceTick          = "tick"
+	SourceGardening     = "gardening"
 )
 
 // Op represents a single knowledge operation targeting an entry by ID or dossier.

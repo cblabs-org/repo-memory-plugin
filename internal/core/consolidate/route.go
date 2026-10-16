@@ -555,6 +555,34 @@ type BrokenAnchorReport struct {
 	AllMissing     bool               `json:"all_missing"`
 }
 
+// CheckAnchor reports whether a file (and optional #symbol or :symbol suffix) anchor exists in repoRoot.
+func CheckAnchor(repoRoot, rawAnchor string) bool {
+	trimmed := strings.TrimSpace(rawAnchor)
+	if repoRoot == "" || trimmed == "" {
+		return false
+	}
+	normPath := StripAnchorSymbol(trimmed)
+	if normPath == "" {
+		return false
+	}
+	checks := inbox.CheckAnchors(repoRoot, []string{trimmed})
+	exists := len(checks) > 0 && checks[0].Exists
+	if exists {
+		if sym := extractAnchorSymbol(trimmed); sym != "" {
+			fullPath := filepath.Join(repoRoot, filepath.FromSlash(normPath))
+			info, err := os.Stat(fullPath)
+			if err != nil || !info.Mode().IsRegular() {
+				return false
+			}
+			data, err := os.ReadFile(fullPath)
+			if err != nil || !strings.Contains(string(data), sym) {
+				return false
+			}
+		}
+	}
+	return exists
+}
+
 // CheckDossierAnchors inspects all active entries in d against repoRoot and returns a report
 // for each entry that has at least one missing file or symbol anchor (SPEC §6.5 step 3, design-v2 §6 step 4).
 func CheckDossierAnchors(repoRoot string, d *dossiers.Dossier) []BrokenAnchorReport {

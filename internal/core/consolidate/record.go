@@ -326,7 +326,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 
 func isAllowedConsolidationOpSource(src string) bool {
 	switch strings.TrimSpace(src) {
-	case ops.SourceConsolidation, SourcePASeed, SourceHandEdit, ops.SourceDocSeed:
+	case ops.SourceConsolidation, SourcePASeed, SourceHandEdit, ops.SourceDocSeed, ops.SourceTick, ops.SourceGardening:
 		return true
 	default:
 		return false
