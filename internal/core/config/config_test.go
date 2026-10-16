@@ -511,3 +511,53 @@ func TestMachineConfig_YAMLMarshal(t *testing.T) {
 	}
 }
 
+func TestRepoConfig_TurnNotes(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{"", "on"},
+		{"on", "on"},
+		{"ON", "on"},
+		{"  on  ", "on"},
+		{"true", "on"},
+		{"unknown", "on"},
+		{"off", "off"},
+		{"OFF", "off"},
+		{"false", "off"},
+		{"FALSE", "off"},
+		{"disabled", "off"},
+		{"  disabled ", "off"},
+		{"fallback-only", "fallback-only"},
+		{"FALLBACK-ONLY", "fallback-only"},
+		{"fallback_only", "fallback-only"},
+	}
+
+	for _, tc := range tests {
+		cfg := RepoConfig{TurnNotes: tc.raw}
+		if got := cfg.TurnNotesMode(); got != tc.want {
+			t.Errorf("TurnNotesMode(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+
+	tmpDir := t.TempDir()
+	orig := RepoConfig{
+		TurnNotes:           "fallback-only",
+		TurnNotesRoleOptOut: []string{"principal-architect", "chief-architect"},
+	}
+	if err := SaveRepoConfig(tmpDir, orig); err != nil {
+		t.Fatalf("SaveRepoConfig failed: %v", err)
+	}
+	loaded, err := LoadRepoConfig(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig failed: %v", err)
+	}
+	if loaded.TurnNotesMode() != "fallback-only" {
+		t.Errorf("loaded TurnNotesMode() = %q, want 'fallback-only'", loaded.TurnNotesMode())
+	}
+	if len(loaded.TurnNotesRoleOptOut) != 2 || loaded.TurnNotesRoleOptOut[0] != "principal-architect" || loaded.TurnNotesRoleOptOut[1] != "chief-architect" {
+		t.Errorf("loaded TurnNotesRoleOptOut = %v, want [principal-architect chief-architect]", loaded.TurnNotesRoleOptOut)
+	}
+}
+
+
