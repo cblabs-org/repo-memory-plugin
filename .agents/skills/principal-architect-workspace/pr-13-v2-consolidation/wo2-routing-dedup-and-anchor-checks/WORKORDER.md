@@ -23,7 +23,7 @@ Create `internal/core/consolidate/route.go` and `internal/core/consolidate/route
   - Do NOT modify `filter.go` unless adding a tiny helper needed by `route.go`.
   - Do NOT create `llm.go`, `record.go`, `publish.go`, or `tick/` files — those belong to WO3–WO6.
   - Do NOT import `internal/harness/antigravity` or any adapter package from `internal/core/consolidate`.
-  - NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute `/usr/local/google/...` paths) in any code, comment, or commit message.
+  - NEVER include any internal references (internal monorepo paths, shortlinks, internal codenames, or local home paths) in any code, comment, or commit message.
   - All git commits must use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"`.
 
 ## Tooling Constraints

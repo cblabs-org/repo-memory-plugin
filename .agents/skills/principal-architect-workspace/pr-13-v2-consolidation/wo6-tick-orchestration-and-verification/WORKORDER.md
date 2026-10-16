@@ -30,7 +30,7 @@ Wire the complete 7-step Stage 2 Warm Batch Consolidation pipeline (`filter.go`,
   - Do NOT modify any files outside the allowed list above.
   - Do NOT change git branches or rebase.
   - `internal/core/tick` MUST NOT import `internal/harness/antigravity` (depend only on `internal/harness`).
-  - **External GitHub Hygiene:** NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or `/usr/local/google/...`) in code, comments, or commit messages.
+  - **External GitHub Hygiene:** NEVER include any internal references (internal monorepo paths, shortlinks, internal codenames, or local home paths) in code, comments, or commit messages.
   - Use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"` when committing.
 
 ## Tooling Constraints
@@ -193,19 +193,22 @@ Ensure all tests across the entire repository pass (`go test -race ./cmd/... ./i
 <!-- Written by the worker at task completion -->
 
 ### Status
-complete | partial | blocked
+complete
 
 ### Changes Made
-- `path/to/file` — what changed and why
+- `internal/core/tick/consolidate.go` — Implemented `DefaultConsolidationMinNotes`, `DefaultConsolidationMaxAge`, `ConsolidationOptions`, `ProposedScope`, `ConsolidationResult`, `FreshnessState` (`FreshnessStatePath`, `LoadFreshnessState`, `SaveFreshnessState`), `RunConsolidation`, and `RunConsolidationWithOptions` orchestrating the complete 7-step Stage 2 Warm Batch Consolidation pipeline (`PromoteMergedBranchOps`, cadence & quota/budget checks, `FilterEchoes`, `EnforceCorroborationGate`, `RouteItems`, `MergeExactDuplicates`, `CheckDossierAnchors`, `--dry-run` preview, `ConsolidateDossiers`, `ValidateAndPrepareOps`, `RecordUserTier`/`RecordBranchTier`/`RecordRepoTier`, `MarkConsolidated`, `PublishToMemoryWorktree`, `RebuildMultiTierIndex`, and `freshness.json`).
+- `internal/core/tick/pipeline.go` — Wired `p.RunConsolidation(ctx, false)` into `PipelineExecutor.Run(ctx)` after `checkDocFreshness(ctx)` and updated the end-of-tick index rebuild to `consolidate.RebuildMultiTierIndex`.
+- `cmd/repo-memory/cmd_consolidate.go` & `cmd/repo-memory/main.go` — Added `repo-memory consolidate [repo-dir] [--force] [--dry-run] [--json] [--deterministic]` and registered `consolidateCmd` on `rootCmd`.
+- `internal/core/tick/consolidate_test.go` — Added `TestRunConsolidation_CadenceAndForce`, `TestRunConsolidation_EndToEndPipeline`, and `TestRunConsolidation_QuotaGuardSkipsWhenExhausted`.
 
 ### Decisions Made
-- Decision description and rationale
+- When `LastConsolidationAt` is empty on a non-forced tick with `< 10` waiting notes, cadence checks the age of the oldest unconsolidated note (`now.Sub(notes[0].CreatedAt) >= 24h`) so freshly harvested single notes wait for either 10 notes or the 24h window before triggering consolidation.
 
 ### Dead Ends & Warnings
-- What was attempted, why it failed, and what to avoid
+(none)
 
 ### Out-of-Scope Findings
-- Finding description and suggested action
+(none)
 
 ### Blockers
 (none)

@@ -22,7 +22,7 @@ Create package `consolidate` (`internal/core/consolidate/filter.go` and `interna
 - **Forbidden:**
   - Do NOT create or modify routing, LLM consolidation, op-log writing, worktree publishing, or tick orchestration files (`route.go`, `llm.go`, `record.go`, `publish.go`, `tick/`) — those belong to WO2–WO6.
   - Do NOT import `internal/harness/antigravity` or any adapter package from `internal/core/consolidate` (importing `internal/harness` for `harness.Step` and `harness.StepKind` is allowed, matching `internal/core/episode`).
-  - NEVER include any internal references (`google3`, `cl/`, `b/`, `go/`, `jetski`, `@google.com`, or absolute `/usr/local/google/...` paths) in any code, comment, or commit message.
+  - NEVER include any internal references (internal monorepo paths, shortlinks, internal codenames, or local home paths) in any code, comment, or commit message.
   - All git commits must use `--author="matthewmcneill <97467074+matthewmcneill@users.noreply.github.com>"`.
 
 ## Tooling Constraints
