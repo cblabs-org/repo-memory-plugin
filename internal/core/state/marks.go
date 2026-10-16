@@ -25,6 +25,7 @@ type Mark struct {
 	ByteOffset          int64     `json:"byte_offset"`
 	StepTimestamp       string    `json:"step_timestamp,omitempty"`
 	LastNoteAt          time.Time `json:"last_note_at,omitempty"`
+	LastFallbackAt      time.Time `json:"last_fallback_at,omitempty"`
 	NoteTitles          []string  `json:"note_titles,omitempty"`
 	NoteCount           int       `json:"note_count"`
 	NotesToday          int       `json:"notes_today,omitempty"`

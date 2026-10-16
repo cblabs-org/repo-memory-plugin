@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/delivery"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
@@ -460,10 +461,15 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 		if req.StepIndex > 0 {
 			stepsCovered = [2]int{req.StepIndex, req.StepIndex}
 		}
+		var exposures []delivery.ExposureRecord
+		if s.ledger != nil {
+			exposures = s.ledger.GetExposureList()
+		}
 		note := &inbox.Note{
 			Source:         inbox.SourceMCPNote,
 			ConversationID: strings.TrimSpace(req.ConversationID),
 			StepsCovered:   stepsCovered,
+			ExposureList:   exposures,
 			Items: []inbox.NoteItem{
 				{
 					Type:         entryType,

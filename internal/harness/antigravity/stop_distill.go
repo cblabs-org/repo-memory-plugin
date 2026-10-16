@@ -162,6 +162,9 @@ func harvestTurnNote(
 	if err != nil || mark == nil {
 		mark = &state.Mark{ConversationID: convID, NoteTitles: []string{}}
 	}
+	if !mark.PendingContinuation && mark.PendingRequestStep == 0 {
+		return
+	}
 	startStep := mark.StepIndex
 	pendingStep := mark.PendingRequestStep
 
