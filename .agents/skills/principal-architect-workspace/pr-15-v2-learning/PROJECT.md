@@ -3,7 +3,7 @@
 > **Programme:** [repo-memory](../programme-repo-memory/PROGRAM.md) ([PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md))
 > **Project:** `pr-15-v2-learning`
 > **Base branch:** `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis` (`1c6a54b`)
-> **Status:** 🔄 Active — Approved for execution (`WO1`–`WO5`)
+> **Status:** ✅ Complete (2026-10-16, GitHub PR #23 APPROVED)
 > **Specification:** [SPEC.md](../../../../SPEC.md) v1.0 (§5.3, §6.6, §7.9, §9, §11.4) + [v2.2 Design (Rev 4)](../../../../docs/design-v2-distillation-retrieval.md) (§5.2, §6, §7.3, §8) + [Addendum A (Rev 3)](../../../../docs/addendum-a-provenance-and-hardening.md) (§6 A5, §7 A6, §10 A7)
 
 ---
@@ -84,3 +84,8 @@ Complete the `v2.2` learning, procedural graduation, and honesty/cost-guard loop
 - Implemented `CheckGraduatedSkillsLint` (`internal/core/skills/graduate.go`) and wired it into `RunDoctor` (`cmd/repo-memory/cmd_doctor.go`).
 - Upgraded `repo-memory status` (`cmd/repo-memory/cmd_status.go`) and `repo-memory report` (`cmd/repo-memory/cmd_report.go`) from stubs to real `v2.2` repository status/metrics commands.
 - Verified `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`, `go test -race ./cmd/... ./internal/... ./packaging/...`, and rebuilt `~/.local/bin/repo-memory`.
+
+### 2026-10-16 — Step 6A Audit & Step 6B Graduation (GitHub PR #23 APPROVED)
+- Opened stacked GitHub PR #23 (`pr-15-v2-learning/wo5-verification-and-skill-lint` -> `pr-14-v2-micro-probes-and-pilot/wo4-live-esp32-pilot-and-synthesis`).
+- Remediated all 4 Round 1 Cold-Firewall PR Audit findings (`[MAJOR-1]` distinct-conversation & on-disk `SKILL.md` verification in `QualifiesForSkill` / `GraduatedSkillSlug`, `[MAJOR-2]` `resolveSafeRepoPath` repo-root containment in `closes_when.go`, `[MINOR-1]` `MomentFirstEntry` 1-line graduated skill pointer formatting, and `[MINOR-2]` multi-tier active entry projection in `status`/`report`) in commit `cb2bc10`.
+- Round 2 Cold-Firewall PR Audit returned `APPROVED (0 blocking, 0 major)`. Graduated into `MEMORY.md` and `PROJECT_INDEX.md`.
