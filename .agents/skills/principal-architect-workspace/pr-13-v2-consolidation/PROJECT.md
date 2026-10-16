@@ -1,7 +1,7 @@
 # Project: `pr-13-v2-consolidation` — Stage 2 Warm Batch Consolidation, Echo Filter, Corroboration Gate & Five-Tier Scope Hierarchy
 
 > **Programme:** [PROGRAM.md](../programme-repo-memory/PROGRAM.md) · [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md)
-> **Status:** Active (`6/6` WOs complete — Paused at Step 6A awaiting Cold-Firewall PR Audit)
+> **Status:** ✅ Complete (`6/6` WOs complete — GitHub PR #21 APPROVED)
 > **Base Branch:** `pr-12-v2-distillation/wo6-managed-instruction-block-and-verification` (`e6ee499`)
 > **Specifications:** [SPEC.md](../../../../SPEC.md) (§5.3–§5.5, §6.4–§6.5) · [v2.2 Design Rev 4](../../../../docs/design-v2-distillation-retrieval.md) (§5.6, §6, §7.1) · [Addendum A Rev 3](../../../../docs/addendum-a-provenance-and-hardening.md) (§5 A4, §7 A6, §11.2)
 
@@ -57,3 +57,4 @@ Implement **Stage 2 Warm Batch Consolidation & Five-Tier Publish (`v2.2`)**, tur
 - `2026-10-16`: Completed **WO4 (`wo4-validate-record-and-render`)** (`16fc65b`): implemented `ValidateAndPrepareOps`, `RecordAndRenderDirs`, and `RecordAndRenderTier` in `internal/core/consolidate/record.go` with unit tests in `internal/core/consolidate/record_test.go`.
 - `2026-10-16`: Completed **WO5 (`wo5-five-tier-scope-and-two-lane-publish`)** (`65c94ea`): updated `internal/core/config/layout.go` (`user-dossiers/{ops,dossiers}`, `worktrees`, `EnsureMemoryGitignore`), added `RebuildFromOpLogs` in `internal/core/index/rebuild.go`, implemented `EnsureMemoryWorktree` and `PublishToMemoryWorktree` (`memory/pending`) in `internal/core/gitops/worktree.go`, and implemented Five-Tier recording, `PromoteMergedBranchOps`, and `RebuildMultiTierIndex` in `internal/core/consolidate/publish.go`.
 - `2026-10-16`: Completed **WO6 (`wo6-tick-orchestration-and-verification`)** (`b71e77e`): implemented `RunConsolidationWithOptions` and `FreshnessState` in `internal/core/tick/consolidate.go`, wired `RunConsolidation` and `RebuildMultiTierIndex` into `PipelineExecutor.Run` (`internal/core/tick/pipeline.go`), added `repo-memory consolidate` (`cmd/repo-memory/cmd_consolidate.go`), added end-to-end consolidation tests (`internal/core/tick/consolidate_test.go`), and rebuilt `~/.local/bin/repo-memory`.
+- `2026-10-16`: Completed **Step 6A & Step 6B Graduation** (`236d169`): pushed `pr-13-v2-consolidation/wo6-tick-orchestration-and-verification`, opened [PR #21](https://github.com/cblabs-org/repo-memory-plugin/pull/21), and received Cold-Firewall PR Audit **APPROVED** (`0 blocking, 0 major, 2 minor`). Graduated project to `MEMORY.md`, `PROJECT_INDEX.md`, `MODULE_INDEX.md`, `PROGRAM.md`, and `PROGRAM-PLAN.md`.

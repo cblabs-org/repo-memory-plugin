@@ -55,7 +55,7 @@
 | pr-10b-delivery-and-storage-fixes ✅ | Index orphan row delete (`#13`), cross-scope projector dedup & empty dossier pruning (`#11`), seeder real path + `#symbol`/`:symbol` anchors (`#10`) & `--before` timestamp/SHA (`#12`), ops cleanup (`#16`, `repo-memory ops gc`) | [PROJECT.md](../pr-10b-delivery-and-storage-fixes/PROJECT.md) |
 | pr-11-v2-doc-seeding-and-lifecycles ✅ | `DocSeedSource` (`repo-memory seed-docs`), async doc-diff freshness ("Dreaming" in `tick`), `semantic`/`procedural`/`episodic` lifecycles, `{section?}` rendering, empty dossier/ATLAS pruning (PR #19) | [PROJECT.md](../pr-11-v2-doc-seeding-and-lifecycles/PROJECT.md) |
 | pr-12-v2-distillation ✅ | `internal/core/state/` (marks, subagent registry), `internal/core/inbox/` (inbox notes, zero-token `CHECKPOINT` + `brain/` artifact harvest), `internal/core/scrub/` (4-layer scrubber + quarantine), `internal/core/pipeline/prepare/` (`<session-log-TOKEN>` preparation layer & validator), `internal/core/tick/fallback.go` (sidecar fallback) (PR #20) | [PROJECT.md](../pr-12-v2-distillation/PROJECT.md) |
-| pr-13-v2-consolidation (planned) | `internal/core/consolidate/` (echo filter, Pre-Consolidation Corroboration Gate, `stream-json` `repo-memory-distiller`, `user:`/`branch:`/`repo:` scopes, publish) | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
+| pr-13-v2-consolidation ✅ | `internal/core/consolidate/` (P13 echo filter, `VD18` Corroboration Gate, Five-Tier routing & dedup, `stream-json` `repo-memory-distiller` `RunMultiTurn`, state-aware op validation & render, `user:`/`branch:`/`repo:` scopes, `PromoteMergedBranchOps`, `RebuildMultiTierIndex`), `internal/core/gitops/worktree.go` (`memory/pending`), `internal/core/tick/consolidate.go`, `cmd/repo-memory/cmd_consolidate.go` (PR #21) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
 
 ## Delivery (Hooks & Pull Tools)
 | Project | Scope | Context |
@@ -80,6 +80,6 @@
 ## Review & Governance
 | Project | Scope | Context |
 |---|---|---|
-| pr-11-v2-consolidation (planned) | Two-lane publish (reusing PR-05a worktree), memory PR, branch-scoped notes | [PROJECT.md](../pr-11-v2-consolidation/PROJECT.md) |
-| pr-13-v2-learning (planned) | Close conditions, gardening, elicitation questions, weekly review | [PROJECT.md](../pr-13-v2-learning/PROJECT.md) |
-| pr-14-v2-pa-integration (planned) | Episode summaries, WORKORDER briefs, PA compatibility mode (cross-repo) | [PROJECT.md](../pr-14-v2-pa-integration/PROJECT.md) |
+| pr-13-v2-consolidation ✅ | Two-lane publish (`memory/pending` worktree), Five-Tier scope isolation (`user:`, `branch:`, `repo:`), branch-merge promotion (`PromoteMergedBranchOps`) (PR #21) | [PROJECT.md](../pr-13-v2-consolidation/PROJECT.md) |
+| pr-15-v2-learning (planned) | Close conditions, gardening, elicitation questions, weekly review | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |
+| pr-16-v2-pa-and-rollout (planned) | Episode summaries, WORKORDER briefs, PA compatibility mode (cross-repo) | [PROGRAM-PLAN.md](../programme-repo-memory/PROGRAM-PLAN.md) |

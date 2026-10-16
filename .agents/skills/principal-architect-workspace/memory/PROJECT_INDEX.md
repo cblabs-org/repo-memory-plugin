@@ -4,6 +4,7 @@
 
 | Project | Completed | Scope | Session | Context |
 |---|---|---|---|---|
+| pr-09b-product-fixes | 2026-10-11 | Delivery, Index, Ranker, Seeder (Stage 0 fixes: canonical IndexPath, bm25 relevance, per-session InjectedSet dedup, relevance threshold, FTS error surfacing) | - | [PROJECT.md](../pr-09b-product-fixes/PROJECT.md) |
 | pr-09-v2-x6-lite | 2026-10-11 | Evaluation, Replay Harness, X6 Protocol, Dossier Build (X6-lite STOP on spec-style tasks, 92 runs, 231-session PA retrieval study) | - | [PROJECT.md](../pr-09-v2-x6-lite/PROJECT.md) |
 | pr-08-v2-delivery | 2026-10-07 | Delivery engine (`systemMessage`/`ephemeralMessage` channels, deny-once gates, cross-process ledger with flock, compaction re-injection, MCP pull tools, PR #14) | - | [PROJECT.md](../pr-08-v2-delivery/PROJECT.md) |
 | pr-07-v2-storage | 2026-10-06 | Ops, Dossiers, Index, Scopes, Seeding (v2 storage layer, 174 seeded entries, v1 pipeline removed, PR #9) | - | [PROJECT.md](../pr-07-v2-storage/PROJECT.md) |
