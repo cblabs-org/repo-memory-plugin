@@ -328,6 +328,78 @@ func resolveDefaultBranch(ctx context.Context, repoRoot string) string {
 	return "main"
 }
 
+func refExists(ctx context.Context, repoRoot, ref string) bool {
+	if strings.TrimSpace(ref) == "" {
+		return false
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "--verify", "--quiet", ref)
+	return cmd.Run() == nil
+}
+
+// DefaultBranchMergedChecker returns a function that checks whether a given branch
+// has been merged into main, master, or HEAD.
+func DefaultBranchMergedChecker(repoRoot string) func(string) bool {
+	return func(branch string) bool {
+		target := strings.TrimSpace(branch)
+		if strings.TrimSpace(repoRoot) == "" || target == "" {
+			return false
+		}
+		targetShort := strings.TrimPrefix(strings.TrimPrefix(target, "refs/heads/"), "origin/")
+		if IsDefaultBranch(targetShort) {
+			return true
+		}
+		targetSlug := SanitizeBranchSlug(targetShort)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		currentBranch, _ := gitops.GetCurrentBranchWithContext(ctx, repoRoot)
+		currentShort := strings.TrimSpace(currentBranch)
+
+		var baseRefs []string
+		seenRef := make(map[string]bool)
+		for _, candidate := range []string{resolveDefaultBranch(ctx, repoRoot), "main", "master", "trunk"} {
+			c := strings.TrimSpace(candidate)
+			if c == "" || seenRef[c] {
+				continue
+			}
+			seenRef[c] = true
+			if refExists(ctx, repoRoot, c) {
+				baseRefs = append(baseRefs, c)
+			}
+		}
+
+		if len(baseRefs) == 0 && currentShort != "" && !strings.EqualFold(currentShort, targetShort) && SanitizeBranchSlug(currentShort) != targetSlug {
+			baseRefs = append(baseRefs, "HEAD")
+		} else if len(baseRefs) > 0 && (IsDefaultBranch(currentShort) || currentShort == "") && !seenRef["HEAD"] {
+			baseRefs = append(baseRefs, "HEAD")
+		}
+
+		for _, baseRef := range baseRefs {
+			cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--merged", baseRef)
+			if out, err := cmd.Output(); err == nil {
+				for _, line := range strings.Split(string(out), "\n") {
+					name := strings.TrimSpace(strings.TrimLeft(line, "*+ "))
+					if name == "" {
+						continue
+					}
+					if strings.EqualFold(name, targetShort) || SanitizeBranchSlug(name) == targetSlug {
+						return true
+					}
+				}
+			}
+			if refExists(ctx, repoRoot, targetShort) {
+				ancCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "merge-base", "--is-ancestor", targetShort, baseRef)
+				if err := ancCmd.Run(); err == nil {
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+}
+
 func extractBatchFileAnchors(batches []ops.OpBatch) []string {
 	seen := make(map[string]bool)
 	var out []string
