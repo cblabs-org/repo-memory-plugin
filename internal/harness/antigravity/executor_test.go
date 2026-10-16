@@ -75,3 +75,92 @@ EOF
 		t.Errorf("expected REPO_MEMORY_HOUSEKEEPING=1 and REPO_MEMORY_INTERNAL=1, got:\n%s", envStr)
 	}
 }
+
+func TestHousekeeperRunMultiTurn_StageConsolidate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script mock not supported on windows")
+	}
+
+	tmpDir := t.TempDir()
+	binDir := filepath.Join(tmpDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	capturedArgsFile := filepath.Join(tmpDir, "args.txt")
+	capturedStdinFile := filepath.Join(tmpDir, "stdin.txt")
+
+	fakeAgy := filepath.Join(binDir, "agy")
+	script := `#!/bin/sh
+printf "%s\n" "$@" > "` + capturedArgsFile + `"
+cat > "` + capturedStdinFile + `"
+cat << 'EOF'
+{"event":"result","result":{"status":"SUCCESS","response":"{\"ops\":[],\"echo_token\":\"tok1\"}","usage":{"input_tokens":1000,"output_tokens":50,"thinking_tokens":10,"cache_read_tokens":0}}}
+{"event":"result","result":{"status":"SUCCESS","response":"{\"ops\":[],\"echo_token\":\"tok2\"}","usage":{"input_tokens":1300,"output_tokens":90,"thinking_tokens":25,"cache_read_tokens":900}}}
+EOF
+`
+	if err := os.WriteFile(fakeAgy, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	hk := antigravity.NewHousekeeper(tmpDir, "repo-1", "flash", "1m")
+	prompts := []string{
+		"<consolidation-batch-tok1>\n{\"scope\":\"mod/a\"}\n</consolidation-batch-tok1>",
+		"<consolidation-batch-tok2>\n{\"scope\":\"mod/b\"}\n</consolidation-batch-tok2>",
+	}
+
+	results, err := hk.RunMultiTurn(context.Background(), harness.StageConsolidate, prompts)
+	if err != nil {
+		t.Fatalf("hk.RunMultiTurn(StageConsolidate) failed: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	if results[0].Payload != `{"ops":[],"echo_token":"tok1"}` {
+		t.Errorf("unexpected turn 0 payload: %s", results[0].Payload)
+	}
+	if results[0].Usage.InputTokens != 1000 || results[0].Usage.OutputTokens != 50 || results[0].Usage.ThinkingTokens != 10 {
+		t.Errorf("unexpected turn 0 usage: %+v", results[0].Usage)
+	}
+
+	if results[1].Payload != `{"ops":[],"echo_token":"tok2"}` {
+		t.Errorf("unexpected turn 1 payload: %s", results[1].Payload)
+	}
+	// Cumulative delta check: 1300 - 1000 = 300 input, 90 - 50 = 40 output, 25 - 10 = 15 thinking, 900 - 0 = 900 cache read
+	if results[1].Usage.InputTokens != 300 || results[1].Usage.OutputTokens != 40 || results[1].Usage.ThinkingTokens != 15 || results[1].Usage.CacheReadTokens != 900 {
+		t.Errorf("unexpected turn 1 delta usage: %+v", results[1].Usage)
+	}
+
+	argsBytes, err := os.ReadFile(capturedArgsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsStr := string(argsBytes)
+	for _, wantArg := range []string{
+		"--input-format\nstream-json",
+		"--output-format\nstream-json",
+		"--agent\nrepo-memory-distiller",
+	} {
+		if !strings.Contains(argsStr, wantArg) {
+			t.Errorf("expected %q in args, got:\n%s", wantArg, argsStr)
+		}
+	}
+
+	stdinBytes, err := os.ReadFile(capturedStdinFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdinLines := strings.Split(strings.TrimSpace(string(stdinBytes)), "\n")
+	if len(stdinLines) != 2 {
+		t.Fatalf("expected 2 NDJSON lines on stdin, got %d:\n%s", len(stdinLines), string(stdinBytes))
+	}
+	for i, line := range stdinLines {
+		if !strings.Contains(line, `"event":"user"`) || !strings.Contains(line, `"message":{"content":`) {
+			t.Errorf("stdin line %d missing stream-json user event shape: %s", i, line)
+		}
+	}
+}
+
