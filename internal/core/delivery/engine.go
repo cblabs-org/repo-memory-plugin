@@ -120,7 +120,7 @@ func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
 	return valid
 }
 
-// stopWords contains common English words and prompt/URL boilerplate that match nearly everything in FTS5.
+// stopWords contains common English words and generic markup/URL tokens that match nearly everything in FTS5.
 var stopWords = map[string]bool{
 	"the": true, "and": true, "for": true, "are": true, "but": true,
 	"not": true, "you": true, "all": true, "can": true, "her": true,
@@ -139,8 +139,14 @@ var stopWords = map[string]bool{
 	"between": true, "need": true, "added": true, "show": true, "top": true,
 	"level": true, "hour": true, "sec": true, "mins": true, "http": true,
 	"https": true, "com": true, "org": true, "net": true, "www": true,
-	"public": true, "simple": true, "ids": true, "pro": true,
-	"waterproof": true, "compatible": true, "device": true,
+	"io": true, "dev": true, "json": true, "xml": true, "html": true,
+	"public": true, "user_request": true,
+}
+
+// IsStopWord reports whether word (case-insensitive) is a common English or
+// markup/URL stopword that should be excluded from FTS5 prompt queries.
+func IsStopWord(word string) bool {
+	return stopWords[strings.ToLower(word)]
 }
 
 // sanitizeFTSQuery converts raw prompt terms into a safe FTS5 query.

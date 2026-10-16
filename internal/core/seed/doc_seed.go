@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
@@ -130,27 +131,597 @@ func expandSubmoduleAnchorsForScopes(anchors []string) []string {
 	return out
 }
 
-var interfaceToModuleMap = map[string]string{
-	"IDataSource":              "modules/DataManager/DataManager.hpp",
-	"FetchContext":             "modules/DataManager/DataManager.hpp",
-	"DeadlineToken":            "modules/DataManager/DataManager.hpp",
-	"IWebContributor":          "modules/WebServer/WebServer.hpp",
-	"ITabRegistry":             "modules/WebServer/WebServer.hpp",
-	"PsychicHttpServer":        "modules/WebServer/WebServer.hpp",
-	"IMCPContributor":          "modules/MCPServer/MCPServer.hpp",
-	"MCPToolRegistry":          "modules/MCPServer/MCPServer.hpp",
-	"MCPBuiltinTools":          "modules/MCPServer/MCPServer.hpp",
-	"IDisplayBoard":            "modules/U8G2Display/U8G2Display.hpp",
-	"ILVGLHardwareAdapter":     "modules/LVGLDisplay/LVGLDisplay.hpp",
-	"IConfigurable":            "modules/ConfigManager/ConfigManager.hpp",
-	"IOTAVerifier":             "modules/OTAUpdateManager/OTAUpdateManager.hpp",
-	"IPreconditionContributor": "modules/PreconditionEngine/PreconditionEngine.hpp",
-	"IPreconditionRegistry":    "modules/PreconditionEngine/PreconditionEngine.hpp",
-	"IBLEServiceProvider":      "modules/BLEManager/BLEManager.hpp",
-	"IBLEClientProvider":       "modules/BLEManager/BLEManager.hpp",
+type repoSymbolIndex struct {
+	symbolToModule      map[string]string
+	methodToHeaders     map[string][]string
+	orchestratorHdr     string
+	orchestratorStemLow string
+	defaultAnchors      []string
+}
+
+var (
+	symIdxMu          sync.RWMutex
+	symIdxByRoot      = make(map[string]*repoSymbolIndex)
+	activeRepoSymIdx  *repoSymbolIndex
+	typeDeclRe        = regexp.MustCompile(`\b(?:class|struct)\s+([A-Z][A-Za-z0-9_]{2,})\b`)
+	quotedIncludeRe   = regexp.MustCompile(`#include\s+"([^"]+)"`)
+	cCommentRe        = regexp.MustCompile(`(?s)//[^\n]*|/\*.*?\*/`)
+	methodDeclRe      = regexp.MustCompile(`\b(?:void|bool)\s+([a-z][A-Za-z0-9_]{2,})\s*\(([^)]*)\)`)
+	ifaceParamRe      = regexp.MustCompile(`\bI[A-Z][A-Za-z0-9_]+\b`)
+	forwardDeclLineRe = regexp.MustCompile(`^\s*(?:class|struct)\s+\w+\s*;`)
+	classHeaderLineRe = regexp.MustCompile(`(?:class|struct)\s+\w+\s*:`)
+)
+
+var genericSymbolRoleTokens = map[string]bool{
+	"contributor": true,
+	"provider":    true,
+	"registry":    true,
+	"adapter":     true,
+	"verifier":    true,
+	"board":       true,
+	"module":      true,
+	"manager":     true,
+	"server":      true,
+	"engine":      true,
+}
+
+var ignoredMethodKeywords = map[string]bool{
+	"if":            true,
+	"for":           true,
+	"while":         true,
+	"switch":        true,
+	"return":        true,
+	"sizeof":        true,
+	"alignof":       true,
+	"static_assert": true,
+	"catch":         true,
+}
+
+func isUpperASCII(b byte) bool { return b >= 'A' && b <= 'Z' }
+func isLowerASCII(b byte) bool { return b >= 'a' && b <= 'z' }
+func isLowerOrDigitASCII(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+}
+
+func extractCamelTokens(s string) []string {
+	if len(s) >= 2 && s[0] == 'I' && isUpperASCII(s[1]) {
+		s = s[1:]
+	}
+	var out []string
+	i := 0
+	for i < len(s) {
+		if !isUpperASCII(s[i]) {
+			i++
+			continue
+		}
+		if i+1 < len(s) && isLowerOrDigitASCII(s[i+1]) {
+			j := i + 1
+			for j < len(s) && isLowerOrDigitASCII(s[j]) {
+				j++
+			}
+			tok := strings.ToLower(s[i:j])
+			if len(tok) >= 3 {
+				out = append(out, tok)
+			}
+			i = j
+			continue
+		}
+		j := i + 1
+		for j < len(s) && isUpperASCII(s[j]) {
+			if j+1 < len(s) && isLowerASCII(s[j+1]) {
+				break
+			}
+			j++
+		}
+		tok := strings.ToLower(s[i:j])
+		if len(tok) >= 3 {
+			out = append(out, tok)
+		}
+		i = j
+	}
+	return out
+}
+
+func isCandidateSymbol(sym string) bool {
+	if len(sym) < 3 || !isUpperASCII(sym[0]) {
+		return false
+	}
+	toks := extractCamelTokens(sym)
+	if len(toks) >= 2 {
+		return true
+	}
+	return len(sym) >= 4 && sym[0] == 'I' && isUpperASCII(sym[1]) && strings.HasSuffix(sym, "able")
+}
+
+func setActiveRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
+	idx := getOrBuildRepoSymbolIndex(repoRoot)
+	symIdxMu.Lock()
+	activeRepoSymIdx = idx
+	symIdxMu.Unlock()
+	return idx
+}
+
+func getActiveRepoSymbolIndex() *repoSymbolIndex {
+	symIdxMu.RLock()
+	defer symIdxMu.RUnlock()
+	return activeRepoSymIdx
+}
+
+func getOrBuildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
+	cleanRoot := filepath.Clean(strings.TrimSpace(repoRoot))
+	if cleanRoot == "" {
+		return &repoSymbolIndex{}
+	}
+	symIdxMu.RLock()
+	if cached, ok := symIdxByRoot[cleanRoot]; ok {
+		symIdxMu.RUnlock()
+		return cached
+	}
+	symIdxMu.RUnlock()
+
+	built := buildRepoSymbolIndex(cleanRoot)
+	symIdxMu.Lock()
+	symIdxByRoot[cleanRoot] = built
+	symIdxMu.Unlock()
+	return built
+}
+
+func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
+	idx := &repoSymbolIndex{
+		symbolToModule:  make(map[string]string),
+		methodToHeaders: make(map[string][]string),
+	}
+	if repoRoot == "" {
+		return idx
+	}
+	if fi, err := os.Stat(repoRoot); err != nil || !fi.IsDir() {
+		return idx
+	}
+
+	type moduleInfo struct {
+		name            string
+		mainHdr         string
+		fileStems       map[string]bool
+		hdrText         string
+		allText         string
+		hdrLines        []string
+		modTokens       map[string]bool
+		interfaceFanout int
+		registerCount   int
+	}
+
+	var modules []moduleInfo
+	candidateSymSet := make(map[string]bool)
+	fromTypeFile := make(map[string]bool)
+
+	// Collect contract symbols from include/interfaces/ headers (plus any include/types/ symbols referenced by them) and identify umbrella header(s).
+	includeRoot := filepath.Join(repoRoot, "include")
+	var bestUmbrellaHdr string
+	bestUmbrellaIncludes := -1
+	if fi, err := os.Stat(includeRoot); err == nil && fi.IsDir() {
+		var ifaceFiles, typeFiles []string
+		var ifaceTxtBuilder strings.Builder
+		_ = filepath.WalkDir(includeRoot, func(p string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if ext != ".hpp" && ext != ".h" && ext != ".hxx" {
+				return nil
+			}
+			rel, relErr := filepath.Rel(repoRoot, p)
+			if relErr != nil {
+				return nil
+			}
+			relSlash := filepath.ToSlash(rel)
+			relDir := filepath.ToSlash(filepath.Dir(relSlash))
+			if relDir == "include" {
+				if data, readErr := os.ReadFile(p); readErr == nil && len(data) <= 256*1024 {
+					incCount := strings.Count(string(data), "#include")
+					if incCount > bestUmbrellaIncludes {
+						bestUmbrellaIncludes = incCount
+						bestUmbrellaHdr = relSlash
+					}
+				}
+			}
+			if strings.HasPrefix(relSlash, "include/interfaces/") {
+				ifaceFiles = append(ifaceFiles, p)
+				if data, readErr := os.ReadFile(p); readErr == nil && len(data) <= 256*1024 {
+					ifaceTxtBuilder.Write(data)
+					ifaceTxtBuilder.WriteByte('\n')
+				}
+			} else if strings.HasPrefix(relSlash, "include/types/") {
+				typeFiles = append(typeFiles, p)
+			}
+			return nil
+		})
+
+		ifaceAggTxt := ifaceTxtBuilder.String()
+		for _, p := range ifaceFiles {
+			stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+			if isCandidateSymbol(stem) {
+				candidateSymSet[stem] = true
+			}
+			data, readErr := os.ReadFile(p)
+			if readErr != nil || len(data) > 256*1024 {
+				continue
+			}
+			txt := cCommentRe.ReplaceAllString(string(data), "")
+			for _, m := range typeDeclRe.FindAllStringSubmatch(txt, -1) {
+				sym := m[1]
+				if !isCandidateSymbol(sym) {
+					continue
+				}
+				if (sym[0] == 'I' && isUpperASCII(sym[1])) || strings.Contains(txt, "class "+sym+";") {
+					candidateSymSet[sym] = true
+				}
+			}
+		}
+		for _, p := range typeFiles {
+			stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+			if !strings.Contains(ifaceAggTxt, stem) {
+				continue
+			}
+			data, readErr := os.ReadFile(p)
+			if readErr != nil || len(data) > 256*1024 {
+				continue
+			}
+			txt := cCommentRe.ReplaceAllString(string(data), "")
+			for _, m := range typeDeclRe.FindAllStringSubmatch(txt, -1) {
+				if isCandidateSymbol(m[1]) {
+					candidateSymSet[m[1]] = true
+					fromTypeFile[m[1]] = true
+				}
+			}
+		}
+	}
+
+	// Scan module directories under modules/ and src/modules/.
+	for _, modParent := range []string{"modules", "src/modules"} {
+		parentFull := filepath.Join(repoRoot, filepath.FromSlash(modParent))
+		entries, err := os.ReadDir(parentFull)
+		if err != nil {
+			continue
+		}
+		for _, ent := range entries {
+			if !ent.IsDir() || strings.HasPrefix(ent.Name(), ".") {
+				continue
+			}
+			modName := ent.Name()
+			modDirFull := filepath.Join(parentFull, modName)
+			var mainHdr string
+			for _, ext := range []string{".hpp", ".h", ".hxx"} {
+				cand := filepath.ToSlash(filepath.Join(modParent, modName, modName+ext))
+				if _, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(cand))); statErr == nil {
+					mainHdr = cand
+					break
+				}
+			}
+			if mainHdr == "" {
+				continue
+			}
+
+			mainHdrRawBytes, _ := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(mainHdr)))
+			mainHdrRaw := string(mainHdrRawBytes)
+			mainHdrClean := cCommentRe.ReplaceAllString(mainHdrRaw, "")
+
+			modCamelToks := extractCamelTokens(modName)
+			firstModTok := ""
+			if len(modCamelToks) > 0 {
+				firstModTok = modCamelToks[0]
+			}
+			stems := make(map[string]bool)
+			var hdrBuilder, cppBuilder strings.Builder
+			_ = filepath.WalkDir(modDirFull, func(p string, d os.DirEntry, walkErr error) error {
+				if walkErr != nil || d.IsDir() {
+					return nil
+				}
+				ext := strings.ToLower(filepath.Ext(d.Name()))
+				stem := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+				if stem != "" {
+					stems[stem] = true
+					isHdr := ext == ".hpp" || ext == ".h" || ext == ".hxx"
+					if isHdr && stem != modName && isCandidateSymbol(stem) {
+						stemToks := extractCamelTokens(stem)
+						lastTok := ""
+						if len(stemToks) > 0 {
+							lastTok = stemToks[len(stemToks)-1]
+						}
+						isRoleInterface := stem[0] == 'I' && isUpperASCII(stem[1]) && genericSymbolRoleTokens[lastTok]
+						isBuiltinTools := firstModTok != "" && strings.HasPrefix(strings.ToLower(stem), firstModTok) && strings.HasSuffix(stem, "BuiltinTools")
+						if isRoleInterface || isBuiltinTools {
+							candidateSymSet[stem] = true
+						}
+					}
+				}
+				if ext != ".hpp" && ext != ".h" && ext != ".hxx" && ext != ".cpp" && ext != ".cc" && ext != ".c" {
+					return nil
+				}
+				data, readErr := os.ReadFile(p)
+				if readErr != nil || len(data) > 256*1024 {
+					return nil
+				}
+				cleanSrc := cCommentRe.ReplaceAllString(string(data), "")
+				if ext == ".hpp" || ext == ".h" || ext == ".hxx" {
+					hdrBuilder.WriteString(cleanSrc)
+					hdrBuilder.WriteByte('\n')
+				} else {
+					cppBuilder.WriteString(cleanSrc)
+					cppBuilder.WriteByte('\n')
+				}
+				return nil
+			})
+
+			hdrTxt := hdrBuilder.String()
+			allTxt := hdrTxt + "\n" + cppBuilder.String()
+
+			// Extract method declarations from module headers.
+			seenMethods := make(map[string]bool)
+			regCnt := 0
+			for _, hdrLine := range strings.Split(mainHdrClean, "\n") {
+				if strings.Contains(hdrLine, "override") {
+					continue
+				}
+				for _, m := range methodDeclRe.FindAllStringSubmatch(hdrLine, -1) {
+					mName := m[1]
+					mParams := m[2]
+					if ignoredMethodKeywords[mName] || seenMethods[mName] {
+						continue
+					}
+					seenMethods[mName] = true
+					if strings.HasPrefix(mName, "register") {
+						regCnt++
+					}
+					if mName == "begin" || (strings.HasPrefix(mName, "register") && !ifaceParamRe.MatchString(mParams)) {
+						idx.methodToHeaders[mName] = append(idx.methodToHeaders[mName], mainHdr)
+					}
+				}
+			}
+
+			modToks := make(map[string]bool)
+			for _, t := range modCamelToks {
+				modToks[t] = true
+			}
+
+			fanout := strings.Count(mainHdrRaw, "interfaces/")
+			modules = append(modules, moduleInfo{
+				name:            modName,
+				mainHdr:         mainHdr,
+				fileStems:       stems,
+				hdrText:         mainHdrClean,
+				allText:         allTxt,
+				hdrLines:        strings.Split(mainHdrClean, "\n"),
+				modTokens:       modToks,
+				interfaceFanout: fanout,
+				registerCount:   regCnt,
+			})
+		}
+	}
+
+	// Identify top-level orchestrator module (highest interface fanout + register* method count) before mapping symbols.
+	var bestOrchestratorHdr string
+	bestFanout := -1
+	bestOrchScore := -1
+	for _, mod := range modules {
+		orchScore := mod.interfaceFanout*10 + mod.registerCount*15
+		if orchScore > bestOrchScore {
+			bestOrchScore = orchScore
+			bestFanout = mod.interfaceFanout
+			bestOrchestratorHdr = mod.mainHdr
+			idx.orchestratorHdr = mod.mainHdr
+			idx.orchestratorStemLow = strings.ToLower(mod.name)
+		}
+	}
+
+	// Map each discovered symbol to its owning module header.
+	modNameSet := make(map[string]bool, len(modules))
+	for _, mod := range modules {
+		modNameSet[mod.name] = true
+	}
+	for sym := range candidateSymSet {
+		if modNameSet[sym] {
+			continue
+		}
+		wordRe, err := regexp.Compile(`\b` + regexp.QuoteMeta(sym) + `\b`)
+		if err != nil {
+			continue
+		}
+		inheritRe, _ := regexp.Compile(`(?s)(?:class|struct)\s+\w+\s*:[^{;]*\b` + regexp.QuoteMeta(sym) + `\b`)
+		visInheritRe, _ := regexp.Compile(`^\s*(?:public|private|protected)\s+` + regexp.QuoteMeta(sym) + `\b`)
+
+		var symToks []string
+		for _, t := range extractCamelTokens(sym) {
+			if !genericSymbolRoleTokens[t] {
+				symToks = append(symToks, t)
+			}
+		}
+
+		type scoredMod struct {
+			score      int
+			fanout     int
+			mainHdr    string
+		}
+		var scored []scoredMod
+
+		for _, mod := range modules {
+			if mod.fileStems[sym] && sym != mod.name {
+				scored = append(scored, scoredMod{score: 100, fanout: mod.interfaceFanout, mainHdr: mod.mainHdr})
+				continue
+			}
+
+			prefixOverlap := 0
+			for _, st := range symToks {
+				if mod.modTokens[st] {
+					prefixOverlap++
+				}
+			}
+
+			// Do not assign cross-cutting shared interfaces without token overlap to a high-fanout composition root.
+			if bestFanout >= 8 && mod.mainHdr == bestOrchestratorHdr && prefixOverlap == 0 {
+				continue
+			}
+
+			inheritsSym := inheritRe != nil && inheritRe.MatchString(mod.allText)
+
+			var nonOverrideLines []string
+			if wordRe.MatchString(mod.hdrText) {
+				for _, line := range mod.hdrLines {
+					trim := strings.TrimSpace(line)
+					if trim == "" ||
+						strings.Contains(line, "override") ||
+						strings.HasPrefix(trim, "#include") ||
+						strings.HasPrefix(trim, "//") ||
+						strings.HasPrefix(trim, "*") ||
+						forwardDeclLineRe.MatchString(line) ||
+						classHeaderLineRe.MatchString(line) ||
+						(visInheritRe != nil && visInheritRe.MatchString(line)) {
+						continue
+					}
+					if wordRe.MatchString(line) {
+						nonOverrideLines = append(nonOverrideLines, line)
+					}
+				}
+			}
+
+			isIface := sym[0] == 'I' && isUpperASCII(sym[1])
+			score := 0
+			if inheritsSym && strings.HasSuffix(sym, "Registry") {
+				score = 95
+			} else if len(nonOverrideLines) > 0 {
+				hasPtrOrRef := false
+				for _, l := range nonOverrideLines {
+					if strings.Contains(l, sym+"*") || strings.Contains(l, sym+"&") {
+						hasPtrOrRef = true
+						break
+					}
+				}
+				if !inheritsSym || hasPtrOrRef {
+					bonus := len(nonOverrideLines)
+					if bonus > 10 {
+						bonus = 10
+					}
+					score = 60 + bonus
+				}
+			} else if !isIface && wordRe.MatchString(mod.allText) && !inheritsSym {
+				score = 40
+			}
+
+			if prefixOverlap > 0 && !inheritsSym {
+				score += prefixOverlap * 30
+			}
+			if score > 0 {
+				scored = append(scored, scoredMod{score: score, fanout: mod.interfaceFanout, mainHdr: mod.mainHdr})
+			}
+		}
+
+		if len(scored) == 0 {
+			continue
+		}
+		if fromTypeFile[sym] && len(scored) > 1 {
+			continue
+		}
+		sort.Slice(scored, func(i, j int) bool {
+			if scored[i].score != scored[j].score {
+				return scored[i].score > scored[j].score
+			}
+			if scored[i].fanout != scored[j].fanout {
+				return scored[i].fanout < scored[j].fanout
+			}
+			return scored[i].mainHdr < scored[j].mainHdr
+		})
+
+		// Prefer a dedicated subsystem module (interfaceFanout < 4) over a high-fanout composition root when available.
+		best := scored[0].mainHdr
+		for _, cand := range scored {
+			if cand.fanout < 4 && cand.score >= 40 {
+				best = cand.mainHdr
+				break
+			}
+		}
+		idx.symbolToModule[sym] = best
+	}
+
+	// Build dynamic default fallback anchors from discovered repo structure.
+	addDefault := func(p string) {
+		if p == "" {
+			return
+		}
+		for _, existing := range idx.defaultAnchors {
+			if existing == p {
+				return
+			}
+		}
+		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(p))); err == nil {
+			idx.defaultAnchors = append(idx.defaultAnchors, p)
+		}
+	}
+	for _, dirCand := range []string{"src/modules", "src/core"} {
+		addDefault(dirCand)
+	}
+	addDefault(bestOrchestratorHdr)
+	addDefault(bestUmbrellaHdr)
+	for _, dirCand := range []string{"include/interfaces", "modules", "src", "include", "internal", "pkg", "cmd", "test", "docs/developer"} {
+		addDefault(dirCand)
+	}
+
+	return idx
+}
+
+func (s *repoSymbolIndex) resolveSymbol(ident string) string {
+	if s == nil || s.symbolToModule == nil {
+		return ""
+	}
+	return s.symbolToModule[ident]
+}
+
+func (s *repoSymbolIndex) resolveObjectMethod(obj, method string) []string {
+	if s == nil || s.methodToHeaders == nil || method == "" {
+		return nil
+	}
+	if len(obj) >= 3 && isLowerASCII(obj[0]) {
+		lowObj := strings.ToLower(obj)
+		var matched []string
+		for _, h := range s.methodToHeaders[method] {
+			if s.orchestratorHdr != "" && h != s.orchestratorHdr {
+				continue
+			}
+			stem := strings.TrimSuffix(filepath.Base(h), filepath.Ext(h))
+			if strings.HasPrefix(strings.ToLower(stem), lowObj) {
+				matched = append(matched, h)
+			}
+		}
+		if len(matched) > 0 {
+			return matched
+		}
+	}
+	return nil
+}
+
+func (s *repoSymbolIndex) fallbackAnchors(isValidRepoPath func(string) bool, maxCount int) []string {
+	var out []string
+	seen := make(map[string]bool)
+	tryAdd := func(cand string) {
+		if cand == "" || seen[cand] || len(out) >= maxCount {
+			return
+		}
+		if isValidRepoPath(cand) {
+			seen[cand] = true
+			out = append(out, cand)
+		}
+	}
+	if s != nil {
+		for _, cand := range s.defaultAnchors {
+			tryAdd(cand)
+		}
+	}
+	for _, genericDir := range []string{"src/modules", "src/core", "include/interfaces", "modules", "src", "include", "internal", "pkg", "cmd", "test", "docs/developer"} {
+		tryAdd(genericDir)
+	}
+	return out
 }
 
 func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) bool) []string {
+	symIdx := getActiveRepoSymbolIndex()
 	var valid []string
 	seen := make(map[string]bool)
 	addAnchor := func(cand string) {
@@ -172,7 +743,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 		}
 	}
 
-	// Inspect backtick spans for C++/PlatformIO headers, directories, and module/interface symbols.
+	// Inspect backtick spans for headers, directories, method calls, and module/interface symbols.
 	matches := backtickRe.FindAllStringSubmatch(text, -1)
 	for _, m := range matches {
 		rawTok := strings.TrimSpace(m[1])
@@ -188,7 +759,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 			addAnchor("include/" + rawTok)
 		}
 
-		// Extract base C++ class/module/interface identifier before ::, ., or (
+		// Extract base class/module/interface identifier before ::, ., or (
 		ident := rawTok
 		if idx := strings.Index(ident, "::"); idx > 0 {
 			ident = ident[:idx]
@@ -196,15 +767,14 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 		if idx := strings.IndexByte(ident, '('); idx > 0 {
 			ident = ident[:idx]
 		}
-		if strings.HasPrefix(ident, "app.") {
-			rest := strings.TrimPrefix(ident, "app.")
-			if rest == "registerModule" || rest == "begin" {
-				addAnchor("modules/Application/Application.hpp")
+		if dotIdx := strings.IndexByte(ident, '.'); dotIdx > 0 {
+			obj := strings.TrimSpace(ident[:dotIdx])
+			method := strings.TrimSpace(ident[dotIdx+1:])
+			for _, hdr := range symIdx.resolveObjectMethod(obj, method) {
+				addAnchor(hdr)
 				addAnchor("src/core")
 			}
-		}
-		if idx := strings.IndexByte(ident, '.'); idx > 0 {
-			ident = ident[:idx]
+			ident = obj
 		}
 		ident = strings.TrimSpace(ident)
 		if len(ident) >= 3 && ident[0] >= 'A' && ident[0] <= 'Z' && !strings.ContainsAny(ident, " /\\:*?\"<>|") {
@@ -229,13 +799,13 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 			addAnchor("include/events/" + ident + ".hpp")
 			addAnchor("include/" + ident + ".hpp")
 			addAnchor("include/" + ident + ".h")
-			if modHdr, ok := interfaceToModuleMap[ident]; ok {
+			if modHdr := symIdx.resolveSymbol(ident); modHdr != "" {
 				addAnchor(modHdr)
 			}
 		}
 	}
 
-		// Inspect Markdown links [label](target) for relative paths or file:// repo paths.
+	// Inspect Markdown links [label](target) for relative paths or file:// repo paths.
 	linkMatches := markdownLinkRe.FindAllStringSubmatch(text, -1)
 	for _, lm := range linkMatches {
 		target := strings.TrimSpace(lm[1])
@@ -263,7 +833,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 		if resolved != "" {
 			addAnchor(resolved)
 			baseIdent := strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved))
-			if modHdr, ok := interfaceToModuleMap[baseIdent]; ok {
+			if modHdr := symIdx.resolveSymbol(baseIdent); modHdr != "" {
 				addAnchor(modHdr)
 			}
 		}
@@ -335,26 +905,7 @@ func ParseDocToOps(
 	if isSkill || isDeveloperDoc {
 		docAnchors = capFallbackAnchors(extractDocAnchors(content, relPath, isValidRepoPath), 4)
 		if len(docAnchors) == 0 {
-			for _, fb := range []string{
-				"src/modules",
-				"src/core",
-				"modules/Application/Application.hpp",
-				"include/AppFoundation.h",
-				"include/interfaces",
-				"modules",
-				"src",
-				"include",
-				"platformio.ini",
-				"test",
-				"docs/developer",
-			} {
-				if isValidRepoPath(fb) {
-					docAnchors = append(docAnchors, fb)
-					if len(docAnchors) >= 4 {
-						break
-					}
-				}
-			}
+			docAnchors = getActiveRepoSymbolIndex().fallbackAnchors(isValidRepoPath, 4)
 		}
 	}
 
