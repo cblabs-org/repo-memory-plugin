@@ -65,6 +65,7 @@ handling initialize, ping, notifications/initialized, tools/list, and tools/call
 			opsDir := filepath.Join(repoRoot, ".memory", "ops")
 			srv = mcpserver.NewServer(idx,
 				mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
+				mcpserver.WithRepoContext(dataDir, repoID, repoRoot),
 			)
 		}
 		// Note: pull exposure tracking requires a per-conversation ledger.

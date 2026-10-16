@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
 )
 
 func TestPostToolUse_FastExits(t *testing.T) {
@@ -179,5 +181,51 @@ func TestPostToolUse_ErrorMatching(t *testing.T) {
 	}
 	if string(outNoMatch) != "{}" {
 		t.Errorf("expected {}, got %s", string(outNoMatch))
+	}
+}
+
+func TestPostToolUse_InvokeSubagentRegistry(t *testing.T) {
+	ctx := context.Background()
+	dataDir, repoDir, repoID := setupEnrolledRepo(t)
+	if err := config.CreateEnrolledMarker(repoDir); err != nil {
+		t.Fatalf("CreateEnrolledMarker: %v", err)
+	}
+
+	parentID := "3ce5d33d-ed0b-4d4a-8f21-5c33e7ce80c5"
+	childID := "e145e070-4d7a-42d4-89f1-305f1d520548"
+
+	payload := `{
+		"conversationId": "` + parentID + `",
+		"toolName": "invoke_subagent",
+		"toolCall": {
+			"name": "invoke_subagent",
+			"args": {"TypeName": "self", "Role": "WO1 Worker Agent", "Prompt": "Execute WO1"}
+		},
+		"toolResult": {
+			"status": "success",
+			"output": "{\"conversationId\": \"` + childID + `\", \"status\": \"running\"}"
+		},
+		"workspacePaths": ["` + repoDir + `"]
+	}`
+
+	out, err := HandlePostToolUse(ctx, []byte(payload), WithDataDir(dataDir))
+	if err != nil {
+		t.Fatalf("HandlePostToolUse invoke_subagent failed: %v", err)
+	}
+	if string(out) != "{}" {
+		t.Errorf("expected {}, got %s", string(out))
+	}
+
+	isSub, gotParent, err := state.IsSubagent(ctx, dataDir, repoID, childID)
+	if err != nil {
+		t.Fatalf("IsSubagent failed: %v", err)
+	}
+	if !isSub || gotParent != parentID {
+		t.Errorf("expected child %s registered under parent %s, got isSub=%v parent=%q", childID, parentID, isSub, gotParent)
+	}
+
+	children, err := state.ListSubagentChildren(ctx, dataDir, repoID, parentID)
+	if err != nil || len(children) != 1 || children[0] != childID {
+		t.Errorf("expected children [%s], got %v (err=%v)", childID, children, err)
 	}
 }

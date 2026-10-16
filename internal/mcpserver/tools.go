@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/inbox"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/state"
 )
 
 // MemoryBriefRequest represents the input to the memory.brief tool.
@@ -54,9 +56,15 @@ type MemorySearchResponse struct {
 
 // MemoryNoteRequest represents the input to the memory.note tool.
 type MemoryNoteRequest struct {
-	Scope string `json:"scope"`
-	Text  string `json:"text"`
-	Type  string `json:"type,omitempty"`
+	Scope          string   `json:"scope"`
+	Text           string   `json:"text"`
+	Type           string   `json:"type,omitempty"`
+	Title          string   `json:"title,omitempty"`
+	Why            string   `json:"why,omitempty"`
+	Do             string   `json:"do,omitempty"`
+	Anchors        []string `json:"anchors,omitempty"`
+	ConversationID string   `json:"conversationId,omitempty"`
+	StepIndex      int      `json:"stepIndex,omitempty"`
 }
 
 // MemoryNoteResponse represents the output of the memory.note tool.
@@ -64,15 +72,27 @@ type MemoryNoteResponse struct {
 	Result string `json:"result"`
 }
 
+// MemoryStatusRequest represents the input to the memory_status tool.
+type MemoryStatusRequest struct{}
+
+// MemoryStatusResponse represents the output of the memory_status tool.
+type MemoryStatusResponse struct {
+	Result string `json:"result"`
+}
+
 var validEntryTypes = map[dossiers.EntryType]bool{
-	dossiers.EntryTypeInvariant:        true,
-	dossiers.EntryTypeRuledOut:         true,
-	dossiers.EntryTypeFailureSignature: true,
-	dossiers.EntryTypeGotcha:           true,
-	dossiers.EntryTypeDecision:         true,
-	dossiers.EntryTypeProcedure:        true,
-	dossiers.EntryTypeInterface:        true,
-	dossiers.EntryTypeOpenIssue:        true,
+	dossiers.EntryTypeInvariant:         true,
+	dossiers.EntryTypeContract:          true,
+	dossiers.EntryTypeConvention:        true,
+	dossiers.EntryTypeRuledOut:          true,
+	dossiers.EntryTypeFailureSignature:  true,
+	dossiers.EntryTypeGotcha:            true,
+	dossiers.EntryTypeExternalBehaviour: true,
+	dossiers.EntryTypeDecision:          true,
+	dossiers.EntryTypeProcedure:         true,
+	dossiers.EntryTypeRecipe:            true,
+	dossiers.EntryTypeInterface:         true,
+	dossiers.EntryTypeOpenIssue:         true,
 }
 
 // HandleMemoryBrief implements the memory.brief tool handler.
@@ -374,17 +394,22 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 	entryID := ops.NewEntryID(prefix)
 	now := time.Now().UTC()
 
+	fields := map[string]any{
+		"entry_type": string(entryType),
+		"type":       string(entryType),
+		"text":       text,
+	}
+	if len(req.Anchors) > 0 {
+		fields["anchors"] = req.Anchors
+	}
+
 	op := ops.Op{
 		Type:         ops.OpAdd,
 		EntryID:      entryID,
 		DossierScope: scope,
 		Timestamp:    now,
 		Source:       "agent",
-		Fields: map[string]any{
-			"entry_type": string(entryType),
-			"type":       string(entryType),
-			"text":       text,
-		},
+		Fields:       fields,
 	}
 
 	batch := ops.NewBatch([]ops.Op{op})
@@ -403,13 +428,171 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 			Type:         entryType,
 			DossierScope: scope,
 			Text:         text,
+			Anchors:      req.Anchors,
 			Source:       "agent",
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		})
 	}
 
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		firstLine := text
+		if nl := strings.IndexByte(firstLine, '\n'); nl >= 0 {
+			firstLine = strings.TrimSpace(firstLine[:nl])
+		}
+		if runes := []rune(firstLine); len(runes) > 120 {
+			firstLine = string(runes[:120])
+		}
+		title = firstLine
+	}
+
+	inboxStore := s.inboxStore
+	if inboxStore == nil && s.dataDir != "" && s.repoID != "" {
+		inboxStore = inbox.NewStore(s.dataDir, s.repoID)
+	}
+	if inboxStore != nil {
+		var anchorChecks []inbox.AnchorCheck
+		if s.repoRoot != "" && len(req.Anchors) > 0 {
+			anchorChecks = inbox.CheckAnchors(s.repoRoot, req.Anchors)
+		}
+		var stepsCovered [2]int
+		if req.StepIndex > 0 {
+			stepsCovered = [2]int{req.StepIndex, req.StepIndex}
+		}
+		note := &inbox.Note{
+			Source:         inbox.SourceMCPNote,
+			ConversationID: strings.TrimSpace(req.ConversationID),
+			StepsCovered:   stepsCovered,
+			Items: []inbox.NoteItem{
+				{
+					Type:         entryType,
+					Title:        title,
+					Why:          strings.TrimSpace(req.Why),
+					Do:           strings.TrimSpace(req.Do),
+					Anchors:      req.Anchors,
+					AnchorChecks: anchorChecks,
+					Evidence:     text,
+					Scope:        scope,
+				},
+			},
+			CreatedAt:    now,
+			Consolidated: false,
+		}
+		_, _ = inboxStore.Write(note)
+	}
+
+	convID := strings.TrimSpace(req.ConversationID)
+	if s.dataDir != "" && s.repoID != "" && convID != "" {
+		if mark, err := state.LoadMark(s.dataDir, s.repoID, convID); err == nil && mark != nil {
+			mark.LastNoteAt = now
+			mark.NoteCount++
+			if title != "" {
+				mark.NoteTitles = append(mark.NoteTitles, title)
+			}
+			if req.StepIndex > mark.StepIndex {
+				mark.StepIndex = req.StepIndex
+			}
+			_ = state.SaveMark(s.dataDir, s.repoID, mark)
+		}
+	}
+
 	return MemoryNoteResponse{
 		Result: fmt.Sprintf("Note recorded: %s", entryID),
 	}, nil
+}
+
+const ftsAllTokensQuery = "a* OR b* OR c* OR d* OR e* OR f* OR g* OR h* OR i* OR j* OR k* OR l* OR m* OR n* OR o* OR p* OR q* OR r* OR s* OR t* OR u* OR v* OR w* OR x* OR y* OR z* OR 0* OR 1* OR 2* OR 3* OR 4* OR 5* OR 6* OR 7* OR 8* OR 9*"
+
+// HandleMemoryStatus implements the memory_status (alias memory_stats) tool handler.
+func (s *Server) HandleMemoryStatus(ctx context.Context, _ MemoryStatusRequest) (MemoryStatusResponse, error) {
+	seenIDs := make(map[string]dossiers.Entry)
+	if s.idx != nil {
+		if entries, err := s.idx.SearchEntries(ctx, ftsAllTokensQuery); err == nil {
+			for _, e := range entries {
+				seenIDs[e.ID] = e
+			}
+		}
+		for _, src := range []string{"", "agent", "doc-seed", "consolidator"} {
+			if entries, err := s.idx.ListEntriesBySource(ctx, src); err == nil {
+				for _, e := range entries {
+					seenIDs[e.ID] = e
+				}
+			}
+		}
+	}
+
+	activeCount := 0
+	semanticCount := 0
+	proceduralCount := 0
+	episodicCount := 0
+	retiredCount := 0
+	scopes := make(map[string]bool)
+	retiredSeen := make(map[string]bool)
+
+	for _, e := range seenIDs {
+		if e.DossierScope != "" {
+			scopes[e.DossierScope] = true
+		}
+		isRetired := e.Retired
+		if !isRetired && s.idx != nil {
+			if hists, err := s.idx.GetHistory(ctx, e.ID); err == nil && len(hists) > 0 {
+				isRetired = true
+			}
+		}
+		if isRetired {
+			retiredSeen[e.ID] = true
+			continue
+		}
+		activeCount++
+		switch e.EffectiveKind() {
+		case dossiers.CognitiveKindSemantic:
+			semanticCount++
+		case dossiers.CognitiveKindProcedural:
+			proceduralCount++
+		case dossiers.CognitiveKindEpisodic:
+			episodicCount++
+		default:
+			semanticCount++
+		}
+	}
+
+	if s.idx != nil {
+		for scope := range scopes {
+			if hists, err := s.idx.QueryHistoryByScope(ctx, scope); err == nil {
+				for _, h := range hists {
+					if h.ID != "" {
+						retiredSeen[h.ID] = true
+					}
+				}
+			}
+		}
+	}
+	retiredCount = len(retiredSeen)
+
+	pendingNotes := 0
+	totalNotes := 0
+	inboxStore := s.inboxStore
+	if inboxStore == nil && s.dataDir != "" && s.repoID != "" {
+		inboxStore = inbox.NewStore(s.dataDir, s.repoID)
+	}
+	if inboxStore != nil {
+		if all, err := inboxStore.ListAll(); err == nil {
+			totalNotes = len(all)
+			for _, n := range all {
+				if !n.Consolidated {
+					pendingNotes++
+				}
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Active Entries: %d (semantic: %d, procedural: %d, episodic: %d)\n",
+		activeCount, semanticCount, proceduralCount, episodicCount))
+	b.WriteString(fmt.Sprintf("Scopes: %d\n", len(scopes)))
+	b.WriteString(fmt.Sprintf("Retired Entries: %d\n", retiredCount))
+	b.WriteString(fmt.Sprintf("Inbox Notes: %d pending (%d total)", pendingNotes, totalNotes))
+
+	return MemoryStatusResponse{Result: b.String()}, nil
 }
