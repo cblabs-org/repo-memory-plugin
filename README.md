@@ -32,6 +32,7 @@
 ├── config.yaml                  # Scopes, aliases, scrub rules, and doc_seeds settings
 ├── scrub.yaml                   # Shared secret/PII scrubbing rules (fail-closed)
 ├── ATLAS.md                     # Deterministically rendered 1-line-per-dossier index
+├── QUESTIONS.md                 # Unresolved open issues, suspect entries, and coverage gaps
 ├── dossiers/                    # Deterministically rendered from .memory/ops/ (~3k token cap)
 │   ├── <scope>.md               # Active entries ({section?} omits empty headings)
 │   └── <scope>.history.md       # Superseded and retired entries
@@ -76,29 +77,39 @@ Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedu
 go build ./cmd/repo-memory
 go test ./...
 
-# Enrol (or leave) a repository and bootstrap Day-1 dossiers + index.db
-repo-memory enroll          # alias: repo-memory init
-repo-memory unenroll        # alias: repo-memory leave
+# Installation & Repository Enrolment
+repo-memory install --harness <antigravity|claude>
+repo-memory uninstall --harness <antigravity|claude>
+repo-memory enroll                                      # alias: repo-memory init
+repo-memory unenroll                                    # alias: repo-memory leave
 
-# Seed from curated repository markdown docs & skills, or historical PA work orders
-repo-memory seed-docs [--repo <path>] [--dry-run]
-repo-memory seed [--repo <path>] [--before <rfc3339>]
+# Seeding & Op-Log Maintenance
+repo-memory seed-docs [--repo <path>] [--dry-run] [--json]
+repo-memory seed [--repo <path>] [--before <commit>] [--dry-run]
+repo-memory ops gc [--repo <path>] [--dossiers-dir <path>] [--dry-run]
 
-# Deterministically re-render dossiers/ATLAS.md and rebuild index.db from .memory/ops/
+# Consolidation, Skill Graduation & Gardening
+repo-memory consolidate [--repo <path>] [--dry-run] [--json]
+repo-memory promote-skills [--repo <path>] [--dry-run] [--json]
+repo-memory garden [--repo <path>] [--dry-run] [--json]
+
+# Principal Architect (PA) Integration
+repo-memory summary <session-id-or-path> [--max-tokens <n>] [--json]
+repo-memory brief [--workorder <path>] [--scope <scope>] [--max-tokens <n>] [--json]
+
+# Backfill, Reprojection & Indexing
+repo-memory backfill [--repo <path>] [--transcripts] [--docs] [--git] [--max-items <n>] [--force] [--dry-run] [--json] # alias: repo-memory backfill-captures
+repo-memory reproject [--repo <path>] [--include-local] [--allow-loss] [--dry-run] [--json]
 repo-memory reindex [--repo <path>]
 
-# Run a single background tick pass manually (or dry-run spend estimates)
-repo-memory tick            # alias: repo-memory run
-
-# Inspect status, search, usage, diagnostics, and reports
-repo-memory status
+# Background Tick, Observability & Diagnostics
+repo-memory tick                                        # alias: repo-memory run
+repo-memory status [--json]
 repo-memory search <query>
 repo-memory usage
-repo-memory report
+repo-memory report [--days <n>] [--json]
 repo-memory snapshot
-repo-memory doctor
-
-# Emergency kill switch
+repo-memory doctor [path]
 repo-memory disable [--all]
 repo-memory enable
 ```
