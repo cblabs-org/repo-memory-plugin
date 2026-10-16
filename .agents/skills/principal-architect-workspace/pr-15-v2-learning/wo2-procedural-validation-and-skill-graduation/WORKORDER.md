@@ -4,7 +4,7 @@
 > **Branch:** `pr-15-v2-learning/wo2-procedural-validation-and-skill-graduation`
 > **Base Branch:** `pr-15-v2-learning/wo1-layer3-eval-bridge-and-handover`
 > **Complexity:** `architect`
-> **Status:** 🔄 Active
+> **Status:** ✅ Complete
 
 ---
 
@@ -107,3 +107,27 @@ Implement **Addendum A §10 A7 (Procedures become skills — `procedural` cognit
 - **Verification Output:**
   - `go test -race ...`
 ```
+
+---
+
+## Completion Report (`wo2-procedural-validation-and-skill-graduation`)
+- **Commit(s):** `ae7fee0`
+- **Files Created / Modified:**
+  - `internal/core/index/entries.go`
+  - `internal/core/skills/tracker.go`
+  - `internal/core/skills/graduate.go`
+  - `internal/core/skills/skills_test.go`
+  - `internal/core/delivery/formatter.go`
+  - `internal/core/delivery/formatter_test.go`
+  - `internal/core/tick/pipeline.go`
+  - `internal/harness/antigravity/posttooluse.go`
+  - `internal/harness/antigravity/posttooluse_test.go`
+  - `internal/harness/antigravity/preinvocation.go`
+  - `cmd/repo-memory/cmd_promote_skills.go`
+  - `cmd/repo-memory/main.go`
+  - `.agents/skills/principal-architect-workspace/pr-15-v2-learning/wo2-procedural-validation-and-skill-graduation/WORKORDER.md`
+- **Verification Output:**
+  - `go build ./cmd/... ./internal/... ./packaging/...` — PASS
+  - `go vet ./cmd/... ./internal/... ./packaging/...` — PASS
+  - `go test -race ./internal/core ./internal/core/index/... ./internal/core/skills/... ./internal/core/delivery/... ./internal/core/tick/... ./internal/harness/antigravity/... ./cmd/repo-memory/...` — PASS
+
