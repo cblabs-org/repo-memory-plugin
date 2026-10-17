@@ -26,6 +26,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
+	"github.com/cblabs-org/repo-memory-plugin/packaging/antigravity"
 	"github.com/spf13/cobra"
 )
 
@@ -117,7 +118,17 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 		}
 	}
 
-	// --- Step 4: Run graduated skills lint checks ---
+	// --- Step 4: Check installed plugin bundle version against binary version ---
+	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
+		installedVer := ReadInstalledPluginVersion(daemonDir)
+		expectedVer := antigravity.NormalizePluginVersion(Version)
+		if installedVer != "" && Version != "" && Version != "dev" && installedVer != expectedVer {
+			fmt.Fprintf(cmd.OutOrStdout(), "⚠ Plugin bundle version (%s) does not match binary version (%s).\n", installedVer, expectedVer)
+			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
+		}
+	}
+
+	// --- Step 5: Run graduated skills lint checks ---
 	if hasMemoryDir {
 		dataDir := config.DataDir()
 		repoID := ""

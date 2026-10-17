@@ -57,7 +57,8 @@ Generated automatically from repository memory coverage, open issues, and stalen
 
 ## 2. Suspect / Stale Entries Needing Verification
 
-_No suspect or stale entries._
+- **[docseed-b52782ec]** (`root`, `recipe`): **Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`).
+  - Anchors: `Makefile`, `go.mod`
 
 ## 3. Uncovered & Low-Coverage Scopes
 
@@ -74,4 +75,5 @@ _No suspect or stale entries._
 - **Scope `transcript-episode`**: coverage score `0.00` (0 active, 0 suspect, 0 open issues)
 - **Unmapped directory `evaluation/oracle`**: 0 anchored memory entries
 - **Unmapped directory `evaluation/scripts`**: 0 anchored memory entries
+- **Unmapped directory `scripts`**: 0 anchored memory entries
 

@@ -34,6 +34,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/skills"
+	"github.com/cblabs-org/repo-memory-plugin/packaging/antigravity"
 )
 
 var (
@@ -43,13 +44,15 @@ var (
 
 // StatusOutput represents the structured output of `repo-memory status`.
 type StatusOutput struct {
-	RepoRoot        string   `json:"repo_root"`         // Absolute path to the repository root.
-	RepoID          string   `json:"repo_id,omitempty"` // Stable registry slug derived from remote origin URL or root path hash.
-	Enrolled        bool     `json:"enrolled"`          // Whether the repository is actively enrolled.
-	Freshness       string   `json:"freshness"`         // Single-line freshness status header.
-	ActiveDossiers  int      `json:"active_dossiers"`   // Number of scopes with active dossier entries.
-	ActiveEntries   int      `json:"active_entries"`    // Total active (non-retired) dossier entries.
-	GraduatedSkills []string `json:"graduated_skills"`  // Slugs of graduated procedural skills.
+	Version         string   `json:"version,omitempty"`        // Normalized semantic version of the running CLI binary.
+	PluginVersion   string   `json:"plugin_version,omitempty"` // Version recorded in the installed repo-memory-daemon/plugin.json manifest.
+	RepoRoot        string   `json:"repo_root"`                // Absolute path to the repository root.
+	RepoID          string   `json:"repo_id,omitempty"`        // Stable registry slug derived from remote origin URL or root path hash.
+	Enrolled        bool     `json:"enrolled"`                 // Whether the repository is actively enrolled.
+	Freshness       string   `json:"freshness"`                // Single-line freshness status header.
+	ActiveDossiers  int      `json:"active_dossiers"`          // Number of scopes with active dossier entries.
+	ActiveEntries   int      `json:"active_entries"`           // Total active (non-retired) dossier entries.
+	GraduatedSkills []string `json:"graduated_skills"`         // Slugs of graduated procedural skills.
 }
 
 // statusCmd defines the `repo-memory status` subcommand.
@@ -113,7 +116,14 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 		graduated = []string{}
 	}
 
+	var pluginVer string
+	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
+		pluginVer = ReadInstalledPluginVersion(daemonDir)
+	}
+
 	out := StatusOutput{
+		Version:         antigravity.NormalizePluginVersion(Version),
+		PluginVersion:   pluginVer,
 		RepoRoot:        repoRoot,
 		RepoID:          repoID,
 		Enrolled:        enrolled,
@@ -132,6 +142,11 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 
 	w := cmd.OutOrStdout()
 	fmt.Fprintln(w, out.Freshness)
+	if out.PluginVersion != "" && out.PluginVersion != out.Version {
+		fmt.Fprintf(w, "Version:    %s (plugin: %s ⚠ run `repo-memory install` to sync)\n", out.Version, out.PluginVersion)
+	} else {
+		fmt.Fprintf(w, "Version:    %s\n", out.Version)
+	}
 	fmt.Fprintf(w, "Repository: %s\n", out.RepoRoot)
 	fmt.Fprintf(w, "Enrolled:   %v\n", out.Enrolled)
 	fmt.Fprintf(w, "Dossiers:   %d active (%d active entries)\n", out.ActiveDossiers, out.ActiveEntries)
