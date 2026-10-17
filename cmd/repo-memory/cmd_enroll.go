@@ -38,6 +38,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/seed"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
 )
@@ -288,7 +289,7 @@ func bootstrapRepoMemoryOnEnroll(cmd *cobra.Command, repoRoot, dataDir, repoID s
 
 	// --- Step 2: Seed curated repository markdown docs and skills if present ---
 	if !enrollNoSeedDocsFlag {
-		repoCfg, err := config.LoadRepoConfig(configPath)
+		repoCfg, err := config.LoadRepoConfig(repoRoot)
 		if err != nil && !os.IsNotExist(err) {
 			repoCfg = config.DefaultRepoConfig()
 		}
@@ -312,22 +313,7 @@ func bootstrapRepoMemoryOnEnroll(cmd *cobra.Command, repoRoot, dataDir, repoID s
 		}
 	}
 
-	// --- Step 3: Project dossiers, refresh GEMINI.md Atlas, and rebuild index.db if ops exist ---
-	entries, err := os.ReadDir(opsDir)
-	if err != nil {
-		return
-	}
-	hasOpFiles := false
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			hasOpFiles = true
-			break
-		}
-	}
-	if !hasOpFiles {
-		return
-	}
-
+	// --- Step 3: Project dossiers, refresh GEMINI.md Atlas, rebuild index.db, and refresh freshness.json ---
 	opsReader := ops.NewReader(opsDir)
 	proj := dossiers.NewProjector(opsReader)
 	if dossiersMap, projErr := proj.Project(ctx); projErr == nil && len(dossiersMap) > 0 {
@@ -344,6 +330,7 @@ func bootstrapRepoMemoryOnEnroll(cmd *cobra.Command, repoRoot, dataDir, repoID s
 			_ = idx.Close()
 		}
 	}
+	tick.NewPipelineExecutor(dataDir, repoRoot, repoID, nil, nil).RefreshFreshnessState(ctx, false)
 }
 
 // EnsureWorkspacePluginConfigured registers the repo-memory workspace plugin path inside

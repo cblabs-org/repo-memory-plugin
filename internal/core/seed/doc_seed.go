@@ -897,15 +897,19 @@ func ParseDocToOps(
 		commitTime = commitTime.UTC()
 	}
 
-	isSkill := strings.HasSuffix(relPath, "SKILL.md") || strings.Contains(relPath, ".agents/skills/")
-	isDeveloperDoc := strings.HasPrefix(relPath, "docs/developer/")
+	isSkill := strings.HasSuffix(relPath, "SKILL.md") || strings.Contains(relPath, ".agents/skills/") || strings.Contains(relPath, ".agents/rules/")
+	upperRel := strings.ToUpper(relPath)
+	isDeveloperDoc := strings.HasPrefix(relPath, "docs/developer/") || strings.HasSuffix(upperRel, "_SETUP.MD") || strings.HasSuffix(upperRel, "_GUIDE.MD")
 
-	// Collect valid repo paths referenced anywhere in the document (used as fallback for SKILL.md and developer guides).
+	// Collect valid repo paths referenced anywhere in the document (used as fallback for SKILL.md, rules, and developer guides).
 	var docAnchors []string
 	if isSkill || isDeveloperDoc {
 		docAnchors = capFallbackAnchors(extractDocAnchors(content, relPath, isValidRepoPath), 4)
 		if len(docAnchors) == 0 {
 			docAnchors = getActiveRepoSymbolIndex().fallbackAnchors(isValidRepoPath, 4)
+		}
+		if len(docAnchors) == 0 && relPath != "" && isValidRepoPath(relPath) {
+			docAnchors = []string{relPath}
 		}
 	}
 
@@ -1161,7 +1165,7 @@ func ParseDocToOps(
 		if len(anchors) == 0 && len(cand.sectionAnchors) > 0 {
 			anchors = append([]string(nil), cand.sectionAnchors...)
 		}
-		if len(anchors) == 0 && (isSkill || isDeveloperDoc) && len(docAnchors) > 0 {
+		if len(anchors) == 0 && len(docAnchors) > 0 {
 			anchors = append([]string(nil), docAnchors...)
 		}
 
@@ -1189,7 +1193,7 @@ func ParseDocToOps(
 			}
 		}
 
-		// For non-skill, non-developer docs, strictly require at least 1 valid repo anchor.
+		// For non-skill, non-developer docs without fallback docAnchors, strictly require at least 1 valid repo anchor.
 		if !isSkill && !isDeveloperDoc && len(anchors) == 0 {
 			continue
 		}
@@ -1207,7 +1211,7 @@ func ParseDocToOps(
 			}
 		}
 		if dossierScope == "" || isPollutedScope(dossierScope) {
-			if isSkill {
+			if isSkill || (isDeveloperDoc && len(anchors) == 1 && anchors[0] == relPath) {
 				if defScope := deriveDocDefaultScope(relPath); !isPollutedScope(defScope) {
 					dossierScope = defScope
 				} else {

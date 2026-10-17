@@ -29,7 +29,11 @@ var seedDocsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoRoot, err := gitops.FindRepoRoot(seedDocsRepoDir)
 		if err != nil {
-			return fmt.Errorf("finding repo root: %w", err)
+			if absDir, absErr := filepath.Abs(seedDocsRepoDir); absErr == nil {
+				repoRoot = absDir
+			} else {
+				repoRoot = seedDocsRepoDir
+			}
 		}
 
 		resolve := func(p string, flagChanged bool) string {

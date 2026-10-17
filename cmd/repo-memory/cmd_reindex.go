@@ -26,6 +26,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,11 @@ var reindexCmd = &cobra.Command{
 
 		repoRoot, err := gitops.FindRepoRoot(targetDir)
 		if err != nil {
-			return fmt.Errorf("finding repo root: %w", err)
+			if absDir, absErr := filepath.Abs(targetDir); absErr == nil {
+				repoRoot = absDir
+			} else {
+				repoRoot = targetDir
+			}
 		}
 
 		dataDir := config.DataDir()
@@ -84,6 +89,8 @@ var reindexCmd = &cobra.Command{
 		if err := idx.RebuildFromOpLog(ctx, opsReader); err != nil {
 			return fmt.Errorf("rebuilding index from op log: %w", err)
 		}
+
+		tick.NewPipelineExecutor(dataDir, repoRoot, repoID, nil, nil).RefreshFreshnessState(ctx, false)
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Index rebuilt successfully in %s\n", dbPath)
 		return nil
