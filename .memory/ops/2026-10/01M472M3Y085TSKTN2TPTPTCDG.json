@@ -10,8 +10,7 @@
       "fields": {
         "anchors": [
           "internal/harness/antigravity/v2_spike_channels.go",
-          "cmd/repo-memory/cmd_hook.go",
-          "docs/experiments/X5-channels.md"
+          "cmd/repo-memory/cmd_hook.go"
         ],
         "entry_type": "decision",
         "text": "Bypassed the fast-path explicitly for `PreInvocation` in `cmd_hook.go` to ensure the hook fired."

@@ -17,7 +17,7 @@
 `decision · kind: episodic · anchors: internal/harness/antigravity/pretooluse.go, cmd/repo-memory/cmd_hook.go, internal/harness/antigravity/pretooluse_test.go, cmd/repo-memory/hook_test.go`
 
 ### [seed-203c1800] Bypassed the fast-path explicitly for `PreInvocation` in `cmd_hook.go` to ensure the hook fired.
-`decision · kind: episodic · anchors: internal/harness/antigravity/v2_spike_channels.go, cmd/repo-memory/cmd_hook.go, docs/experiments/X5-channels.md`
+`decision · kind: episodic · anchors: internal/harness/antigravity/v2_spike_channels.go, cmd/repo-memory/cmd_hook.go`
 
 ### [seed-3ace6d21] Extracted unique touched workspace paths by unmarshaling `step.ToolCalls` and filtering paths inside the workspace.
 `decision · kind: episodic · anchors: internal/harness/antigravity/preinvocation.go, cmd/repo-memory/cmd_hook.go, cmd/repo-memory/enrolment_test.go`

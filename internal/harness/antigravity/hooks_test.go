@@ -2,6 +2,7 @@ package antigravity
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,11 +88,11 @@ func TestStopHook_CompletePipeline(t *testing.T) {
 		t.Fatalf("writing transcript: %v", err)
 	}
 
-	rawPayload := []byte(`{
+	rawPayload := []byte(fmt.Sprintf(`{
 		"conversationId": "conv-stop-1",
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + repoDir + `"]
-	}`)
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, transcriptPath, repoDir))
 
 	ctx := context.Background()
 	out, err := HandleStop(ctx, rawPayload, WithDataDir(dataDir))

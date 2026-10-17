@@ -17,6 +17,7 @@
 package config
 
 import (
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ import (
 // It iterates through the subsystems and returns the first one where a glob matches the file path.
 // Returns an empty string if no subsystem matches.
 func (c RepoConfig) AssignSubsystem(filePath string) string {
+	filePath = filepath.ToSlash(filePath)
 	// --- Step 1: Sort subsystem names for deterministic evaluation order ---
 	var names []string
 	for name := range c.Subsystems {
@@ -37,7 +39,7 @@ func (c RepoConfig) AssignSubsystem(filePath string) string {
 	for _, name := range names {
 		subsystem := c.Subsystems[name]
 		for _, pattern := range subsystem.Globs {
-			matched, err := filepath.Match(pattern, filePath)
+			matched, err := path.Match(pattern, filePath)
 			if err == nil && matched {
 				return name
 			}

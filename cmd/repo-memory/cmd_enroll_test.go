@@ -33,6 +33,7 @@ func TestEnrollUnenrollFlow(t *testing.T) {
 	// 1. Create temp dirs for plugin and repo
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
+	t.Setenv("USERPROFILE", tempHome)
 	
 	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
 	tempDataDir := filepath.Join(t.TempDir(), "data")
@@ -291,6 +292,7 @@ func TestMigrationPath(t *testing.T) {
 
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
+	t.Setenv("USERPROFILE", tempHome)
 
 	daemonPluginDir := filepath.Join(parentPluginsDir, "repo-memory-daemon")
 	fakeBinPath := filepath.Join(t.TempDir(), "bin", "repo-memory")
@@ -350,6 +352,7 @@ func TestMigrationPath(t *testing.T) {
 func TestEnroll_MigratesPAMemoryAndSyncsMode(t *testing.T) {
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
+	t.Setenv("USERPROFILE", tempHome)
 
 	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
 	tempDataDir := filepath.Join(t.TempDir(), "data")
@@ -549,6 +552,7 @@ completion:
 func TestEnroll_ConfigOverrideFlags(t *testing.T) {
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
+	t.Setenv("USERPROFILE", tempHome)
 
 	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
 	tempDataDir := filepath.Join(t.TempDir(), "data")

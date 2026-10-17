@@ -3,6 +3,7 @@ package antigravity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,15 +132,15 @@ func TestPreToolUse_EditWithNoGate(t *testing.T) {
 	}
 	idx.Close()
 
-	payload := `{
+	payload := fmt.Sprintf(`{
 		"conversationId": "conv-test",
 		"toolName": "replace_file_content",
 		"toolCall": {
 			"name": "replace_file_content",
-			"args": {"TargetFile": "` + filepath.Join(workspace, "safe_file.go") + `"}
+			"args": {"TargetFile": %q}
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, filepath.Join(workspace, "safe_file.go"), workspace)
 
 	out, err := HandlePreToolUse(ctx, []byte(payload))
 	if err != nil {
@@ -182,15 +183,15 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 	idx.Close()
 
 	// 1. Test replace_file_content with absolute TargetFile path
-	payloadReplace := `{
+	payloadReplace := fmt.Sprintf(`{
 		"conversationId": "conv-test-gate",
 		"toolName": "replace_file_content",
 		"toolCall": {
 			"name": "replace_file_content",
-			"args": {"TargetFile": "` + targetFile + `"}
+			"args": {"TargetFile": %q}
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, targetFile, workspace)
 
 	out, err := HandlePreToolUse(ctx, []byte(payloadReplace))
 	if err != nil {
@@ -216,15 +217,15 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 	}
 
 	// 2. Re-issued edit with same conversationID — gate is pending, still force_ask.
-	payloadWrite := `{
+	payloadWrite := fmt.Sprintf(`{
 		"conversationId": "conv-test-gate",
 		"toolName": "write_to_file",
 		"toolCall": {
 			"name": "write_to_file",
 			"args": {"TargetFile": "critical_config.go"}
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, workspace)
 
 	outWrite, err := HandlePreToolUse(ctx, []byte(payloadWrite))
 	if err != nil {
@@ -241,7 +242,7 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 	}
 
 	// 3. Simulate PostToolUse with successful edit — acknowledges pending gates.
-	postPayload := `{
+	postPayload := fmt.Sprintf(`{
 		"conversationId": "conv-test-gate",
 		"toolName": "write_to_file",
 		"toolCall": {
@@ -249,8 +250,8 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 			"args": {"TargetFile": "critical_config.go"}
 		},
 		"toolResult": {"status": "success", "output": ""},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, workspace)
 	_, err = HandlePostToolUse(ctx, []byte(postPayload))
 	if err != nil {
 		t.Fatalf("unexpected error from PostToolUse: %v", err)
@@ -272,15 +273,15 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 	}
 
 	// 5. Different conversationID — gate should trigger again.
-	payloadNew := `{
+	payloadNew := fmt.Sprintf(`{
 		"conversationId": "conv-test-gate-2",
 		"toolName": "write_to_file",
 		"toolCall": {
 			"name": "write_to_file",
 			"args": {"TargetFile": "critical_config.go"}
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, workspace)
 
 	outNew, err := HandlePreToolUse(ctx, []byte(payloadNew))
 	if err != nil {

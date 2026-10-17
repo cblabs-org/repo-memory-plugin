@@ -15,12 +15,11 @@
           "internal/core/seed/gc_test.go",
           "cmd/repo-memory/cmd_ops_gc.go",
           "cmd/repo-memory/main.go",
-          "evaluation/cmd/build-index/main.go",
           ".memory/ops",
           ".agents/skills/principal-architect-workspace"
         ],
         "entry_type": "decision",
-        "text": "Filtered module-derivation anchor inputs in `RunOpsGC` to multi-segment non-dot paths (`strings.Contains(a, \"/\") \u0026\u0026 !strings.HasPrefix(a, \".\")`) so root-level files (`Makefile`, `.gitignore`) and dot-directories (`.agents/...`, `.memory/...`) map cleanly to `\"root\"` without creating spurious `.agents` or `Makefile` module scopes during scope repair."
+        "text": "Filtered module-derivation anchor inputs in `RunOpsGC` to multi-segment non-dot paths (`strings.Contains(a, \"/\") && !strings.HasPrefix(a, \".\")`) so root-level files (`Makefile`, `.gitignore`) and dot-directories (`.agents/...`, `.memory/...`) map cleanly to `\"root\"` without creating spurious `.agents` or `Makefile` module scopes during scope repair."
       }
     }
   ],

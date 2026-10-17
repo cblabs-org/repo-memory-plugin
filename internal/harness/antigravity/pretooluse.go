@@ -202,10 +202,10 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 	}
 
 	targetClean := filepath.Clean(targetFile)
-	relPath := targetClean
+	relPath := filepath.ToSlash(targetClean)
 	if filepath.IsAbs(targetClean) {
 		if rel, err := filepath.Rel(workspaceRoot, targetClean); err == nil && !strings.HasPrefix(rel, "..") {
-			relPath = rel
+			relPath = filepath.ToSlash(rel)
 		}
 	}
 

@@ -123,7 +123,7 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	workspace, idxPath := setupEnrolledWorkspace(t)
 	
 	// Test empty index
-	payload := `{"invocationNum": 0, "initialNumSteps": 0, "workspacePaths": ["` + workspace + `"]}`
+	payload := fmt.Sprintf(`{"invocationNum": 0, "initialNumSteps": 0, "workspacePaths": [%q]}`, workspace)
 	out, err := HandlePreInvocation(ctx, []byte(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	idx.Close()
 
 	// Task start with user prompt matches the scope/text
-	payload2 := `{"invocationNum": 0, "initialNumSteps": 0, "userPrompt": "test context", "workspacePaths": ["` + workspace + `"]}`
+	payload2 := fmt.Sprintf(`{"invocationNum": 0, "initialNumSteps": 0, "userPrompt": "test context", "workspacePaths": [%q]}`, workspace)
 	out2, err := HandlePreInvocation(ctx, []byte(payload2))
 	if err != nil {
 		t.Fatal(err)
@@ -250,13 +250,13 @@ func TestPreInvocation_AboutToEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload := `{
+	payload := fmt.Sprintf(`{
 		"conversationId": "conv-about-to-edit",
 		"invocationNum": 0,
 		"initialNumSteps": 4,
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, transcriptPath, workspace)
 
 	out, err := HandlePreInvocation(ctx, []byte(payload))
 	if err != nil {
@@ -376,13 +376,13 @@ CHECKPOINT
 		t.Fatal(err)
 	}
 
-	payload := `{
+	payload := fmt.Sprintf(`{
 		"conversationId": "conv-compaction",
 		"invocationNum": 0,
 		"initialNumSteps": 5,
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, transcriptPath, workspace)
 
 	out, err := HandlePreInvocation(ctx, []byte(payload))
 	if err != nil {
@@ -483,13 +483,13 @@ func TestPreInvocation_AntigravityNativeToolCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload := `{
+	payload := fmt.Sprintf(`{
 		"conversationId": "conv-native-tool-calls",
 		"invocationNum": 0,
 		"initialNumSteps": 4,
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, transcriptPath, workspace)
 
 	out, err := HandlePreInvocation(ctx, []byte(payload))
 	if err != nil {
@@ -588,13 +588,13 @@ func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload4 := `{
-		"conversationId": "` + convID + `",
+	payload4 := fmt.Sprintf(`{
+		"conversationId": %q,
 		"invocationNum": 1,
 		"initialNumSteps": 4,
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
 
 	// 1. Initial invocation with 4-step transcript touching service.go
 	out1, err := HandlePreInvocation(ctx, []byte(payload4))
@@ -638,13 +638,13 @@ func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload2 := `{
-		"conversationId": "` + convID + `",
+	payload2 := fmt.Sprintf(`{
+		"conversationId": %q,
 		"invocationNum": 1,
 		"initialNumSteps": 2,
-		"transcriptPath": "` + transcriptPath + `",
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"transcriptPath": %q,
+		"workspacePaths": [%q]
+	}`, convID, transcriptPath, workspace)
 
 	out3, err := HandlePreInvocation(ctx, []byte(payload2))
 	if err != nil {

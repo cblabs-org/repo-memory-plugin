@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
-
 )
 
 func TestInstallIdempotencyAndLayout(t *testing.T) {
@@ -257,6 +257,7 @@ func TestMigrationFromLegacyLayout(t *testing.T) {
 
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
+	t.Setenv("USERPROFILE", tempHome)
 
 	daemonDir := filepath.Join(parentDir, "repo-memory-daemon")
 	binPath := "/test/bin/repo-memory"
@@ -405,7 +406,7 @@ func TestRunPortableInstallAndVersionDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected %s to exist: %v", runnerPath, err)
 	}
-	if info.Mode().Perm()&0111 == 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
 		t.Errorf("expected %s to be executable, mode=%v", runnerPath, info.Mode())
 	}
 

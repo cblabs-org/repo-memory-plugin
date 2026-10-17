@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -237,7 +238,7 @@ rules:
 		if err != nil {
 			t.Fatalf("Stat quarantine file: %v", err)
 		}
-		if info.Mode().Perm() != 0600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 			t.Errorf("expected permissions 0600, got %o", info.Mode().Perm())
 		}
 		saved, err := os.ReadFile(qPath)

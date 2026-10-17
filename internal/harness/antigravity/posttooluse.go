@@ -235,10 +235,10 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		targetFile := extractTargetFile(input.ToolCall.Args)
 		if targetFile != "" {
 			targetClean := filepath.Clean(targetFile)
-			relPath := targetClean
+			relPath := filepath.ToSlash(targetClean)
 			if filepath.IsAbs(targetClean) {
 				if rel, err := filepath.Rel(workspaceRoot, targetClean); err == nil && !strings.HasPrefix(rel, "..") {
-					relPath = rel
+					relPath = filepath.ToSlash(rel)
 				}
 			}
 			_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {

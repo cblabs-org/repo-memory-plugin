@@ -42,6 +42,7 @@ func TestCopyTranscripts(t *testing.T) {
 	}
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	ctx := context.Background()
 	if err := CopyTranscripts(ctx, dataDir, enrolledRepos); err != nil {

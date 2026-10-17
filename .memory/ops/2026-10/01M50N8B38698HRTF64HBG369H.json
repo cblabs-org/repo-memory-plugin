@@ -23,26 +23,6 @@
     },
     {
       "type": "add",
-      "entry_id": "docseed-c7299f01",
-      "dossier_scope": "eval",
-      "timestamp": "2026-10-15T17:43:53Z",
-      "source": "doc-seed",
-      "fields": {
-        "anchors": [
-          "internal/eval"
-        ],
-        "entry_type": "recipe",
-        "evidence": [
-          "doc:docs/addendum-a-provenance-and-hardening.md"
-        ],
-        "kind": "procedural",
-        "source_doc_blob_sha": "e46b1805752fcbc42e95dfa3ca566ecc54108699",
-        "source_doc_path": "docs/addendum-a-provenance-and-hardening.md",
-        "text": "**Tooling.** `repo-memory eval compare \u003ca.json\u003e \u003cb.json\u003e` in `internal/eval` does the pairing, tests and correction."
-      }
-    },
-    {
-      "type": "add",
       "entry_id": "docseed-b52782ec",
       "dossier_scope": "root",
       "timestamp": "2026-10-15T17:43:53Z",

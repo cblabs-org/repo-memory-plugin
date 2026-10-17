@@ -3,6 +3,7 @@ package antigravity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,7 +124,7 @@ func TestPostToolUse_ErrorMatching(t *testing.T) {
 	idx.Close()
 
 	// Error with matching command prefix and pattern
-	payloadMatch := `{
+	payloadMatch := fmt.Sprintf(`{
 		"conversationId": "conv-123",
 		"toolName": "run_command",
 		"toolCall": {
@@ -134,8 +135,8 @@ func TestPostToolUse_ErrorMatching(t *testing.T) {
 			"status": "error",
 			"output": "panic: runtime error: invalid memory address"
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, workspace)
 
 	out, err := HandlePostToolUse(ctx, []byte(payloadMatch))
 	if err != nil {
@@ -162,7 +163,7 @@ func TestPostToolUse_ErrorMatching(t *testing.T) {
 	}
 
 	// Error with unknown command prefix -> returns {}
-	payloadNoMatch := `{
+	payloadNoMatch := fmt.Sprintf(`{
 		"conversationId": "conv-123",
 		"toolName": "run_command",
 		"toolCall": {
@@ -173,8 +174,8 @@ func TestPostToolUse_ErrorMatching(t *testing.T) {
 			"status": "error",
 			"output": "cargo error: could not compile"
 		},
-		"workspacePaths": ["` + workspace + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, workspace)
 
 	outNoMatch, err := HandlePostToolUse(ctx, []byte(payloadNoMatch))
 	if err != nil {
@@ -195,8 +196,8 @@ func TestPostToolUse_InvokeSubagentRegistry(t *testing.T) {
 	parentID := "3ce5d33d-ed0b-4d4a-8f21-5c33e7ce80c5"
 	childID := "e145e070-4d7a-42d4-89f1-305f1d520548"
 
-	payload := `{
-		"conversationId": "` + parentID + `",
+	payload := fmt.Sprintf(`{
+		"conversationId": %q,
 		"toolName": "invoke_subagent",
 		"toolCall": {
 			"name": "invoke_subagent",
@@ -204,10 +205,10 @@ func TestPostToolUse_InvokeSubagentRegistry(t *testing.T) {
 		},
 		"toolResult": {
 			"status": "success",
-			"output": "{\"conversationId\": \"` + childID + `\", \"status\": \"running\"}"
+			"output": "{\"conversationId\": \"%s\", \"status\": \"running\"}"
 		},
-		"workspacePaths": ["` + repoDir + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, parentID, childID, repoDir)
 
 	out, err := HandlePostToolUse(ctx, []byte(payload), WithDataDir(dataDir))
 	if err != nil {
@@ -260,7 +261,7 @@ func TestPostToolUse_RecipeCommandOutcomeTracking(t *testing.T) {
 	idx.Close()
 
 	// Success in conv-1
-	payload1 := `{
+	payload1 := fmt.Sprintf(`{
 		"conversationId": "conv-1",
 		"toolName": "run_command",
 		"toolCall": {
@@ -271,14 +272,14 @@ func TestPostToolUse_RecipeCommandOutcomeTracking(t *testing.T) {
 			"status": "success",
 			"output": "Command exited with code 0\nok"
 		},
-		"workspacePaths": ["` + repoDir + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, repoDir)
 	if _, err := HandlePostToolUse(ctx, []byte(payload1), WithDataDir(dataDir)); err != nil {
 		t.Fatalf("HandlePostToolUse conv-1 failed: %v", err)
 	}
 
 	// Success in conv-2 -> graduates skill
-	payload2 := `{
+	payload2 := fmt.Sprintf(`{
 		"conversationId": "conv-2",
 		"toolName": "bash",
 		"toolCall": {
@@ -289,8 +290,8 @@ func TestPostToolUse_RecipeCommandOutcomeTracking(t *testing.T) {
 			"status": "success",
 			"output": "PASS"
 		},
-		"workspacePaths": ["` + repoDir + `"]
-	}`
+		"workspacePaths": [%q]
+	}`, repoDir)
 	if _, err := HandlePostToolUse(ctx, []byte(payload2), WithDataDir(dataDir)); err != nil {
 		t.Fatalf("HandlePostToolUse conv-2 failed: %v", err)
 	}

@@ -11,7 +11,7 @@
 `decision · kind: episodic · anchors: internal/core/seed/parser.go, internal/core/seed/convert.go, internal/core/seed/scanner.go, cmd/repo-memory/cmd_seed.go, cmd/repo-memory/main.go, internal/core/seed/seed_test.go`
 
 ### [seed-63f7d11a] Filtered module-derivation anchor inputs in `RunOpsGC` to multi-segment non-dot paths (`strings.Contains(a, "/") && !strings.HasPrefix(a, ".")`) so root-level files (`Makefile`, `.gitignore`) and dot-directories (`.agents/...`, `.memory/...`) map cleanly to `"root"` without creating spurious `.agents` or `Makefile` module scopes during scope repair.
-`decision · kind: episodic · anchors: internal/core/seed/convert.go, internal/core/seed/parser.go, internal/core/seed/gc.go, internal/core/seed/gc_test.go, cmd/repo-memory/cmd_ops_gc.go, cmd/repo-memory/main.go, evaluation/cmd/build-index/main.go, .memory/ops, .agents/skills/principal-architect-workspace`
+`decision · kind: episodic · anchors: internal/core/seed/convert.go, internal/core/seed/parser.go, internal/core/seed/gc.go, internal/core/seed/gc_test.go, cmd/repo-memory/cmd_ops_gc.go, cmd/repo-memory/main.go, .memory/ops, .agents/skills/principal-architect-workspace`
 
 ### [seed-8ae39b13] Used `ops.NewBatch` to properly emit batched ops from the seeded list.
 `decision · kind: episodic · anchors: internal/core/seed/parser.go, internal/core/seed/convert.go, internal/core/seed/scanner.go, cmd/repo-memory/cmd_seed.go, cmd/repo-memory/main.go, internal/core/seed/seed_test.go`

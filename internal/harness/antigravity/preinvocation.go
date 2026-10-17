@@ -388,7 +388,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	for _, path := range touchedFiles {
 		anchor := path
 		if rel, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(rel, "..") {
-			anchor = rel
+			anchor = filepath.ToSlash(rel)
 		}
 
 		// Unique anchor
@@ -420,7 +420,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		for _, path := range touchedFiles {
 			rel := path
 			if r, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(r, "..") {
-				rel = r
+				rel = filepath.ToSlash(r)
 			}
 			relTouchedFiles = append(relTouchedFiles, rel)
 		}
