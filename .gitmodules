@@ -1,0 +1,3 @@
+[submodule ".agents/skills/house-style-docs"]
+	path = .agents/skills/house-style-docs
+	url = https://github.com/mm-skills/house-style-docs.git
