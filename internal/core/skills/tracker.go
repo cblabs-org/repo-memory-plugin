@@ -45,13 +45,14 @@ import (
 )
 
 var (
-	inlineCodeSpanRe   = regexp.MustCompile("`([^`\\n]+)`")
-	stepPrefixRe       = regexp.MustCompile(`^(?:[-*+]\s+|\d+[.)]\s+|(?i:step\s+\d+\s*[:.-]\s*)|(?i:command\s*:\s*)|(?i:cmd\s*:\s*))+`)
-	imperativeLeadInRe = regexp.MustCompile(`^(?i:run|execute|invoke|call|use|then|first|next|finally|verify|test|build|check)\b`)
-	whitespaceRunRe    = regexp.MustCompile(`\s+`)
-	compoundSplitRe    = regexp.MustCompile(`\s*(?:&&|\|\||;|\n)\s*`)
+	inlineCodeSpanRe   = regexp.MustCompile("`([^`\\n]+)`")                                                                                      // Matches inline code spans within a single line.
+	stepPrefixRe       = regexp.MustCompile(`^(?:[-*+]\s+|\d+[.)]\s+|(?i:step\s+\d+\s*[:.-]\s*)|(?i:command\s*:\s*)|(?i:cmd\s*:\s*))+`)           // Matches leading list or step markers before a command.
+	imperativeLeadInRe = regexp.MustCompile(`^(?i:run|execute|invoke|call|use|then|first|next|finally|verify|test|build|check)\b`)                   // Matches imperative verbs introducing an inline command.
+	whitespaceRunRe    = regexp.MustCompile(`\s+`)                                                                                               // Matches one or more consecutive whitespace characters.
+	compoundSplitRe    = regexp.MustCompile(`\s*(?:&&|\|\||;|\n)\s*`)                                                                            // Splits compound shell commands on &&, ||, ;, or newline.
 )
 
+// commonCLIVerbs enumerates standard build, test, and package manager executables recognized at the start of a command line.
 var commonCLIVerbs = map[string]bool{
 	"go":         true,
 	"git":        true,
@@ -98,15 +99,15 @@ var commonCLIVerbs = map[string]bool{
 
 // EntryOutcome tracks per-entry execution outcome history across conversations and build manifest snapshots.
 type EntryOutcome struct {
-	SucceededConversations         []string          `json:"succeeded_conversations,omitempty"`
-	ConsecutiveFailedConversations []string          `json:"consecutive_failed_conversations,omitempty"`
-	LastFailedConversation         string            `json:"last_failed_conversation,omitempty"`
-	ManifestBlobSHAs               map[string]string `json:"manifest_blob_shas,omitempty"`
+	SucceededConversations         []string          `json:"succeeded_conversations,omitempty"`          // Distinct conversation IDs where the recipe succeeded.
+	ConsecutiveFailedConversations []string          `json:"consecutive_failed_conversations,omitempty"` // Distinct conversation IDs with consecutive failures since last success.
+	LastFailedConversation         string            `json:"last_failed_conversation,omitempty"`         // Most recent conversation ID that recorded a command failure.
+	ManifestBlobSHAs               map[string]string `json:"manifest_blob_shas,omitempty"`               // Map of anchored build-manifest path to verified Git blob SHA.
 }
 
 // OutcomeState persists procedural outcome tracking across invocations at <dataDir>/<repoID>/state/procedural_outcomes.json.
 type OutcomeState struct {
-	Entries map[string]*EntryOutcome `json:"entries"`
+	Entries map[string]*EntryOutcome `json:"entries"` // Map of dossier entry ID to its EntryOutcome record.
 }
 
 // OutcomesPath returns the file path for procedural_outcomes.json.
@@ -116,6 +117,7 @@ func OutcomesPath(dataDir, repoID string) string {
 
 // LoadOutcomeState reads OutcomeState from disk, returning an initialized empty state if missing.
 func LoadOutcomeState(dataDir, repoID string) (*OutcomeState, error) {
+	// --- Step 1: Initialize default state and read procedural_outcomes.json if present ---
 	st := &OutcomeState{
 		Entries: make(map[string]*EntryOutcome),
 	}
@@ -133,6 +135,8 @@ func LoadOutcomeState(dataDir, repoID string) (*OutcomeState, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return st, nil
 	}
+
+	// --- Step 2: Unmarshal JSON payload and ensure map initialization ---
 	if err := json.Unmarshal(data, st); err != nil {
 		return &OutcomeState{Entries: make(map[string]*EntryOutcome)}, fmt.Errorf("unmarshaling procedural outcomes %s: %w", p, err)
 	}
@@ -144,6 +148,7 @@ func LoadOutcomeState(dataDir, repoID string) (*OutcomeState, error) {
 
 // SaveOutcomeState writes OutcomeState atomically to <dataDir>/<repoID>/state/procedural_outcomes.json.
 func SaveOutcomeState(dataDir, repoID string, st *OutcomeState) error {
+	// --- Step 1: Validate inputs and marshal state to indented JSON ---
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(repoID) == "" || st == nil {
 		return nil
 	}
@@ -159,6 +164,8 @@ func SaveOutcomeState(dataDir, repoID string, st *OutcomeState) error {
 		return fmt.Errorf("marshaling procedural outcomes: %w", err)
 	}
 	data = append(data, '\n')
+
+	// --- Step 2: Write to a PID-scoped temporary file and rename atomically ---
 	tmp := fmt.Sprintf("%s.%d.tmp", p, os.Getpid())
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing procedural outcomes tmp: %w", err)
@@ -170,6 +177,7 @@ func SaveOutcomeState(dataDir, repoID string, st *OutcomeState) error {
 	return nil
 }
 
+// getOrCreate returns the EntryOutcome for entryID, initializing the record and its map if needed.
 func (st *OutcomeState) getOrCreate(entryID string) *EntryOutcome {
 	if st.Entries == nil {
 		st.Entries = make(map[string]*EntryOutcome)
@@ -197,7 +205,9 @@ func NormalizeCommand(cmd string) string {
 	return strings.TrimSpace(s)
 }
 
+// startsWithCLIVerb reports whether cmd begins with a relative script path or a known CLI executable in commonCLIVerbs.
 func startsWithCLIVerb(cmd string) bool {
+	// --- Step 1: Normalize command and check for relative path prefixes ---
 	s := NormalizeCommand(cmd)
 	if s == "" {
 		return false
@@ -205,6 +215,8 @@ func startsWithCLIVerb(cmd string) bool {
 	if strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
 		return true
 	}
+
+	// --- Step 2: Match first token or its basename against commonCLIVerbs ---
 	fields := strings.Fields(s)
 	if len(fields) == 0 {
 		return false
@@ -220,7 +232,9 @@ func startsWithCLIVerb(cmd string) bool {
 	return false
 }
 
+// looksLikeInlineCommand reports whether rawSpan resembles an executable CLI invocation rather than prose or metadata.
 func looksLikeInlineCommand(rawSpan string) bool {
+	// --- Step 1: Check explicit shell prefixes and known CLI verbs ---
 	trimmed := strings.TrimSpace(rawSpan)
 	if trimmed == "" || strings.Contains(trimmed, " · ") {
 		return false
@@ -232,6 +246,8 @@ func looksLikeInlineCommand(rawSpan string) bool {
 	if startsWithCLIVerb(norm) {
 		return true
 	}
+
+	// --- Step 2: Reject dossier metadata tags and validate multi-token command syntax ---
 	lower := strings.ToLower(norm)
 	for _, metaPrefix := range []string{"anchors:", "kind:", "evidence:", "source_doc:", "verified:", "closes_when:"} {
 		if strings.HasPrefix(lower, metaPrefix) {
@@ -258,6 +274,7 @@ func looksLikeInlineCommand(rawSpan string) bool {
 // isExecutableInlineSpan reports whether an inline backtick span on a non-fenced
 // line appears in a procedural step/directive position rather than mid-sentence prose.
 func isExecutableInlineSpan(rawLine, fullMatch, innerSpan string) bool {
+	// --- Step 1: Verify the span looks like a command and locate it in the stripped line ---
 	if !looksLikeInlineCommand(innerSpan) {
 		return false
 	}
@@ -269,6 +286,7 @@ func isExecutableInlineSpan(rawLine, fullMatch, innerSpan string) bool {
 	before := strings.TrimSpace(stripped[:idx])
 	after := strings.TrimSpace(stripped[idx+len(fullMatch):])
 
+	// --- Step 2: Validate trailing punctuation and leading directive context ---
 	// Trailing text after an executable inline command step must be empty or
 	// punctuation/annotation (not mid-sentence prose like "on `git diff` changes").
 	if after != "" {
@@ -359,6 +377,7 @@ func ExtractRecipeCommands(text string) []string {
 // recipe command, starts with "<recipeCmd> ", or invokes <recipeCmd> as a segment of a
 // compound shell command (&&, ;, ||).
 func CommandMatchesRecipe(executedCmd string, recipeCmds []string) bool {
+	// --- Step 1: Normalize executed command and split compound segments ---
 	normExec := NormalizeCommand(executedCmd)
 	if normExec == "" || len(recipeCmds) == 0 {
 		return false
@@ -381,6 +400,7 @@ func CommandMatchesRecipe(executedCmd string, recipeCmds []string) bool {
 		return candidate == target || strings.HasPrefix(candidate, target+" ")
 	}
 
+	// --- Step 2: Compare segments against each recipe command and its compound sub-segments ---
 	for _, rc := range recipeCmds {
 		normRC := NormalizeCommand(rc)
 		if normRC == "" {
@@ -411,6 +431,7 @@ func CommandMatchesRecipe(executedCmd string, recipeCmds []string) bool {
 	return false
 }
 
+// stripAnchorSymbol removes any trailing #symbol or :symbol qualifier from raw.
 func stripAnchorSymbol(raw string) string {
 	s := strings.TrimSpace(raw)
 	if idx := strings.Index(s, "#"); idx >= 0 {
@@ -428,6 +449,7 @@ func stripAnchorSymbol(raw string) string {
 // Makefile, CMakeLists.txt, platformio.ini, sdkconfig*, go.mod, package.json, Taskfile.yml, Taskfile.yaml,
 // or .github/workflows/*.yml / .github/workflows/*.yaml.
 func IsBuildManifestPath(relPath string) bool {
+	// --- Step 1: Strip symbol suffix and normalize relative path separators ---
 	stripped := stripAnchorSymbol(strings.TrimSpace(relPath))
 	if stripped == "" {
 		return false
@@ -436,6 +458,7 @@ func IsBuildManifestPath(relPath string) bool {
 	clean = strings.TrimPrefix(clean, "./")
 	clean = strings.TrimPrefix(clean, "/")
 
+	// --- Step 2: Check GitHub workflow YAML paths and known build manifest filenames ---
 	if strings.HasPrefix(clean, ".github/workflows/") {
 		lower := strings.ToLower(clean)
 		if strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml") {
@@ -464,6 +487,7 @@ func IsBuildManifestPath(relPath string) bool {
 	}
 }
 
+// gitBlobSHA computes the Git blob SHA-1 for relPath under repoRoot using `git hash-object`.
 func gitBlobSHA(ctx context.Context, repoRoot, relPath string) string {
 	if strings.TrimSpace(repoRoot) == "" || strings.TrimSpace(relPath) == "" {
 		return ""
@@ -476,7 +500,10 @@ func gitBlobSHA(ctx context.Context, repoRoot, relPath string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// loadActiveProceduralEntries loads active recipe/procedure entries from .memory/ops/ and index.db,
+// returning the sorted entries and a map of entry IDs already materialized in .memory/ops/.
 func loadActiveProceduralEntries(ctx context.Context, repoRoot, dataDir, repoID string, idx *index.Index) ([]dossiers.Entry, map[string]bool, error) {
+	// --- Step 1: Project .memory/ops/ to collect active and retired procedural entries ---
 	inOps := make(map[string]bool)
 	retiredInOps := make(map[string]bool)
 	byID := make(map[string]dossiers.Entry)
@@ -509,6 +536,7 @@ func loadActiveProceduralEntries(ctx context.Context, repoRoot, dataDir, repoID 
 		}
 	}
 
+	// --- Step 2: Open or reuse the SQLite index and merge procedural entries ---
 	var openedIdx *index.Index
 	targetIdx := idx
 	if targetIdx == nil && strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
@@ -547,6 +575,7 @@ func loadActiveProceduralEntries(ctx context.Context, repoRoot, dataDir, repoID 
 		}
 	}
 
+	// --- Step 3: Return deterministically sorted entries ---
 	out := make([]dossiers.Entry, 0, len(byID))
 	for _, e := range byID {
 		out = append(out, e)
@@ -557,6 +586,7 @@ func loadActiveProceduralEntries(ctx context.Context, repoRoot, dataDir, repoID 
 	return out, inOps, nil
 }
 
+// appendUniqueString appends trimmed val to slice if non-empty and not already present.
 func appendUniqueString(slice []string, val string) []string {
 	val = strings.TrimSpace(val)
 	if val == "" {
@@ -570,6 +600,7 @@ func appendUniqueString(slice []string, val string) []string {
 	return append(slice, val)
 }
 
+// containsString reports whether trimmed val is present in slice.
 func containsString(slice []string, val string) bool {
 	val = strings.TrimSpace(val)
 	if val == "" {
@@ -759,6 +790,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 	return matchedIDs, nil
 }
 
+// firstNonEmpty returns the first non-whitespace string in vals, or "" if all are empty.
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -768,6 +800,7 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// parseFlexibleTime parses an RFC3339Nano or RFC3339 timestamp string into UTC, returning the zero Time on failure.
 func parseFlexibleTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -781,13 +814,15 @@ func parseFlexibleTime(s string) time.Time {
 	return time.Time{}
 }
 
+// isManifestModifiedSinceVerification reports whether the build manifest at relPath has uncommitted edits,
+// a changed Git blob SHA, or a newer commit/modification timestamp than entry's last verification.
 func isManifestModifiedSinceVerification(ctx context.Context, repoRoot, relPath string, entry dossiers.Entry, eo *EntryOutcome) bool {
 	if strings.TrimSpace(repoRoot) == "" || !IsBuildManifestPath(relPath) {
 		return false
 	}
 	cleanRel := filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(filepath.Clean(stripAnchorSymbol(relPath))), "./"))
 
-	// 1. Check uncommitted changes in working tree or index (`git status --porcelain -- <path>`).
+	// --- Step 1: Check uncommitted changes in working tree or index ---
 	statusCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "status", "--porcelain", "--", cleanRel)
 	if out, err := statusCmd.Output(); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -798,7 +833,7 @@ func isManifestModifiedSinceVerification(ctx context.Context, repoRoot, relPath 
 		}
 	}
 
-	// 2. Compare current git blob SHA against recorded ManifestBlobSHAs[path].
+	// --- Step 2: Compare current Git blob SHA against recorded ManifestBlobSHAs[path] ---
 	currentSHA := gitBlobSHA(ctx, repoRoot, cleanRel)
 	var recordedSHA string
 	if eo != nil && eo.ManifestBlobSHAs != nil {
@@ -811,7 +846,7 @@ func isManifestModifiedSinceVerification(ctx context.Context, repoRoot, relPath 
 		return currentSHA != "" && currentSHA != recordedSHA
 	}
 
-	// 3. No recorded ManifestBlobSHA: compare file's latest git commit timestamp against entry's LastSucceededAt (or UpdatedAt/CreatedAt).
+	// --- Step 3: Compare latest Git commit and filesystem timestamps against entry verification time ---
 	logCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "log", "-1", "--format=%cI", "--", cleanRel)
 	out, err := logCmd.Output()
 	if err != nil {
@@ -853,6 +888,7 @@ func isManifestModifiedSinceVerification(ctx context.Context, repoRoot, relPath 
 // CheckBuildManifestFreshness inspects active recipe/procedure entries with build-manifest anchors
 // and flags affected entries stale_suspect: true when any anchored build manifest has changed.
 func CheckBuildManifestFreshness(ctx context.Context, repoRoot, dataDir, repoID string, idx *index.Index) ([]string, error) {
+	// --- Step 1: Load active procedural entries and outcome state ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -875,6 +911,7 @@ func CheckBuildManifestFreshness(ctx context.Context, repoRoot, dataDir, repoID 
 	var flaggedIDs []string
 	var batchOps []ops.Op
 
+	// --- Step 2: Inspect anchored build manifests and construct stale_suspect op-log amendments ---
 	for _, entry := range entries {
 		if entry.Retired || entry.StaleSuspect {
 			continue
@@ -939,6 +976,7 @@ func CheckBuildManifestFreshness(ctx context.Context, repoRoot, dataDir, repoID 
 		return nil, nil
 	}
 
+	// --- Step 3: Write stale_suspect op batch, re-project dossiers, and sync index/skills ---
 	opsDir := filepath.Join(repoRoot, ".memory", "ops")
 	if err := os.MkdirAll(opsDir, 0o755); err == nil && len(batchOps) > 0 {
 		batch := ops.NewBatchWithTime(batchOps, now)

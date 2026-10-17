@@ -75,6 +75,7 @@ var consolidateCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 2: Configure pipeline executor and run Stage 2 consolidation ---
 		epStore := episode.NewStore(dataDir, repoID)
 		exec := tick.NewPipelineExecutor(dataDir, repoRoot, repoID, nil, epStore)
 
@@ -97,6 +98,7 @@ var consolidateCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 3: Format and emit consolidation results ---
 		if consolidateJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")

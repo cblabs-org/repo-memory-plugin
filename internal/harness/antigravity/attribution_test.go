@@ -451,9 +451,9 @@ func TestSessionAttributor_Integration(t *testing.T) {
 
 	attributor := NewSessionAttributor(
 		WithAppDBPath(appDB),
-		WithCliDBPath(cliDB),
+		WithCLIDBPath(cliDB),
 		WithAppBrainDir(appBrain),
-		WithCliBrainDir(cliBrain),
+		WithCLIBrainDir(cliBrain),
 		WithAttributionNow(now),
 		WithIdleCutoff(15*time.Minute),
 	)

@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/gitops/worktree.go
+ * Description: Manages the dedicated Two-Lane `memory/pending` git worktree for
+ *              publishing shared op batches and projected dossiers without
+ *              touching the user's primary working tree.
+ *
+ * Exported Types / Functions:
+ * - MemoryPendingBranch:      Dedicated git branch name ("memory/pending") for Two-Lane publishing.
+ * - WorktreePublishResult:    Outcome of publishing op batches and dossiers into the memory worktree.
+ * - CloneID():                Computes a deterministic 12-hex-char SHA-256 prefix for a repoRoot path.
+ * - EnsureMemoryWorktree():   Ensures the dedicated `memory/pending` git worktree exists and is valid.
+ * - PublishToMemoryWorktree(): Writes op batches, re-projects dossiers, and commits onto `memory/pending`.
+ */
+
 package gitops
 
 import (
@@ -22,10 +42,10 @@ const MemoryPendingBranch = "memory/pending"
 // WorktreePublishResult holds the outcome of publishing op batches and rendered dossiers
 // into the dedicated memory/pending git worktree.
 type WorktreePublishResult struct {
-	WorktreePath string `json:"worktree_path"`
-	Branch       string `json:"branch"`
-	CommitSHA    string `json:"commit_sha,omitempty"`
-	Committed    bool   `json:"committed"`
+	WorktreePath string `json:"worktree_path"`        // Absolute filesystem path to the managed memory worktree.
+	Branch       string `json:"branch"`               // Git branch checked out in the worktree (MemoryPendingBranch).
+	CommitSHA    string `json:"commit_sha,omitempty"` // HEAD commit SHA in the worktree after publishing.
+	Committed    bool   `json:"committed"`            // True if a new commit was created during this publish pass.
 }
 
 // CloneID computes a deterministic 12-hex-character SHA-256 prefix of filepath.Clean(repoRoot).
@@ -38,6 +58,7 @@ func CloneID(repoRoot string) string {
 // EnsureMemoryWorktree ensures a dedicated git worktree checked out on MemoryPendingBranch ("memory/pending")
 // exists at <dataDir>/<repoID>/worktrees/<CloneID(repoRoot)> without touching repoRoot's active checkout.
 func EnsureMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot string) (string, error) {
+	// --- Step 1: Validate inputs and verify that repoRoot has a valid git HEAD ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -56,6 +77,7 @@ func EnsureMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot string)
 		return "", fmt.Errorf("verifying git repository HEAD in %s: %w (%s)", repoRoot, err, strings.TrimSpace(string(out)))
 	}
 
+	// --- Step 2: Reuse existing worktree if already initialized and valid ---
 	worktreePath := filepath.Join(dataDir, repoID, "worktrees", CloneID(repoRoot))
 	gitMarker := filepath.Join(worktreePath, ".git")
 	if _, err := os.Stat(gitMarker); err == nil {
@@ -65,6 +87,7 @@ func EnsureMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot string)
 		}
 	}
 
+	// --- Step 3: Clean any stale directory, prune worktrees, and add the memory/pending worktree ---
 	if err := os.RemoveAll(worktreePath); err != nil {
 		return "", fmt.Errorf("cleaning stale worktree directory %s: %w", worktreePath, err)
 	}
@@ -87,6 +110,7 @@ func EnsureMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot string)
 // syncs any existing shared ops from repoRoot, re-projects dossiers and ATLAS.md inside the worktree,
 // and commits any changes onto memory/pending without touching the user's primary working tree.
 func PublishToMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot string, batches []ops.OpBatch) (*WorktreePublishResult, error) {
+	// --- Step 1: Handle empty batch list and ensure the memory/pending worktree exists ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -102,6 +126,7 @@ func PublishToMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot stri
 		return nil, err
 	}
 
+	// --- Step 2: Sync existing shared ops from repoRoot and write new op batches ---
 	wtMemoryDir := filepath.Join(worktreePath, ".memory")
 	wtOpsDir := filepath.Join(wtMemoryDir, "ops")
 	if err := os.MkdirAll(wtOpsDir, 0o755); err != nil {
@@ -121,6 +146,7 @@ func PublishToMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot stri
 		}
 	}
 
+	// --- Step 3: Project and render all dossiers and ATLAS.md inside the worktree ---
 	projected, err := dossiers.NewProjector(ops.NewReader(wtOpsDir)).Project(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("projecting dossiers in worktree %s: %w", wtOpsDir, err)
@@ -141,6 +167,7 @@ func PublishToMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot stri
 		return nil, fmt.Errorf("writing projected dossiers in worktree %s: %w", wtMemoryDir, err)
 	}
 
+	// --- Step 4: Stage .memory changes and commit onto memory/pending if modified ---
 	addCmd := exec.CommandContext(ctx, "git", "-C", worktreePath, "add", "--", ".memory")
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("staging .memory in worktree %s: %w (%s)", worktreePath, err, strings.TrimSpace(string(out)))
@@ -179,7 +206,9 @@ func PublishToMemoryWorktree(ctx context.Context, dataDir, repoID, repoRoot stri
 	return res, nil
 }
 
+// syncExistingOps copies any missing JSON op batch files from srcOpsDir into dstOpsDir.
 func syncExistingOps(srcOpsDir, dstOpsDir string) error {
+	// --- Step 1: Return early if the source ops directory does not exist ---
 	info, err := os.Stat(srcOpsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -191,14 +220,15 @@ func syncExistingOps(srcOpsDir, dstOpsDir string) error {
 		return nil
 	}
 
-	return filepath.WalkDir(srcOpsDir, func(path string, d fs.DirEntry, walkErr error) error {
+	// --- Step 2: Walk source JSON batch files and copy any missing files into dstOpsDir ---
+	return filepath.WalkDir(srcOpsDir, func(filePath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
 			return nil
 		}
-		rel, err := filepath.Rel(srcOpsDir, path)
+		rel, err := filepath.Rel(srcOpsDir, filePath)
 		if err != nil {
 			return err
 		}
@@ -209,7 +239,7 @@ func syncExistingOps(srcOpsDir, dstOpsDir string) error {
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return err
 		}

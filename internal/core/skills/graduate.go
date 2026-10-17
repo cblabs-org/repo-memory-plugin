@@ -1,3 +1,28 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/skills/graduate.go
+ * Description: Evaluates procedural recipe/procedure entries for graduation into
+ *              .agents/skills/rm-<slug>/SKILL.md files, renders deterministic
+ *              idempotent Markdown, and synchronizes or lints graduated skills.
+ *
+ * Exported Types / Functions:
+ * - GraduationResult:           Summarizes graduated, written, removed, and unchanged skill files.
+ * - CountRecipeSteps():         Estimates the number of procedural steps in a recipe entry.
+ * - EntryTitleLine():           Extracts a clean single-line title from an entry's text.
+ * - SkillSlug():                Returns the deterministic "rm-<slug>" identifier for an entry.
+ * - QualifiesForSkill():        Reports whether an entry qualifies for skill graduation and its slug.
+ * - RenderSkillMarkdown():      Deterministically renders a qualifying entry into SKILL.md content.
+ * - IsGeneratedByRepoMemory():  Reports whether a SKILL.md carries generated_by: repo-memory.
+ * - GraduatedSkillSlug():       Returns the active graduated skill slug for an entry if present.
+ * - SyncGraduatedSkills():      Writes qualifying skills and removes stale generated skills.
+ * - CheckGraduatedSkillsLint(): Verifies on-disk generated skills match active op-log state.
+ */
+
 package skills
 
 import (
@@ -15,24 +40,25 @@ import (
 )
 
 var (
-	numberedOrBulletLineRe = regexp.MustCompile(`^(?:\d+[.)]\s+|[-*+]\s+|(?i:step\s+\d+\s*[:.-]\s*))`)
-	nonSlugAlnumRe         = regexp.MustCompile(`[^a-z0-9]+`)
-	entryIDBracketPrefixRe = regexp.MustCompile(`^\[[a-zA-Z0-9_-]+\]\s*`)
-	leadingHeaderBulletRe  = regexp.MustCompile(`^(?:#+\s*|[-*+]\s+|\d+[.)]\s+)+`)
-	inlineStepSeparatorRe  = regexp.MustCompile(`(?:\s+->\s+|\s*;\s*|\s+&&\s+|\s+then\s+)`)
+	numberedOrBulletLineRe = regexp.MustCompile(`^(?:\d+[.)]\s+|[-*+]\s+|(?i:step\s+\d+\s*[:.-]\s*))`) // Matches numbered or bulleted procedural step prefixes.
+	nonSlugAlnumRe         = regexp.MustCompile(`[^a-z0-9]+`)                                          // Matches non-alphanumeric characters for slug normalization.
+	entryIDBracketPrefixRe = regexp.MustCompile(`^\[[a-zA-Z0-9_-]+\]\s*`)                              // Matches leading bracketed entry ID prefixes ("[id] ").
+	leadingHeaderBulletRe  = regexp.MustCompile(`^(?:#+\s*|[-*+]\s+|\d+[.)]\s+)+`)                     // Matches leading Markdown header or list markers.
+	inlineStepSeparatorRe  = regexp.MustCompile(`(?:\s+->\s+|\s*;\s*|\s+&&\s+|\s+then\s+)`)            // Matches inline step separators in single-line recipes.
 )
 
 // GraduationResult summarizes a SyncGraduatedSkills run.
 type GraduationResult struct {
-	Graduated []string `json:"graduated"`
-	Written   []string `json:"written,omitempty"`
-	Removed   []string `json:"removed,omitempty"`
-	Unchanged []string `json:"unchanged,omitempty"`
-	DryRun    bool     `json:"dry_run,omitempty"`
+	Graduated []string `json:"graduated"`           // Sorted list of qualifying "rm-<slug>" identifiers.
+	Written   []string `json:"written,omitempty"`   // Repository-relative paths of newly created or updated SKILL.md files.
+	Removed   []string `json:"removed,omitempty"`   // Repository-relative paths of stale generated SKILL.md files removed.
+	Unchanged []string `json:"unchanged,omitempty"` // Repository-relative paths of qualifying SKILL.md files already up to date.
+	DryRun    bool     `json:"dry_run,omitempty"`   // True when synchronization was evaluated without mutating disk.
 }
 
 // CountRecipeSteps estimates the number of procedural steps in a recipe/procedure entry text.
 func CountRecipeSteps(text string) int {
+	// --- Step 1: Count fenced command lines and Markdown list steps ---
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return 0
@@ -67,6 +93,7 @@ func CountRecipeSteps(text string) int {
 		}
 	}
 
+	// --- Step 2: Count extracted shell commands and compound sub-commands ---
 	extractedCmds := ExtractRecipeCommands(trimmed)
 	cmdStepCount := 0
 	for _, cmd := range extractedCmds {
@@ -84,6 +111,7 @@ func CountRecipeSteps(text string) int {
 		}
 	}
 
+	// --- Step 3: Check inline step clauses and select the highest step estimate ---
 	inlineClauseCount := 0
 	if len(lines) == 1 {
 		clauses := inlineStepSeparatorRe.Split(trimmed, -1)
@@ -115,11 +143,15 @@ func CountRecipeSteps(text string) int {
 	return best
 }
 
+// normalizeSkillSlug converts raw into a bounded, lowercase "rm-<slug>" directory name.
 func normalizeSkillSlug(raw string) string {
+	// --- Step 1: Lowercase, strip "rm-" prefix, and collapse non-alphanumeric runs ---
 	s := strings.ToLower(strings.TrimSpace(raw))
 	s = strings.TrimPrefix(s, "rm-")
 	s = nonSlugAlnumRe.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
+
+	// --- Step 2: Truncate to at most 48 characters on a clean word boundary ---
 	if len(s) > 48 {
 		s = s[:48]
 		if lastDash := strings.LastIndex(s, "-"); lastDash >= 16 {
@@ -135,6 +167,7 @@ func normalizeSkillSlug(raw string) string {
 
 // EntryTitleLine extracts a clean single-line title from an entry's text.
 func EntryTitleLine(entry dossiers.Entry) string {
+	// --- Step 1: Find the first non-empty, non-fence line and strip markers ---
 	lines := strings.Split(strings.TrimSpace(entry.Text), "\n")
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
@@ -148,6 +181,8 @@ func EntryTitleLine(entry dossiers.Entry) string {
 			return line
 		}
 	}
+
+	// --- Step 2: Fall back to entry ID or generic title ---
 	if strings.TrimSpace(entry.ID) != "" {
 		return strings.TrimSpace(entry.ID)
 	}
@@ -156,9 +191,12 @@ func EntryTitleLine(entry dossiers.Entry) string {
 
 // SkillSlug returns the deterministic "rm-<slug>" identifier for a procedural entry.
 func SkillSlug(entry dossiers.Entry) string {
+	// --- Step 1: Honor explicit RenderAsSkill override if present ---
 	if ras := strings.TrimSpace(entry.RenderAsSkill); ras != "" {
 		return normalizeSkillSlug(ras)
 	}
+
+	// --- Step 2: Derive slug from the leading title clause or entry ID ---
 	title := EntryTitleLine(entry)
 	// Strip inline code backticks for slug derivation.
 	title = strings.ReplaceAll(title, "`", " ")
@@ -175,7 +213,9 @@ func SkillSlug(entry dossiers.Entry) string {
 	return slug
 }
 
+// distinctSucceededConvCount counts distinct conversation IDs across outcomes and entry.Evidence.
 func distinctSucceededConvCount(entry dossiers.Entry, outcomes *OutcomeState) (count int, hasOutcomeRecord bool) {
+	// --- Step 1: Collect succeeded conversation IDs from OutcomeState ---
 	seen := make(map[string]bool)
 	if outcomes != nil && outcomes.Entries != nil {
 		if eo, ok := outcomes.Entries[entry.ID]; ok && eo != nil {
@@ -188,6 +228,8 @@ func distinctSucceededConvCount(entry dossiers.Entry, outcomes *OutcomeState) (c
 			}
 		}
 	}
+
+	// --- Step 2: Merge "conv:<id>" evidence tags from the dossier entry ---
 	for _, ev := range entry.Evidence {
 		trimmed := strings.TrimSpace(ev)
 		if strings.HasPrefix(trimmed, "conv:") {
@@ -202,6 +244,7 @@ func distinctSucceededConvCount(entry dossiers.Entry, outcomes *OutcomeState) (c
 
 // QualifiesForSkill determines whether entry qualifies for graduation to .agents/skills/rm-<slug>/SKILL.md.
 func QualifiesForSkill(entry dossiers.Entry, outcomes *OutcomeState) (bool, string) {
+	// --- Step 1: Reject retired, stale_suspect, or non-procedural entries ---
 	if entry.Retired || entry.StaleSuspect {
 		return false, ""
 	}
@@ -209,6 +252,7 @@ func QualifiesForSkill(entry dossiers.Entry, outcomes *OutcomeState) (bool, stri
 		return false, ""
 	}
 
+	// --- Step 2: Check explicit RenderAsSkill or automatic multi-conversation graduation criteria ---
 	// Path 1: Explicit render_as_skill attribute.
 	if strings.TrimSpace(entry.RenderAsSkill) != "" {
 		return true, SkillSlug(entry)
@@ -230,6 +274,7 @@ func QualifiesForSkill(entry dossiers.Entry, outcomes *OutcomeState) (bool, stri
 	return true, SkillSlug(entry)
 }
 
+// sanitizeYAMLDescription normalizes whitespace and quotes s if it contains YAML indicator characters.
 func sanitizeYAMLDescription(s string) string {
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
@@ -245,6 +290,7 @@ func sanitizeYAMLDescription(s string) string {
 // RenderSkillMarkdown deterministically renders a qualifying recipe/procedure entry into SKILL.md content.
 // It uses zero wall-clock timestamps so regeneration is strictly idempotent.
 func RenderSkillMarkdown(entry dossiers.Entry) (slug string, content string) {
+	// --- Step 1: Build frontmatter metadata and description ---
 	slug = SkillSlug(entry)
 	title := EntryTitleLine(entry)
 
@@ -266,6 +312,7 @@ func RenderSkillMarkdown(entry dossiers.Entry) (slug string, content string) {
 	b.WriteString(fmt.Sprintf("source_entry_id: %s\n", strings.TrimSpace(entry.ID)))
 	b.WriteString("---\n\n")
 
+	// --- Step 2: Render procedure body and sorted anchor list ---
 	b.WriteString(fmt.Sprintf("# %s\n\n", title))
 	b.WriteString("## Procedure\n\n")
 	b.WriteString(strings.TrimSpace(entry.Text) + "\n\n")
@@ -284,6 +331,7 @@ func RenderSkillMarkdown(entry dossiers.Entry) (slug string, content string) {
 	}
 	b.WriteString("\n")
 
+	// --- Step 3: Render provenance metadata footer ---
 	b.WriteString("## Provenance\n\n")
 	b.WriteString(fmt.Sprintf("- Entry ID: `%s`\n", strings.TrimSpace(entry.ID)))
 	if scope := strings.TrimSpace(entry.DossierScope); scope != "" {
@@ -308,6 +356,7 @@ func RenderSkillMarkdown(entry dossiers.Entry) (slug string, content string) {
 
 // IsGeneratedByRepoMemory checks whether a SKILL.md file content carries `generated_by: repo-memory` in its YAML frontmatter.
 func IsGeneratedByRepoMemory(content string) bool {
+	// --- Step 1: Scan leading YAML frontmatter for generated_by: repo-memory ---
 	trimmed := strings.TrimPrefix(content, "\uFEFF")
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
@@ -329,7 +378,9 @@ func IsGeneratedByRepoMemory(content string) bool {
 	return false
 }
 
+// extractSourceEntryIDFromSkill extracts the `source_entry_id` field from a SKILL.md YAML frontmatter block.
 func extractSourceEntryIDFromSkill(content string) string {
+	// --- Step 1: Scan leading YAML frontmatter for source_entry_id ---
 	trimmed := strings.TrimPrefix(content, "\uFEFF")
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
@@ -352,6 +403,7 @@ func extractSourceEntryIDFromSkill(content string) string {
 // non-stale_suspect recipe/procedure whose graduated SKILL.md exists on disk under workspaceRoot
 // or qualifies directly via RenderAsSkill / SuccessCount.
 func GraduatedSkillSlug(entry dossiers.Entry, workspaceRoot string) string {
+	// --- Step 1: Validate that entry is an active, non-stale procedural entry ---
 	if entry.Retired || entry.StaleSuspect {
 		return ""
 	}
@@ -359,6 +411,7 @@ func GraduatedSkillSlug(entry dossiers.Entry, workspaceRoot string) string {
 		return ""
 	}
 
+	// --- Step 2: Check on-disk .agents/skills/rm-*/SKILL.md when workspaceRoot is provided ---
 	slug := SkillSlug(entry)
 	if strings.TrimSpace(workspaceRoot) != "" {
 		skillPath := filepath.Join(workspaceRoot, ".agents", "skills", slug, "SKILL.md")
@@ -385,13 +438,16 @@ func GraduatedSkillSlug(entry dossiers.Entry, workspaceRoot string) string {
 		return ""
 	}
 
+	// --- Step 3: Fall back to in-memory qualification check when workspaceRoot is empty ---
 	if ok, qSlug := QualifiesForSkill(entry, nil); ok {
 		return qSlug
 	}
 	return ""
 }
 
+// loadAllProceduralEntriesForSync loads active recipe and procedure entries across .memory/ops/, .memory/local/ops/, and index.db.
 func loadAllProceduralEntriesForSync(ctx context.Context, repoRoot, dataDir, repoID string) ([]dossiers.Entry, error) {
+	// --- Step 1: Define helper to project an ops directory and filter active procedural entries ---
 	byID := make(map[string]dossiers.Entry)
 	retiredIDs := make(map[string]bool)
 
@@ -426,6 +482,7 @@ func loadAllProceduralEntriesForSync(ctx context.Context, repoRoot, dataDir, rep
 		return nil
 	}
 
+	// --- Step 2: Project shared .memory/ops and any local .memory/local/ops directories ---
 	if strings.TrimSpace(repoRoot) != "" {
 		if err := projectDir(filepath.Join(repoRoot, ".memory", "ops")); err != nil {
 			return nil, fmt.Errorf("projecting .memory/ops: %w", err)
@@ -440,6 +497,7 @@ func loadAllProceduralEntriesForSync(ctx context.Context, repoRoot, dataDir, rep
 		}
 	}
 
+	// --- Step 3: Supplement with any non-retired procedural entries from the SQLite index ---
 	if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
 		idxPath := index.IndexPath(dataDir, repoID)
 		if _, err := os.Stat(idxPath); err == nil {
@@ -462,6 +520,7 @@ func loadAllProceduralEntriesForSync(ctx context.Context, repoRoot, dataDir, rep
 		}
 	}
 
+	// --- Step 4: Sort deduplicated entries deterministically by ID ---
 	entries := make([]dossiers.Entry, 0, len(byID))
 	for _, e := range byID {
 		entries = append(entries, e)
@@ -476,6 +535,7 @@ func loadAllProceduralEntriesForSync(ctx context.Context, repoRoot, dataDir, rep
 // files, and removes any stale repo-memory-generated skills that no longer qualify.
 // Hand-authored skills without `generated_by: repo-memory` are never modified or removed.
 func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, dryRun bool) (*GraduationResult, error) {
+	// --- Step 1: Load active procedural entries and outcome state ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -494,10 +554,11 @@ func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, 
 
 	outcomes, _ := LoadOutcomeState(dataDir, repoID)
 
+	// --- Step 2: Render Markdown for all qualifying procedural entries ---
 	type renderedSkill struct {
-		slug    string
-		content string
-		entryID string
+		slug    string // Target "rm-<slug>" directory name.
+		content string // Rendered SKILL.md content.
+		entryID string // Source dossier entry ID.
 	}
 	qualifyingBySlug := make(map[string]renderedSkill)
 	var orderedSlugs []string
@@ -522,6 +583,7 @@ func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, 
 
 	skillsRoot := filepath.Join(repoRoot, ".agents", "skills")
 
+	// --- Step 3: Write or update qualifying SKILL.md files on disk ---
 	for _, slug := range orderedSlugs {
 		rs := qualifyingBySlug[slug]
 		relSkillPath := filepath.ToSlash(filepath.Join(".agents", "skills", slug, "SKILL.md"))
@@ -551,7 +613,7 @@ func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, 
 		}
 	}
 
-	// Scan .agents/skills/ for stale generated skills to remove.
+	// --- Step 4: Remove stale repo-memory-generated skills that no longer qualify ---
 	if dirEntries, err := os.ReadDir(skillsRoot); err == nil {
 		for _, de := range dirEntries {
 			if !de.IsDir() {
@@ -589,6 +651,7 @@ func SyncGraduatedSkills(ctx context.Context, repoRoot, dataDir, repoID string, 
 // regeneration from .memory/ops/. Hand-authored skills without `generated_by: repo-memory`
 // are ignored.
 func CheckGraduatedSkillsLint(ctx context.Context, repoRoot, dataDir, repoID string) ([]string, error) {
+	// --- Step 1: Discover existing repo-memory-generated SKILL.md files on disk ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -603,9 +666,9 @@ func CheckGraduatedSkillsLint(ctx context.Context, repoRoot, dataDir, repoID str
 	}
 
 	type generatedSkillOnDisk struct {
-		dirName string
-		relPath string
-		content string
+		dirName string // Skill directory name ("rm-<slug>").
+		relPath string // Repository-relative SKILL.md path.
+		content string // Raw file contents on disk.
 	}
 	var onDisk []generatedSkillOnDisk
 	for _, de := range dirEntries {
@@ -635,6 +698,7 @@ func CheckGraduatedSkillsLint(ctx context.Context, repoRoot, dataDir, repoID str
 		return nil, nil
 	}
 
+	// --- Step 2: Project active procedural entries and render expected SKILL.md contents ---
 	entries, err := loadAllProceduralEntriesForSync(ctx, repoRoot, dataDir, repoID)
 	if err != nil {
 		return nil, err
@@ -651,6 +715,7 @@ func CheckGraduatedSkillsLint(ctx context.Context, repoRoot, dataDir, repoID str
 		qualifyingBySlug[slug] = content
 	}
 
+	// --- Step 3: Compare on-disk files against expected contents and collect lint warnings ---
 	var warnings []string
 	for _, diskSkill := range onDisk {
 		expectedContent, ok := qualifyingBySlug[diskSkill.dirName]

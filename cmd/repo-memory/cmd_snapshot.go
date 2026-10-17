@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_snapshot.go
+ * Description: Implements the `repo-memory snapshot` CLI command, copying
+ *              conversation transcripts and artifacts from the agent brain
+ *              directory into the enrolled repository's private evidence store.
+ *
+ * Exported Types / Functions:
+ * - RunSnapshot(): Copies transcripts and artifacts for conversation IDs into the evidence store.
+ */
+
 package main
 
 import (
@@ -12,6 +28,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// snapshotCmd defines the `repo-memory snapshot` subcommand.
 var snapshotCmd = &cobra.Command{
 	Use:   "snapshot <conversation-id> [conversation-id...]",
 	Short: "Snapshot conversation transcripts and artifacts into the evidence store",
@@ -23,6 +40,7 @@ var snapshotCmd = &cobra.Command{
 
 // RunSnapshot copies transcripts and artifacts for the specified conversation IDs into the evidence store.
 func RunSnapshot(cmd *cobra.Command, args []string) error {
+	// --- Step 1: Verify enrolled repository and initialize data directory layout ---
 	repoRoot, err := gitops.FindRepoRoot(".")
 	if err != nil {
 		return fmt.Errorf("finding repository root: %w", err)
@@ -56,6 +74,7 @@ func RunSnapshot(cmd *cobra.Command, args []string) error {
 	branch, _ := gitops.GetCurrentBranch(repoRoot)
 	head, _ := gitops.GetHeadCommit(repoRoot)
 
+	// --- Step 2: Copy transcripts, record spool entries, and copy artifacts per conversation ---
 	var failedCount int
 	for _, rawArg := range args {
 		brainDir, convID, rErr := resolveBrainDir(rawArg)
@@ -95,6 +114,7 @@ func RunSnapshot(cmd *cobra.Command, args []string) error {
 			convID, bytesCopied, artifactsCopied)
 	}
 
+	// --- Step 3: Report aggregate failure status if any conversation failed ---
 	if failedCount > 0 {
 		return fmt.Errorf("snapshot failed for %d of %d conversation(s)", failedCount, len(args))
 	}
@@ -102,14 +122,16 @@ func RunSnapshot(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// resolveBrainDir locates the on-disk brain directory and canonical conversation ID
+// for a direct path or conversation UUID across environment and home candidates.
 func resolveBrainDir(convID string) (brainDir string, actualConvID string, err error) {
-	// If convID is a direct directory path on disk
+	// --- Step 1: Check whether convID is already an existing directory path ---
 	if fi, statErr := os.Stat(convID); statErr == nil && fi.IsDir() {
 		clean := filepath.Clean(convID)
 		return clean, filepath.Base(clean), nil
 	}
 
-	// Environment variable override
+	// --- Step 2: Check ANTIGRAVITY_BRAIN_DIR environment variable override ---
 	if envDir := os.Getenv("ANTIGRAVITY_BRAIN_DIR"); envDir != "" {
 		cand := filepath.Join(envDir, convID)
 		if fi, statErr := os.Stat(cand); statErr == nil && fi.IsDir() {
@@ -117,7 +139,7 @@ func resolveBrainDir(convID string) (brainDir string, actualConvID string, err e
 		}
 	}
 
-	// User home standard locations
+	// --- Step 3: Probe standard Antigravity brain directories under user home ---
 	home, homeErr := os.UserHomeDir()
 	if homeErr == nil {
 		candidates := []string{

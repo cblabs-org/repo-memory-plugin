@@ -1,3 +1,18 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/ops/doc.go
+ * Description: Package documentation for the append-only repository memory
+ *              operation log storage layer.
+ *
+ * Exported Types / Functions:
+ * - (None — package documentation file)
+ */
+
 // Package ops implements the append-only op log for repo knowledge entries.
 //
 // The op log is the v2 storage layer's source of truth. Operations target

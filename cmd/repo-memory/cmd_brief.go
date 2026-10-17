@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_brief.go
+ * Description: CLI subcommand and runner for generating a bounded memory brief
+ *              from repository dossiers and the SQLite index for a Principal
+ *              Architect workorder or explicit module scope.
+ *
+ * Exported Types / Functions:
+ * - RunBrief(): Generates a bounded workorder or scope brief in Markdown or JSON.
+ */
+
 package main
 
 import (
@@ -17,14 +33,15 @@ import (
 )
 
 var (
-	briefWorkorderPath string
-	briefScope         string
-	briefRepoDir       string
-	briefDataDir       string
-	briefMaxTokens     int
-	briefJSON          bool
+	briefWorkorderPath string // Path to a WORKORDER.md file (--workorder).
+	briefScope         string // Comma-separated module scope(s) to brief (--scope).
+	briefRepoDir       string // Target repository root directory (--repo).
+	briefDataDir       string // Optional data directory override (--data-dir).
+	briefMaxTokens     int    // Maximum estimated tokens for brief markdown (--max-tokens).
+	briefJSON          bool   // Whether to output structured JSON (--json).
 )
 
+// briefCmd defines the `repo-memory brief` subcommand.
 var briefCmd = &cobra.Command{
 	Use:   "brief [workorder-path]",
 	Short: "Generate a bounded memory brief for a Principal Architect workorder or scope",
@@ -53,6 +70,7 @@ func init() {
 
 // RunBrief executes `repo-memory brief` and writes human-readable markdown or JSON to cmd.OutOrStdout().
 func RunBrief(cmd *cobra.Command, targetRepoDir, overrideDataDir, workorderPath, explicitScope string, maxTokens int, asJSON bool) error {
+	// --- Step 1: Resolve repository root, data directory, and repository ID ---
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -84,6 +102,7 @@ func RunBrief(cmd *cobra.Command, targetRepoDir, overrideDataDir, workorderPath,
 		repoID, _ = gitops.GenerateRepoID(repoRoot)
 	}
 
+	// --- Step 2: Open read-only SQLite index when available ---
 	var idx *index.Index
 	if dataDir != "" && repoID != "" {
 		idxCandidates := []string{
@@ -101,6 +120,7 @@ func RunBrief(cmd *cobra.Command, targetRepoDir, overrideDataDir, workorderPath,
 		}
 	}
 
+	// --- Step 3: Build workorder brief and render output ---
 	res, err := delivery.BuildWorkorderBrief(ctx, idx, repoRoot, dataDir, repoID, workorderPath, explicitScope, maxTokens)
 	if err != nil {
 		return err

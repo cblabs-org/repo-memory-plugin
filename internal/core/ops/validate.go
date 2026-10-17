@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/ops/validate.go
+ * Description: Validates individual knowledge operations and OpBatch containers
+ *              against type-specific schema and field invariants before reading
+ *              or persisting op logs.
+ *
+ * Exported Types / Functions:
+ * - ValidateOp():    Validates a single Op against its type-specific field rules.
+ * - ValidateBatch(): Validates an OpBatch header and all contained operations.
+ */
+
 package ops
 
 import (
@@ -8,8 +25,10 @@ import (
 
 // ValidateOp validates a single op against its type-specific rules.
 func ValidateOp(op Op) error {
+	// --- Step 1: Dispatch validation rules by operation type ---
 	switch op.Type {
 	case OpAdd:
+		// --- Step 2: Validate OpAdd required entry_id, dossier_scope, and fields.text ---
 		if strings.TrimSpace(op.EntryID) == "" {
 			return errors.New("add: entry_id is required")
 		}
@@ -29,6 +48,7 @@ func ValidateOp(op Op) error {
 		}
 
 	case OpAmend:
+		// --- Step 3: Validate OpAmend required entry_id and non-empty fields map ---
 		if strings.TrimSpace(op.EntryID) == "" {
 			return errors.New("amend: entry_id is required")
 		}
@@ -37,6 +57,7 @@ func ValidateOp(op Op) error {
 		}
 
 	case OpSupersede:
+		// --- Step 4: Validate OpSupersede required entry_id, fields.new_entry_id, and fields.text ---
 		if strings.TrimSpace(op.EntryID) == "" {
 			return errors.New("supersede: entry_id is required")
 		}
@@ -61,6 +82,7 @@ func ValidateOp(op Op) error {
 		}
 
 	case OpRetire:
+		// --- Step 5: Validate OpRetire required entry_id and fields.reason ---
 		if strings.TrimSpace(op.EntryID) == "" {
 			return errors.New("retire: entry_id is required")
 		}
@@ -77,6 +99,7 @@ func ValidateOp(op Op) error {
 		}
 
 	case OpMove:
+		// --- Step 6: Validate OpMove required entry_id and fields.to_dossier ---
 		if strings.TrimSpace(op.EntryID) == "" {
 			return errors.New("move: entry_id is required")
 		}
@@ -93,6 +116,7 @@ func ValidateOp(op Op) error {
 		}
 
 	case OpSplit:
+		// --- Step 7: Validate OpSplit required dossier_scope, fields.new_dossiers, and fields.entry_moves ---
 		if strings.TrimSpace(op.DossierScope) == "" {
 			return errors.New("split: dossier_scope is required")
 		}
@@ -168,6 +192,7 @@ func ValidateOp(op Op) error {
 
 // ValidateBatch validates an entire OpBatch.
 func ValidateBatch(batch OpBatch) error {
+	// --- Step 1: Validate batch-level metadata and non-empty operation slice ---
 	if batch.Version < 1 {
 		return errors.New("batch version must be >= 1")
 	}
@@ -180,6 +205,8 @@ func ValidateBatch(batch OpBatch) error {
 	if len(batch.Ops) == 0 {
 		return errors.New("batch must contain at least one op")
 	}
+
+	// --- Step 2: Validate each individual Op in the batch ---
 	for i, op := range batch.Ops {
 		if err := ValidateOp(op); err != nil {
 			return fmt.Errorf("op[%d]: %w", i, err)

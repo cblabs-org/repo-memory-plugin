@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_hook.go
+ * Description: CLI subcommand and fast-path dispatcher for agent harness lifecycle
+ *              hooks (PreInvocation, PreToolUse, PostToolUse, Stop) and diagnostic
+ *              hook probe recording.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -10,25 +26,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness/antigravity"
+	"github.com/spf13/cobra"
 )
 
 var (
-	hookWorkspaceFlag     string
-	hookProbeFlag         bool
-	hookProbeDecisionFlag string
-	probeTimeNow          = time.Now
+	hookWorkspaceFlag     string            // Optional workspace directory override (--workspace).
+	hookProbeFlag         bool              // Whether to record raw hook payloads for diagnostic probing (--probe).
+	hookProbeDecisionFlag string            // Probe decision returned for PreToolUse (--probe-decision).
+	probeTimeNow          = time.Now        // Injectable clock used when naming diagnostic probe log files.
 )
 
+// hookCmd defines the `repo-memory hook` subcommand.
 var hookCmd = &cobra.Command{
 	Use:   "hook <harness> <event>",
 	Short: "Execute harness hook event path",
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Determine hook event name and install fail-open panic recovery ---
 		// Determine the event name early for fail-open handling.
 		eventName := ""
 		if len(args) >= 2 {
@@ -50,6 +68,7 @@ var hookCmd = &cobra.Command{
 			}()
 		}
 
+		// --- Step 2: Evaluate sub-5ms fast path for kill switch and non-enrolled workspaces ---
 		// Fast path for non-enrolled repositories / kill switch (target <= 5ms)
 		var payload []byte
 		if !hookProbeFlag {
@@ -66,8 +85,8 @@ var hookCmd = &cobra.Command{
 			if targetDir == "" {
 				payload, _ = io.ReadAll(cmd.InOrStdin())
 				type fastPayload struct {
-					WorkspacePaths      []string `json:"workspacePaths"`
-					WorkspacePathsSnake []string `json:"workspace_paths"`
+					WorkspacePaths      []string `json:"workspacePaths"`  // CamelCase workspace paths from harness payload.
+					WorkspacePathsSnake []string `json:"workspace_paths"` // Snake_case workspace paths from harness payload.
 				}
 				var parsed fastPayload
 				if len(payload) > 0 {
@@ -93,6 +112,7 @@ var hookCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 3: Dispatch hook handler with fail-open error wrapping ---
 		// Wrap the real logic so we can catch errors and fail open.
 		err := hookRunE(cmd, args, eventName, isPreToolUse, payload)
 		if err != nil && isPreToolUse {
@@ -104,7 +124,9 @@ var hookCmd = &cobra.Command{
 	},
 }
 
+// hookRunE dispatches the parsed harness hook event to probe recording or the active harness handler.
 func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse bool, preReadPayload []byte) error {
+	// --- Step 1: Handle diagnostic probe mode when --probe is enabled ---
 	if hookProbeFlag {
 		event := "unknown"
 		if len(args) >= 2 {
@@ -134,6 +156,7 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 		return nil
 	}
 
+	// --- Step 2: Dispatch Antigravity lifecycle events (Stop, PreInvocation, PostToolUse, PreToolUse) ---
 	harnessName := ""
 	if len(args) >= 2 {
 		harnessName = args[0]
@@ -205,6 +228,7 @@ func hookRunE(cmd *cobra.Command, args []string, eventName string, isPreToolUse 
 		return nil
 	}
 
+	// --- Step 3: Validate fallback fast-path or emit stub output for other harnesses ---
 	valid, err := harness.FastPathValidation(hookWorkspaceFlag, "")
 	if err != nil || !valid {
 		// Sub-5ms fast-path: immediately return harness no-op output
@@ -230,7 +254,9 @@ func init() {
 	hookCmd.Flags().StringVar(&hookProbeDecisionFlag, "probe-decision", "allow", "Probe decision for PreToolUse (allow, deny, ask)")
 }
 
+// handleProbe records the raw hook event payload and optional transcript snapshot into the repo logs directory.
 func handleProbe(event string, payload []byte) ([]byte, error) {
+	// --- Step 1: Validate probe decision and parse inbound payload metadata ---
 	decision := strings.ToLower(strings.TrimSpace(hookProbeDecisionFlag))
 	if decision == "" {
 		decision = "allow"
@@ -242,12 +268,12 @@ func handleProbe(event string, payload []byte) ([]byte, error) {
 	}
 
 	type probePayload struct {
-		TranscriptPath      string   `json:"transcriptPath"`
-		TranscriptPathSnake string   `json:"transcript_path"`
-		WorkspacePaths      []string `json:"workspacePaths"`
-		WorkspacePathsSnake []string `json:"workspace_paths"`
-		RepoID              string   `json:"repo_id"`
-		RepoIDAlt           string   `json:"repoId"`
+		TranscriptPath      string   `json:"transcriptPath"`  // CamelCase transcript file path.
+		TranscriptPathSnake string   `json:"transcript_path"` // Snake_case transcript file path.
+		WorkspacePaths      []string `json:"workspacePaths"`  // CamelCase workspace directory paths.
+		WorkspacePathsSnake []string `json:"workspace_paths"` // Snake_case workspace directory paths.
+		RepoID              string   `json:"repo_id"`         // Snake_case repository identifier.
+		RepoIDAlt           string   `json:"repoId"`          // CamelCase repository identifier.
 	}
 
 	var parsed probePayload
@@ -264,6 +290,7 @@ func handleProbe(event string, payload []byte) ([]byte, error) {
 		parsed.RepoID = parsed.RepoIDAlt
 	}
 
+	// --- Step 2: Resolve target repository ID for probe log storage ---
 	dataDir := config.DataDir()
 
 	repoID := parsed.RepoID
@@ -303,6 +330,7 @@ func handleProbe(event string, payload []byte) ([]byte, error) {
 		}
 	}
 
+	// --- Step 3: Write probe JSON log, snapshot transcript, and rotate old logs ---
 	logsDir := filepath.Join(dataDir, repoID, "logs")
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating probe logs directory %s: %w", logsDir, err)
@@ -349,6 +377,7 @@ func handleProbe(event string, payload []byte) ([]byte, error) {
 	// Clean up probe logs older than 7 days
 	_, _ = config.CleanProbeLogs(logsDir, 7*24*time.Hour)
 
+	// --- Step 4: Return probe response payload ---
 	if strings.EqualFold(event, "PreToolUse") || strings.EqualFold(event, "pre_tool_use") {
 		resp := map[string]string{
 			"decision": decision,

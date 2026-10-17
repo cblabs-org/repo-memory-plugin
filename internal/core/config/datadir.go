@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/datadir.go
+ * Description: Platform-aware resolution of the user data directory for
+ *              repo-memory across macOS, Linux/BSD (XDG), and Windows, with
+ *              environment variable override support.
+ *
+ * Exported Types / Functions:
+ * - DataDir(): Returns the platform-appropriate user data directory for repo-memory.
+ */
+
 package config
 
 import (
@@ -16,13 +32,18 @@ func DataDir() string {
 	return dataDirForOS(runtime.GOOS, os.Getenv, os.UserHomeDir)
 }
 
+// dataDirForOS resolves the user data directory for the specified OS using the
+// injected environment and home-directory lookup functions.
 func dataDirForOS(goos string, getenv func(string) string, userHomeDir func() (string, error)) string {
+	// --- Step 1: Check explicit environment override ---
 	if override := getenv("REPO_MEMORY_DATA_DIR"); override != "" {
 		return override
 	}
 
+	// --- Step 2: Resolve user home directory ---
 	home, _ := userHomeDir()
 
+	// --- Step 3: Select platform-specific application data path ---
 	switch goos {
 	case "darwin":
 		if home != "" {

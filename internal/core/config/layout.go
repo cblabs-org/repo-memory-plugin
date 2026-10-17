@@ -1,11 +1,33 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/layout.go
+ * Description: Directory layout provisioning and gitignore management for
+ *              machine-level repository storage (<data-dir>/<repo-id>/) and
+ *              in-repository memory directories (<repoRoot>/.memory/).
+ *
+ * Exported Types / Functions:
+ * - DataDirSubdirectories:    Subdirectories provisioned under <data-dir>/<repo-id>/.
+ * - RepoMemorySubdirectories: Subdirectories provisioned under <repoRoot>/.memory/.
+ * - EnsureDataDirLayout():    Creates the <data-dir>/<repo-id> directory hierarchy.
+ * - EnsureRepoLayout():       Creates the <repoRoot>/.memory directory hierarchy and .gitignore.
+ * - EnsureMemoryGitignore():  Ensures <repoRoot>/.memory/.gitignore ignores local transient paths.
+ * - EnsureStorageLayout():    Provisions data-dir and optional repo-level storage hierarchies.
+ * - IndexPath():              Returns the canonical SQLite index file path for a repository.
+ */
+
 package config
 
 import (
-	"strings"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DataDirSubdirectories lists the subdirectories under <data-dir>/<repo-id>/.
@@ -44,6 +66,7 @@ var RepoMemorySubdirectories = []string{
 // spool, queue, runs, episodes, pending, alerts, metrics, logs, state.
 // It is idempotent.
 func EnsureDataDirLayout(dataDir, repoID string) error {
+	// --- Step 1: Validate inputs and resolve default data directory ---
 	if dataDir == "" {
 		dataDir = DataDir()
 	}
@@ -51,6 +74,7 @@ func EnsureDataDirLayout(dataDir, repoID string) error {
 		return errors.New("repoID cannot be empty")
 	}
 
+	// --- Step 2: Create each required subdirectory under <data-dir>/<repo-id> ---
 	base := filepath.Join(dataDir, repoID)
 	for _, sub := range DataDirSubdirectories {
 		dir := filepath.Join(base, sub)
@@ -64,8 +88,7 @@ func EnsureDataDirLayout(dataDir, repoID string) error {
 
 // EnsureRepoLayout creates the <repoRoot>/.memory directory structure and its subdirectories:
 // claims, events/reviews, events/answers, views/index, views/subsystems, .cache.
-// It also ensures a .gitignore exists ignoring .cache/.
-// It is idempotent.
+// It also ensures a .gitignore exists ignoring .cache/, .enrolled, and local/ without overwriting custom rules.
 func EnsureRepoLayout(repoRoot string) error {
 	if repoRoot == "" {
 		repoRoot = "."
@@ -85,6 +108,7 @@ func EnsureRepoLayout(repoRoot string) error {
 // EnsureMemoryGitignore ensures <repoRoot>/.memory/.gitignore exists and contains
 // .cache/, .enrolled, and local/ without clobbering existing lines.
 func EnsureMemoryGitignore(repoRoot string) error {
+	// --- Step 1: Ensure the .memory directory exists ---
 	if repoRoot == "" {
 		repoRoot = "."
 	}
@@ -94,6 +118,7 @@ func EnsureMemoryGitignore(repoRoot string) error {
 		return fmt.Errorf("creating directory %s: %w", memoryDir, err)
 	}
 
+	// --- Step 2: Read existing .gitignore or write a fresh file if absent ---
 	gitignorePath := filepath.Join(memoryDir, ".gitignore")
 	required := []string{".cache/", ".enrolled", "local/"}
 
@@ -109,6 +134,7 @@ func EnsureMemoryGitignore(repoRoot string) error {
 		return fmt.Errorf("reading gitignore in %s: %w", memoryDir, err)
 	}
 
+	// --- Step 3: Check which required entries are missing ---
 	existingContent := string(bGit)
 	lines := strings.Split(strings.ReplaceAll(existingContent, "\r\n", "\n"), "\n")
 	hasEntry := func(entry string) bool {
@@ -132,6 +158,7 @@ func EnsureMemoryGitignore(repoRoot string) error {
 		return nil
 	}
 
+	// --- Step 4: Append missing entries while preserving existing content ---
 	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("updating gitignore in %s: %w", memoryDir, err)
@@ -154,8 +181,7 @@ func EnsureMemoryGitignore(repoRoot string) error {
 
 // EnsureStorageLayout creates the directory structures required for repo-memory storage.
 // It creates the data directory layout for repoID in dataDir.
-// If repoRoot is optionally provided as a 3rd parameter, it also creates the .memory layout in repoRoot.
-// It is idempotent.
+// If repoRoot is optionally provided as a 3rd parameter, it also initializes the .memory layout in repoRoot.
 func EnsureStorageLayout(dataDir, repoID string, repoRoot ...string) error {
 	if err := EnsureDataDirLayout(dataDir, repoID); err != nil {
 		return err

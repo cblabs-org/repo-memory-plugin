@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/dream_freshness.go
+ * Description: Deterministic "Dreaming" document-freshness reconciliation (SPEC §6.3.5).
+ *              Compares active doc-seed entries against current git blob SHAs on disk,
+ *              amending modified entries, retiring deleted docs or bullets, re-projecting
+ *              dossiers, and rebuilding the SQLite search index.
+ *
+ * Exported Types / Functions:
+ * - PipelineExecutor.CheckDocFreshness(): Reconciles active doc-seed entries against disk and updates dossiers/index.
+ */
+
 package tick
 
 import (
@@ -25,6 +42,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 		ctx = context.Background()
 	}
 
+	// --- Step 1: Drain queued dream-freshness and seed-docs jobs from the store ---
 	var acquiredJobs []*jobs.Job
 	if p.store != nil {
 		for {
@@ -60,6 +78,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 		return &seed.DocSeedResult{}, nil
 	}
 
+	// --- Step 2: Load repository and scope configurations ---
 	opsDir := filepath.Join(p.repoRoot, ".memory", "ops")
 	configPath := filepath.Join(p.repoRoot, ".memory", "config.yaml")
 
@@ -81,6 +100,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 		scopeCfg = &config.ScopeConfig{}
 	}
 
+	// --- Step 3: Check whether any active doc-seed entries exist ---
 	opsReader := ops.NewReader(opsDir)
 	hasActiveDocSeedEntries := false
 	if fi, statErr := os.Stat(opsDir); statErr == nil && fi.IsDir() {
@@ -108,6 +128,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 		return &seed.DocSeedResult{}, nil
 	}
 
+	// --- Step 4: Execute deterministic doc-seed reconciliation ---
 	res, err := seed.SeedDocs(
 		ctx,
 		seed.DocSeedOptions{
@@ -124,6 +145,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 		return nil, fmt.Errorf("checking doc freshness: %w", err)
 	}
 
+	// --- Step 5: Re-project dossiers and rebuild SQLite index when entries mutated ---
 	if res.EntriesAdded+res.EntriesAmend+res.EntriesRetire > 0 {
 		proj := dossiers.NewProjector(opsReader)
 		dossiersMap, projErr := proj.Project(ctx)
@@ -165,6 +187,7 @@ func (p *PipelineExecutor) CheckDocFreshness(ctx context.Context) (*seed.DocSeed
 	return res, nil
 }
 
+// checkDocFreshness runs CheckDocFreshness and discards the result payload.
 func (p *PipelineExecutor) checkDocFreshness(ctx context.Context) error {
 	_, err := p.CheckDocFreshness(ctx)
 	return err

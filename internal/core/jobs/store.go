@@ -1,3 +1,50 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/jobs/store.go
+ * Description: Implements the SQLite-backed Store for enqueueing, leasing,
+ *               renewing, completing, failing, and reclaiming background jobs.
+ *
+ * Exported Types / Functions:
+ * - DefaultMaxAttempts:         Default maximum execution attempts before marking a job dead (5).
+ * - DefaultLeaseDuration:       Default worker lease duration for acquired jobs (5m).
+ * - DefaultBusyTimeout:         Default SQLite busy_timeout duration (5s).
+ * - DefaultInteractivePriority: Default priority assigned to interactive jobs.
+ * - Stats:                      Aggregated job counts grouped by lifecycle state.
+ * - ReclaimResult:              Breakdown of requeued and deadened job counts from lease recovery.
+ * - Option:                     Functional option for configuring a Store.
+ * - WithMaxAttempts():          Sets the maximum execution attempts before a job transitions to dead.
+ * - WithDefaultLeaseDuration(): Sets the default lease duration for acquired jobs.
+ * - WithBusyTimeout():          Sets the SQLite busy_timeout duration.
+ * - Store:                      Manages durable job lifecycle in SQLite.
+ *
+ *   Lifecycle:
+ *   - Open():                   Opens or creates a SQLite job database at path in WAL mode.
+ *   - NewStore():               Initializes a Store around an existing *sql.DB connection.
+ *   - Close():                  Closes the underlying database connection. [io.Closer]
+ *
+ *   Own Public API:
+ *   - DB():                           Returns the underlying *sql.DB handle.
+ *   - Enqueue():                      Inserts a new job or returns the existing job on idempotency match.
+ *   - Get():                          Fetches a job by its unique ID.
+ *   - GetByIdempotencyKey():          Fetches a job by its unique idempotency key.
+ *   - AcquireNext():                  Selects and leases the highest-priority eligible job.
+ *   - RenewLease():                   Extends the lease expiration of a currently running job.
+ *   - Complete():                     Marks a running or submitted job as done and records its cost.
+ *   - Fail():                         Marks a job as failed with backoff or transitions it to dead.
+ *   - MarkDead():                     Permanently marks a job as dead and clears its lease.
+ *   - ReclaimExpiredLeases():         Recovers expired running leases and returns the total reclaimed count.
+ *   - ReclaimExpiredLeasesDetailed(): Recovers expired running leases and returns detailed counts.
+ *   - List():                         Returns jobs matching a Filter ordered by priority and creation time.
+ *   - Delete():                       Removes a job by ID.
+ *   - Stats():                        Returns counts of jobs grouped by state.
+ *   - RequeueKind():                  Resets all jobs of a given Kind back to the queued state.
+ */
+
 package jobs
 
 import (
@@ -16,28 +63,28 @@ import (
 
 // Default constants for job store configuration.
 const (
-	DefaultMaxAttempts          = 5
-	DefaultLeaseDuration        = 5 * time.Minute
-	DefaultBusyTimeout          = 5 * time.Second
-	DefaultInteractivePriority  = PriorityInteractive
+	DefaultMaxAttempts         = 5                   // Default maximum execution attempts before a job is marked dead.
+	DefaultLeaseDuration       = 5 * time.Minute     // Default worker lease duration when acquiring a job.
+	DefaultBusyTimeout         = 5 * time.Second     // Default SQLite busy_timeout wait duration.
+	DefaultInteractivePriority = PriorityInteractive // Default scheduling priority for interactive jobs.
 )
 
 // Stats summarizes job counts grouped by state.
 type Stats struct {
-	Queued    int `json:"queued"`
-	Running   int `json:"running"`
-	Done      int `json:"done"`
-	Failed    int `json:"failed"`
-	Dead      int `json:"dead"`
-	Submitted int `json:"submitted"`
-	Total     int `json:"total"`
+	Queued    int `json:"queued"`    // Number of jobs in queued state.
+	Running   int `json:"running"`   // Number of jobs in running state.
+	Done      int `json:"done"`      // Number of jobs in done state.
+	Failed    int `json:"failed"`    // Number of jobs in failed state awaiting retry.
+	Dead      int `json:"dead"`      // Number of jobs in dead state.
+	Submitted int `json:"submitted"` // Number of jobs in submitted state.
+	Total     int `json:"total"`     // Total number of jobs across all states.
 }
 
 // ReclaimResult contains detailed counts of reclaimed jobs.
 type ReclaimResult struct {
-	Requeued int
-	Deadened int
-	Total    int
+	Requeued int // Count of expired running jobs returned to queued state.
+	Deadened int // Count of expired running jobs transitioned to dead after reaching max attempts.
+	Total    int // Total number of expired running jobs processed (Requeued + Deadened).
 }
 
 // Option configures Store behavior.
@@ -72,15 +119,16 @@ func WithBusyTimeout(d time.Duration) Option {
 
 // Store manages durable job lifecycle in SQLite (SPEC §4.3).
 type Store struct {
-	db                   *sql.DB
-	maxAttempts          int
-	defaultLeaseDuration time.Duration
-	busyTimeout          time.Duration
+	db                   *sql.DB       // Underlying SQLite connection pool.
+	maxAttempts          int           // Maximum attempts before a failing job becomes dead.
+	defaultLeaseDuration time.Duration // Default lease duration applied by AcquireNext and RenewLease.
+	busyTimeout          time.Duration // SQLite busy_timeout configured on connection open.
 }
 
 // Open opens or creates a SQLite job database at path, applying WAL mode, busy_timeout,
-// and table initialization.
+// and table initialization. The caller must call Close on the returned Store when finished.
 func Open(path string, opts ...Option) (*Store, error) {
+	// --- Step 1: Validate database path and ensure parent directory exists ---
 	if path == "" {
 		return nil, fmt.Errorf("database path cannot be empty")
 	}
@@ -93,6 +141,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 		}
 	}
 
+	// --- Step 2: Apply store options and construct the SQLite DSN ---
 	store := &Store{
 		maxAttempts:          DefaultMaxAttempts,
 		defaultLeaseDuration: DefaultLeaseDuration,
@@ -114,6 +163,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 	}
 	dsn = fmt.Sprintf("%s%s_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", dsn, sep, busyTimeoutMs)
 
+	// --- Step 3: Open SQLite connection, enforce PRAGMAs, and initialize schema ---
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite database: %w", err)
@@ -139,7 +189,9 @@ func Open(path string, opts ...Option) (*Store, error) {
 }
 
 // NewStore initializes a Store with an already opened database connection.
+// The caller remains responsible for closing db (or calling Close on the returned Store).
 func NewStore(db *sql.DB, opts ...Option) (*Store, error) {
+	// --- Step 1: Validate the database handle and apply functional options ---
 	if db == nil {
 		return nil, fmt.Errorf("database connection cannot be nil")
 	}
@@ -154,6 +206,7 @@ func NewStore(db *sql.DB, opts ...Option) (*Store, error) {
 		opt(store)
 	}
 
+	// --- Step 2: Ensure the jobs table and indexes exist ---
 	if err := InitSchema(db); err != nil {
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
@@ -177,7 +230,9 @@ func (s *Store) Close() error {
 // Enqueue inserts a new job into the job table.
 // If an idempotency key is provided and a job with that key already exists,
 // Enqueue returns the existing job without error (SPEC §4.3: "so duplicates are no-ops").
+// It returns ErrInvalidJob if job is nil or has an invalid Kind or State.
 func (s *Store) Enqueue(ctx context.Context, job *Job) (*Job, error) {
+	// --- Step 1: Validate job specification and check idempotency key ---
 	if job == nil {
 		return nil, fmt.Errorf("%w: job cannot be nil", ErrInvalidJob)
 	}
@@ -196,6 +251,7 @@ func (s *Store) Enqueue(ctx context.Context, job *Job) (*Job, error) {
 		}
 	}
 
+	// --- Step 2: Populate default ID, initial state, and timestamps ---
 	now := time.Now().UTC()
 	if job.ID == "" {
 		job.ID = ulid.Make().String()
@@ -211,6 +267,7 @@ func (s *Store) Enqueue(ctx context.Context, job *Job) (*Job, error) {
 	}
 	job.UpdatedAt = now
 
+	// --- Step 3: Insert the job row and handle concurrent idempotency races ---
 	query := `
 INSERT INTO jobs (
     id, kind, priority, idempotency_key, state, lease_expires,
@@ -246,12 +303,14 @@ INSERT INTO jobs (
 	return job, nil
 }
 
-// Get fetches a job by ID.
+// Get fetches a job by ID. It returns ErrInvalidJob if id is empty, or ErrJobNotFound if no row matches.
 func (s *Store) Get(ctx context.Context, id string) (*Job, error) {
+	// --- Step 1: Validate the job ID ---
 	if id == "" {
 		return nil, fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
 
+	// --- Step 2: Query and scan the job row ---
 	query := `
 SELECT id, kind, priority, idempotency_key, state, lease_expires,
        attempts, next_attempt_at, cost, payload, last_error, created_at, updated_at
@@ -271,11 +330,14 @@ WHERE id = ?;
 }
 
 // GetByIdempotencyKey fetches a job by its unique idempotency key.
+// It returns ErrInvalidJob if key is empty, or ErrJobNotFound if no row matches.
 func (s *Store) GetByIdempotencyKey(ctx context.Context, key string) (*Job, error) {
+	// --- Step 1: Validate the idempotency key ---
 	if key == "" {
 		return nil, fmt.Errorf("%w: idempotency key cannot be empty", ErrInvalidJob)
 	}
 
+	// --- Step 2: Query and scan the job row by idempotency_key ---
 	query := `
 SELECT id, kind, priority, idempotency_key, state, lease_expires,
        attempts, next_attempt_at, cost, payload, last_error, created_at, updated_at
@@ -296,8 +358,9 @@ WHERE idempotency_key = ?;
 
 // AcquireNext selects and leases the highest-priority eligible job for execution.
 // A job is eligible if it is queued, or failed with next_attempt_at <= now.
-// Returns (nil, nil) if no job is currently eligible.
+// It returns ErrNoJobAvailable if no job is currently eligible.
 func (s *Store) AcquireNext(ctx context.Context, leaseDuration time.Duration, kinds ...Kind) (*Job, error) {
+	// --- Step 1: Resolve lease duration and open a transaction ---
 	if leaseDuration <= 0 {
 		leaseDuration = s.defaultLeaseDuration
 	}
@@ -310,6 +373,7 @@ func (s *Store) AcquireNext(ctx context.Context, leaseDuration time.Duration, ki
 		_ = tx.Rollback()
 	}()
 
+	// --- Step 2: Query the highest-priority eligible job ---
 	now := time.Now().UTC()
 
 	var query strings.Builder
@@ -342,6 +406,7 @@ WHERE (state = 'queued' OR (state = 'failed' AND (next_attempt_at IS NULL OR nex
 		return nil, fmt.Errorf("querying eligible job: %w", err)
 	}
 
+	// --- Step 3: Transition the selected job to running with an incremented attempt count ---
 	if err := ValidateTransition(job.State, StateRunning); err != nil {
 		return nil, fmt.Errorf("acquiring job %s: %w", job.ID, err)
 	}
@@ -375,6 +440,7 @@ WHERE id = ? AND state = ?;
 		return nil, ErrNoJobAvailable
 	}
 
+	// --- Step 4: Commit transaction and return the updated Job ---
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("committing acquire transaction: %w", err)
 	}
@@ -389,7 +455,10 @@ WHERE id = ? AND state = ?;
 }
 
 // RenewLease extends the lease duration of a currently running job.
+// It returns ErrInvalidJob if id is empty, ErrJobNotFound if the job does not exist,
+// ErrInvalidTransition if the job is no longer running, or ErrLeaseExpired if the update affected no rows.
 func (s *Store) RenewLease(ctx context.Context, id string, leaseDuration time.Duration) error {
+	// --- Step 1: Validate inputs and compute new expiration timestamp ---
 	if id == "" {
 		return fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
@@ -400,6 +469,7 @@ func (s *Store) RenewLease(ctx context.Context, id string, leaseDuration time.Du
 	now := time.Now().UTC()
 	leaseExpires := now.Add(leaseDuration)
 
+	// --- Step 2: Update lease_expires for the running job ---
 	query := `
 UPDATE jobs
 SET lease_expires = ?, updated_at = ?
@@ -410,6 +480,7 @@ WHERE id = ? AND state = 'running';
 		return fmt.Errorf("renewing lease for %s: %w", id, err)
 	}
 
+	// --- Step 3: Diagnose zero-row updates by inspecting current job state ---
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("checking rows affected: %w", err)
@@ -430,6 +501,7 @@ WHERE id = ? AND state = 'running';
 
 // Complete marks a running (or submitted) job as successfully done, recording any associated cost.
 func (s *Store) Complete(ctx context.Context, id string, cost *Cost) error {
+	// --- Step 1: Fetch the job and validate transition to StateDone ---
 	if id == "" {
 		return fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
@@ -443,6 +515,7 @@ func (s *Store) Complete(ctx context.Context, id string, cost *Cost) error {
 		return fmt.Errorf("completing job %s: %w", id, err)
 	}
 
+	// --- Step 2: Persist StateDone, cost metrics, and cleared lease ---
 	now := time.Now().UTC()
 	query := `
 UPDATE jobs
@@ -460,6 +533,7 @@ WHERE id = ?;
 // Fail marks a running job as failed, recording the error and scheduling backoff retry.
 // If the job has reached or exceeded maxAttempts, it transitions directly to dead.
 func (s *Store) Fail(ctx context.Context, id string, errMessage string, backoff time.Duration) error {
+	// --- Step 1: Load the job and check whether maxAttempts has been reached ---
 	if id == "" {
 		return fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
@@ -471,7 +545,7 @@ func (s *Store) Fail(ctx context.Context, id string, errMessage string, backoff 
 
 	now := time.Now().UTC()
 
-	// If max attempts reached, transition to dead
+	// --- Step 2: Transition to StateDead if attempts are exhausted ---
 	if job.Attempts >= s.maxAttempts {
 		if err := ValidateTransition(job.State, StateDead); err != nil {
 			return fmt.Errorf("transitioning job %s to dead: %w", id, err)
@@ -488,7 +562,7 @@ WHERE id = ?;
 		return nil
 	}
 
-	// Transient failure: transition to failed with backoff
+	// --- Step 3: Transition to StateFailed and schedule next retry with backoff ---
 	if err := ValidateTransition(job.State, StateFailed); err != nil {
 		return fmt.Errorf("transitioning job %s to failed: %w", id, err)
 	}
@@ -513,6 +587,7 @@ WHERE id = ?;
 
 // MarkDead permanently marks a job as dead, clearing any active leases.
 func (s *Store) MarkDead(ctx context.Context, id string, errMessage string) error {
+	// --- Step 1: Load the job and verify transition to StateDead ---
 	if id == "" {
 		return fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
@@ -526,6 +601,7 @@ func (s *Store) MarkDead(ctx context.Context, id string, errMessage string) erro
 		return fmt.Errorf("marking job %s dead: %w", id, err)
 	}
 
+	// --- Step 2: Update the job row to StateDead and clear active lease ---
 	now := time.Now().UTC()
 	query := `
 UPDATE jobs
@@ -554,6 +630,7 @@ func (s *Store) ReclaimExpiredLeases(ctx context.Context, now time.Time) (int, e
 
 // ReclaimExpiredLeasesDetailed executes lease recovery and returns breakdown counts.
 func (s *Store) ReclaimExpiredLeasesDetailed(ctx context.Context, now time.Time) (ReclaimResult, error) {
+	// --- Step 1: Normalize reference timestamp and begin transaction ---
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -566,7 +643,7 @@ func (s *Store) ReclaimExpiredLeasesDetailed(ctx context.Context, now time.Time)
 		_ = tx.Rollback()
 	}()
 
-	// 1. Mark jobs that exceeded max attempts as dead
+	// --- Step 2: Mark expired running jobs that exceeded maxAttempts as dead ---
 	deadQuery := `
 UPDATE jobs
 SET state = ?, lease_expires = NULL, next_attempt_at = NULL,
@@ -585,7 +662,7 @@ WHERE state = 'running'
 		return ReclaimResult{}, fmt.Errorf("checking dead rows affected: %w", err)
 	}
 
-	// 2. Re-queue jobs with remaining attempts
+	// --- Step 3: Re-queue expired running jobs that still have remaining attempts ---
 	requeueQuery := `
 UPDATE jobs
 SET state = ?, lease_expires = NULL, next_attempt_at = NULL, updated_at = ?
@@ -603,6 +680,7 @@ WHERE state = 'running'
 		return ReclaimResult{}, fmt.Errorf("checking requeued rows affected: %w", err)
 	}
 
+	// --- Step 4: Commit transaction and return breakdown counts ---
 	if err := tx.Commit(); err != nil {
 		return ReclaimResult{}, fmt.Errorf("committing reclaim transaction: %w", err)
 	}
@@ -616,6 +694,7 @@ WHERE state = 'running'
 
 // List returns a list of jobs matching the provided filter.
 func (s *Store) List(ctx context.Context, filter Filter) ([]Job, error) {
+	// --- Step 1: Build SQL query from filter predicates ---
 	var query strings.Builder
 	query.WriteString(`
 SELECT id, kind, priority, idempotency_key, state, lease_expires,
@@ -641,6 +720,7 @@ WHERE 1=1
 		args = append(args, filter.Limit)
 	}
 
+	// --- Step 2: Execute query and scan resulting Job rows ---
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing jobs: %w", err)
@@ -663,8 +743,9 @@ WHERE 1=1
 	return jobs, nil
 }
 
-// Delete removes a job by ID.
+// Delete removes a job by ID. It returns ErrInvalidJob if id is empty, or ErrJobNotFound if no row was deleted.
 func (s *Store) Delete(ctx context.Context, id string) error {
+	// --- Step 1: Validate ID and execute DELETE statement ---
 	if id == "" {
 		return fmt.Errorf("%w: id cannot be empty", ErrInvalidJob)
 	}
@@ -675,6 +756,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("deleting job %s: %w", id, err)
 	}
 
+	// --- Step 2: Verify that a row was removed ---
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("checking deleted rows affected: %w", err)
@@ -688,6 +770,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 
 // Stats returns counts of jobs grouped by state.
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
+	// --- Step 1: Query job counts grouped by state ---
 	query := "SELECT state, COUNT(*) FROM jobs GROUP BY state;"
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -695,6 +778,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	}
 	defer rows.Close()
 
+	// --- Step 2: Accumulate per-state and total job counts ---
 	var stats Stats
 	for rows.Next() {
 		var stateStr string
@@ -722,7 +806,9 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	return stats, rows.Err()
 }
 
+// scanJob scans a single row from a sql.Row or sql.Rows into a Job struct.
 func scanJob(scanner interface{ Scan(dest ...any) error }) (*Job, error) {
+	// --- Step 1: Scan raw SQL columns into local variables ---
 	var j Job
 	var kindStr, stateStr string
 	var idempotencyKey, costStr, payload, lastError sql.NullString
@@ -747,6 +833,7 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (*Job, error) {
 		return nil, err
 	}
 
+	// --- Step 2: Populate nullable fields, UTC timestamps, and JSON Cost ---
 	j.Kind = Kind(kindStr)
 	j.State = State(stateStr)
 
@@ -777,6 +864,7 @@ func scanJob(scanner interface{ Scan(dest ...any) error }) (*Job, error) {
 	return &j, nil
 }
 
+// nullString returns nil if s is empty, or s otherwise for SQL NULL storage.
 func nullString(s string) any {
 	if s == "" {
 		return nil
@@ -784,6 +872,7 @@ func nullString(s string) any {
 	return s
 }
 
+// nullTime returns nil if t is nil or zero, or t.UTC() otherwise for SQL NULL storage.
 func nullTime(t *time.Time) any {
 	if t == nil || t.IsZero() {
 		return nil
@@ -791,6 +880,7 @@ func nullTime(t *time.Time) any {
 	return t.UTC()
 }
 
+// costValue serializes c via Value() or returns nil when c is nil or fails to marshal.
 func costValue(c *Cost) any {
 	if c == nil {
 		return nil

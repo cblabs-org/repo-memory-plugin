@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/evidence/builder.go
+ * Description: Assembles a normalized episode.Episode from a spool capture
+ *              entry and a parsed transcript stream.
+ *
+ * Exported Types / Functions:
+ * - BuildEpisode(): Constructs an episode.Episode from a spool.Entry and ParsedTranscript.
+ */
+
+// Package evidence parses raw agent transcripts, checkpoint summaries, and
+// conversation artifacts into structured episode evidence.
 package evidence
 
 import (
@@ -9,6 +26,7 @@ import (
 
 // BuildEpisode creates an episode.Episode from a spool entry and parsed transcript.
 func BuildEpisode(entry spool.Entry, parsed *ParsedTranscript, repoID string) *episode.Episode {
+	// --- Step 1: Resolve session start and end timestamps with fallbacks ---
 	started := parsed.Started
 	if started.IsZero() {
 		if !entry.Timestamp.IsZero() {
@@ -27,6 +45,7 @@ func BuildEpisode(entry spool.Entry, parsed *ParsedTranscript, repoID string) *e
 		}
 	}
 
+	// --- Step 2: Populate episode header metadata and checkpoint status ---
 	harnessName := entry.Harness
 	if harnessName == "" {
 		harnessName = "antigravity"
@@ -59,6 +78,7 @@ func BuildEpisode(entry spool.Entry, parsed *ParsedTranscript, repoID string) *e
 		header.SetParentEpisode(entry.ParentConversationID)
 	}
 
+	// --- Step 3: Construct episode, record initial HEAD commit, and compute stats ---
 	ep := episode.NewEpisode(header, parsed.Steps...)
 
 	if entry.Head != "" {

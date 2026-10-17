@@ -1,3 +1,37 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/metrics/reader.go
+ * Description: Reads and aggregates JSONL telemetry records (capture health,
+ *               hook latency percentiles, tick health, budget exhaustion, and
+ *               transcript measurements) from repository metrics storage.
+ *
+ * Exported Types / Functions:
+ * - Reader:                       Reads JSONL telemetry records from disk or an io.Reader.
+ *   - NewReader():                Creates a Reader for <data-dir>/<repo-id>/metrics.
+ *   - NewReaderFromIO():          Creates a Reader backed by an arbitrary io.Reader.
+ *   - ReadAll():                  Reads all metric records across all timestamps.
+ *   - ReadSince():                Reads all metric records with a timestamp >= since.
+ *   - ReadCaptureHealth():        Reads CaptureHealth records since a timestamp.
+ *   - ReadHookExecutions():       Reads HookExecution records since a timestamp.
+ *   - ReadTickHealth():           Reads TickHealth records since a timestamp.
+ *   - ReadBudgetExhaustions():    Reads BudgetExhaustion records since a timestamp.
+ *   - ReadTranscriptMeasurements(): Reads TranscriptMeasurement records since a timestamp.
+ * - CaptureHealthSummary:         Aggregated overview of session capture health telemetry.
+ * - AggregateCaptureHealth():     Aggregates a slice of CaptureHealth records.
+ * - HookLatencyStats:             Percentile and cumulative latency statistics for a hook event type.
+ * - HookAggregation:              Aggregated hook latency percentiles per event type and session.
+ * - AggregateHookExecutions():    Computes p50/p95/p99 latency stats and session totals.
+ * - TickHealthSummary:            Aggregated overview of scheduled tick executions.
+ * - AggregateTickHealth():        Computes statistical summaries across TickHealth records.
+ * - BudgetSummary:                Aggregated overview of budget exhaustion events.
+ * - AggregateBudgetExhaustion():  Aggregates a slice of BudgetExhaustion records.
+ */
+
 package metrics
 
 import (
@@ -16,8 +50,8 @@ import (
 
 // Reader reads and aggregates telemetry records from <data-dir>/<repo-id>/metrics/*.jsonl (SPEC §10.4).
 type Reader struct {
-	dirPath  string
-	customIO io.Reader
+	dirPath  string    // Filesystem path to the repository metrics directory.
+	customIO io.Reader // Optional in-memory or custom reader overriding filesystem scanning.
 }
 
 // NewReader creates a Reader for the metrics directory under <data-dir>/<repo-id>/metrics.
@@ -49,6 +83,7 @@ func (r *Reader) ReadAll() ([]GenericRecord, error) {
 
 // ReadSince reads all metric records with a timestamp >= since.
 func (r *Reader) ReadSince(since time.Time) ([]GenericRecord, error) {
+	// --- Step 1: Read directly from customIO if configured ---
 	if r.customIO != nil {
 		if seeker, ok := r.customIO.(io.Seeker); ok {
 			_, _ = seeker.Seek(0, io.SeekStart)
@@ -56,6 +91,7 @@ func (r *Reader) ReadSince(since time.Time) ([]GenericRecord, error) {
 		return scanGenericRecords(r.customIO, since)
 	}
 
+	// --- Step 2: Discover and sort *.jsonl files in the metrics directory ---
 	entries, err := os.ReadDir(r.dirPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -72,6 +108,7 @@ func (r *Reader) ReadSince(since time.Time) ([]GenericRecord, error) {
 	}
 	sort.Strings(jsonlFiles)
 
+	// --- Step 3: Scan each JSONL file in chronological order ---
 	var all []GenericRecord
 	for _, name := range jsonlFiles {
 		filePath := filepath.Join(r.dirPath, name)
@@ -90,7 +127,7 @@ func (r *Reader) ReadSince(since time.Time) ([]GenericRecord, error) {
 	return all, nil
 }
 
-// ReadCaptureHealth reads all CaptureHealth records.
+// ReadCaptureHealth reads all CaptureHealth records with a timestamp >= since.
 func (r *Reader) ReadCaptureHealth(since time.Time) ([]CaptureHealth, error) {
 	var results []CaptureHealth
 	err := r.scanTyped(MetricTypeCaptureHealth, since, func(data []byte) error {
@@ -104,7 +141,7 @@ func (r *Reader) ReadCaptureHealth(since time.Time) ([]CaptureHealth, error) {
 	return results, err
 }
 
-// ReadHookExecutions reads all HookExecution records.
+// ReadHookExecutions reads all HookExecution records with a timestamp >= since.
 func (r *Reader) ReadHookExecutions(since time.Time) ([]HookExecution, error) {
 	var results []HookExecution
 	err := r.scanTyped(MetricTypeHookExecution, since, func(data []byte) error {
@@ -118,7 +155,7 @@ func (r *Reader) ReadHookExecutions(since time.Time) ([]HookExecution, error) {
 	return results, err
 }
 
-// ReadTickHealth reads all TickHealth records.
+// ReadTickHealth reads all TickHealth records with a timestamp >= since.
 func (r *Reader) ReadTickHealth(since time.Time) ([]TickHealth, error) {
 	var results []TickHealth
 	err := r.scanTyped(MetricTypeTickHealth, since, func(data []byte) error {
@@ -132,7 +169,7 @@ func (r *Reader) ReadTickHealth(since time.Time) ([]TickHealth, error) {
 	return results, err
 }
 
-// ReadBudgetExhaustions reads all BudgetExhaustion records.
+// ReadBudgetExhaustions reads all BudgetExhaustion records with a timestamp >= since.
 func (r *Reader) ReadBudgetExhaustions(since time.Time) ([]BudgetExhaustion, error) {
 	var results []BudgetExhaustion
 	err := r.scanTyped(MetricTypeBudgetExhaustion, since, func(data []byte) error {
@@ -146,7 +183,7 @@ func (r *Reader) ReadBudgetExhaustions(since time.Time) ([]BudgetExhaustion, err
 	return results, err
 }
 
-// ReadTranscriptMeasurements reads all TranscriptMeasurement records.
+// ReadTranscriptMeasurements reads all TranscriptMeasurement records with a timestamp >= since.
 func (r *Reader) ReadTranscriptMeasurements(since time.Time) ([]TranscriptMeasurement, error) {
 	var results []TranscriptMeasurement
 	err := r.scanTyped(MetricTypeTranscriptMeasurement, since, func(data []byte) error {
@@ -160,7 +197,9 @@ func (r *Reader) ReadTranscriptMeasurements(since time.Time) ([]TranscriptMeasur
 	return results, err
 }
 
+// scanTyped scans JSONL records matching mType and timestamp >= since, invoking fn on each matching raw JSON line.
 func (r *Reader) scanTyped(mType MetricType, since time.Time, fn func(data []byte) error) error {
+	// --- Step 1: Define single-stream line scanner and filter callback ---
 	processReader := func(rd io.Reader) error {
 		scanner := bufio.NewScanner(rd)
 		buf := make([]byte, 1024*1024)
@@ -190,6 +229,7 @@ func (r *Reader) scanTyped(mType MetricType, since time.Time, fn func(data []byt
 		return scanner.Err()
 	}
 
+	// --- Step 2: Scan customIO stream if present ---
 	if r.customIO != nil {
 		if seeker, ok := r.customIO.(io.Seeker); ok {
 			_, _ = seeker.Seek(0, io.SeekStart)
@@ -197,6 +237,7 @@ func (r *Reader) scanTyped(mType MetricType, since time.Time, fn func(data []byt
 		return processReader(r.customIO)
 	}
 
+	// --- Step 3: Enumerate and scan sorted JSONL files from the metrics directory ---
 	entries, err := os.ReadDir(r.dirPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -229,12 +270,15 @@ func (r *Reader) scanTyped(mType MetricType, since time.Time, fn func(data []byt
 	return nil
 }
 
+// scanGenericRecords reads all GenericRecord lines with timestamp >= since from rd.
 func scanGenericRecords(rd io.Reader, since time.Time) ([]GenericRecord, error) {
+	// --- Step 1: Configure buffered scanner for JSONL input ---
 	var results []GenericRecord
 	scanner := bufio.NewScanner(rd)
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 1024*1024*10)
 
+	// --- Step 2: Unmarshal each line and filter by timestamp ---
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -256,17 +300,18 @@ func scanGenericRecords(rd io.Reader, since time.Time) ([]GenericRecord, error) 
 
 // CaptureHealthSummary represents an aggregated overview of capture health telemetry.
 type CaptureHealthSummary struct {
-	TotalSessionsSeen     int            `json:"total_sessions_seen"`
-	TotalSessionsCaptured int            `json:"total_sessions_captured"`
-	TotalSessionsSkipped  int            `json:"total_sessions_skipped"`
-	TotalSessionsMissed   int            `json:"total_sessions_missed"`
-	CaptureRate           float64        `json:"capture_rate"`
-	SkipReasons           map[string]int `json:"skip_reasons"`
-	MissReasons           map[string]int `json:"miss_reasons"`
+	TotalSessionsSeen     int            `json:"total_sessions_seen"`     // Cumulative number of sessions inspected.
+	TotalSessionsCaptured int            `json:"total_sessions_captured"` // Cumulative number of sessions captured into episodes.
+	TotalSessionsSkipped  int            `json:"total_sessions_skipped"`  // Cumulative number of sessions intentionally skipped.
+	TotalSessionsMissed   int            `json:"total_sessions_missed"`   // Cumulative number of sessions missed due to errors.
+	CaptureRate           float64        `json:"capture_rate"`            // Ratio of TotalSessionsCaptured to TotalSessionsSeen.
+	SkipReasons           map[string]int `json:"skip_reasons"`            // Breakdown of skipped session counts by reason.
+	MissReasons           map[string]int `json:"miss_reasons"`            // Breakdown of missed session counts by reason.
 }
 
 // AggregateCaptureHealth aggregates multiple CaptureHealth records.
 func AggregateCaptureHealth(records []CaptureHealth) CaptureHealthSummary {
+	// --- Step 1: Sum session counts and reason maps across all records ---
 	summary := CaptureHealthSummary{
 		SkipReasons: make(map[string]int),
 		MissReasons: make(map[string]int),
@@ -286,6 +331,7 @@ func AggregateCaptureHealth(records []CaptureHealth) CaptureHealthSummary {
 		}
 	}
 
+	// --- Step 2: Compute overall capture rate ---
 	if summary.TotalSessionsSeen > 0 {
 		summary.CaptureRate = float64(summary.TotalSessionsCaptured) / float64(summary.TotalSessionsSeen)
 	}
@@ -295,27 +341,28 @@ func AggregateCaptureHealth(records []CaptureHealth) CaptureHealthSummary {
 
 // HookLatencyStats records percentile distribution and cumulative metrics for hook execution.
 type HookLatencyStats struct {
-	EventType       string  `json:"event_type"`
-	Count           int     `json:"count"`
-	TotalDurationMS float64 `json:"total_duration_ms"`
-	MeanDurationMS  float64 `json:"mean_duration_ms"`
-	P50DurationMS   float64 `json:"p50_duration_ms"`
-	P95DurationMS   float64 `json:"p95_duration_ms"`
-	P99DurationMS   float64 `json:"p99_duration_ms"`
-	MinDurationMS   float64 `json:"min_duration_ms"`
-	MaxDurationMS   float64 `json:"max_duration_ms"`
+	EventType       string  `json:"event_type"`        // Hook event name (e.g. "pre_invocation", "stop").
+	Count           int     `json:"count"`             // Total number of hook executions recorded.
+	TotalDurationMS float64 `json:"total_duration_ms"` // Sum of execution durations in milliseconds.
+	MeanDurationMS  float64 `json:"mean_duration_ms"`  // Arithmetic mean duration in milliseconds.
+	P50DurationMS   float64 `json:"p50_duration_ms"`   // 50th percentile (median) duration in milliseconds.
+	P95DurationMS   float64 `json:"p95_duration_ms"`   // 95th percentile duration in milliseconds.
+	P99DurationMS   float64 `json:"p99_duration_ms"`   // 99th percentile duration in milliseconds.
+	MinDurationMS   float64 `json:"min_duration_ms"`   // Minimum observed duration in milliseconds.
+	MaxDurationMS   float64 `json:"max_duration_ms"`   // Maximum observed duration in milliseconds.
 }
 
 // HookAggregation contains aggregated hook latency percentiles per event type and cumulative session times (SPEC §10.4).
 type HookAggregation struct {
-	PerEventType         map[string]HookLatencyStats `json:"per_event_type"`
-	CumulativePerSession map[string]float64          `json:"cumulative_per_session"`
-	MedianSessionMS      float64                     `json:"median_session_ms"`
-	MeanSessionMS        float64                     `json:"mean_session_ms"`
+	PerEventType         map[string]HookLatencyStats `json:"per_event_type"`         // Latency stats keyed by hook event type.
+	CumulativePerSession map[string]float64          `json:"cumulative_per_session"` // Total hook execution time (ms) keyed by session ID.
+	MedianSessionMS      float64                     `json:"median_session_ms"`      // Median cumulative hook latency per session in milliseconds.
+	MeanSessionMS        float64                     `json:"mean_session_ms"`        // Mean cumulative hook latency per session in milliseconds.
 }
 
 // AggregateHookExecutions computes p50, p95, p99 percentiles per event type and session cumulative times.
 func AggregateHookExecutions(records []HookExecution) HookAggregation {
+	// --- Step 1: Group durations by event type and accumulate per-session totals ---
 	byType := make(map[string][]float64)
 	sessionTimes := make(map[string]float64)
 
@@ -332,6 +379,7 @@ func AggregateHookExecutions(records []HookExecution) HookAggregation {
 		}
 	}
 
+	// --- Step 2: Compute percentile and summary statistics for each event type ---
 	statsPerType := make(map[string]HookLatencyStats)
 	for eventType, durations := range byType {
 		if len(durations) == 0 {
@@ -362,6 +410,7 @@ func AggregateHookExecutions(records []HookExecution) HookAggregation {
 		}
 	}
 
+	// --- Step 3: Compute median and mean cumulative session latencies ---
 	var sessionVals []float64
 	var sumSession float64
 	for _, total := range sessionTimes {
@@ -387,20 +436,21 @@ func AggregateHookExecutions(records []HookExecution) HookAggregation {
 
 // TickHealthSummary represents an aggregated overview of tick executions (SPEC §10.4).
 type TickHealthSummary struct {
-	TotalTicks                 int                `json:"total_ticks"`
-	TotalDurationMS            float64            `json:"total_duration_ms"`
-	MeanDurationMS             float64            `json:"mean_duration_ms"`
-	P50DurationMS              float64            `json:"p50_duration_ms"`
-	P95DurationMS              float64            `json:"p95_duration_ms"`
-	BudgetExhaustionCount      int                `json:"budget_exhaustion_count"`
-	TotalSkippedOverlaps       int                `json:"total_skipped_overlaps"`
-	TotalSessionsCaughtBySweep int                `json:"total_sessions_caught_by_sweep"`
-	MeanSpoolToDeliveryMS      float64            `json:"mean_spool_to_delivery_ms"`
-	AverageBacklog             map[string]float64 `json:"average_backlog"`
+	TotalTicks                 int                `json:"total_ticks"`                    // Total number of tick executions recorded.
+	TotalDurationMS            float64            `json:"total_duration_ms"`              // Cumulative tick execution duration in milliseconds.
+	MeanDurationMS             float64            `json:"mean_duration_ms"`               // Mean tick duration in milliseconds.
+	P50DurationMS              float64            `json:"p50_duration_ms"`                // Median (p50) tick duration in milliseconds.
+	P95DurationMS              float64            `json:"p95_duration_ms"`                // 95th percentile tick duration in milliseconds.
+	BudgetExhaustionCount      int                `json:"budget_exhaustion_count"`        // Number of ticks where budget was exhausted.
+	TotalSkippedOverlaps       int                `json:"total_skipped_overlaps"`         // Total overlapping tick invocations skipped.
+	TotalSessionsCaughtBySweep int                `json:"total_sessions_caught_by_sweep"` // Total uncaptured sessions recovered by background sweep.
+	MeanSpoolToDeliveryMS      float64            `json:"mean_spool_to_delivery_ms"`      // Mean latency from spool write to delivery in milliseconds.
+	AverageBacklog             map[string]float64 `json:"average_backlog"`                // Mean queued job count per job kind across ticks.
 }
 
 // AggregateTickHealth computes statistical summaries for tick executions.
 func AggregateTickHealth(records []TickHealth) TickHealthSummary {
+	// --- Step 1: Handle empty input and accumulate raw tick metrics ---
 	if len(records) == 0 {
 		return TickHealthSummary{
 			AverageBacklog: make(map[string]float64),
@@ -433,6 +483,7 @@ func AggregateTickHealth(records []TickHealth) TickHealthSummary {
 		}
 	}
 
+	// --- Step 2: Compute duration percentiles, average backlog, and mean delivery latency ---
 	sort.Float64s(durations)
 	p50 := percentile(durations, 0.50)
 	p95 := percentile(durations, 0.95)
@@ -463,15 +514,16 @@ func AggregateTickHealth(records []TickHealth) TickHealthSummary {
 
 // BudgetSummary represents an aggregated overview of budget exhaustion records.
 type BudgetSummary struct {
-	TotalEvents        int            `json:"total_events"`
-	ExhaustedEvents    int            `json:"exhausted_events"`
-	ExhaustionByStage  map[string]int `json:"exhaustion_by_stage"`
-	TotalLimitByUnit   map[string]int64 `json:"total_limit_by_unit"`
-	TotalConsumedByUnit map[string]int64 `json:"total_consumed_by_unit"`
+	TotalEvents         int              `json:"total_events"`           // Total number of budget telemetry events recorded.
+	ExhaustedEvents     int              `json:"exhausted_events"`       // Number of events where budget was exhausted.
+	ExhaustionByStage   map[string]int   `json:"exhaustion_by_stage"`    // Count of exhaustion events grouped by pipeline stage.
+	TotalLimitByUnit    map[string]int64 `json:"total_limit_by_unit"`    // Sum of configured limits grouped by measurement unit.
+	TotalConsumedByUnit map[string]int64 `json:"total_consumed_by_unit"` // Sum of consumed amounts grouped by measurement unit.
 }
 
 // AggregateBudgetExhaustion aggregates budget exhaustion records.
 func AggregateBudgetExhaustion(records []BudgetExhaustion) BudgetSummary {
+	// --- Step 1: Initialize summary maps ---
 	summary := BudgetSummary{
 		TotalEvents:         len(records),
 		ExhaustionByStage:   make(map[string]int),
@@ -479,6 +531,7 @@ func AggregateBudgetExhaustion(records []BudgetExhaustion) BudgetSummary {
 		TotalConsumedByUnit: make(map[string]int64),
 	}
 
+	// --- Step 2: Accumulate stage exhaustion counts and unit totals ---
 	for _, r := range records {
 		if r.Exhausted {
 			summary.ExhaustedEvents++
@@ -495,7 +548,9 @@ func AggregateBudgetExhaustion(records []BudgetExhaustion) BudgetSummary {
 	return summary
 }
 
+// percentile computes the linear-interpolated p-th quantile (0 <= p <= 1) of a pre-sorted float64 slice.
 func percentile(sorted []float64, p float64) float64 {
+	// --- Step 1: Handle empty and boundary quantile cases ---
 	if len(sorted) == 0 {
 		return 0
 	}
@@ -506,6 +561,7 @@ func percentile(sorted []float64, p float64) float64 {
 		return sorted[len(sorted)-1]
 	}
 
+	// --- Step 2: Linearly interpolate between adjacent sorted elements ---
 	index := p * float64(len(sorted)-1)
 	lower := int(index)
 	upper := lower + 1

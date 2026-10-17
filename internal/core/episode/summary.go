@@ -1,3 +1,24 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/episode/summary.go
+ * Description: Produces deterministic, token-bounded Markdown and structured
+ *              summaries of agent sessions from compacted episodes, flat JSON
+ *              fixtures, or raw transcript streams.
+ *
+ * Exported Types / Functions:
+ * - DefaultSummaryMaxTokens: Default token ceiling (400 tokens) for session summaries.
+ * - SessionSummary:          Deterministic, token-bounded summary of a worker session.
+ * - SummaryNoteItem:         Candidate knowledge item inside an inbox or evidence note.
+ * - SummaryNote:             Stage 1 note loaded for session summarization.
+ * - BuildSessionSummary():   Constructs a bounded SessionSummary from an Episode and optional notes.
+ * - SummarizeSessionInput(): Resolves a session ID or transcript path and returns its SessionSummary.
+ */
+
 package episode
 
 import (
@@ -22,69 +43,72 @@ const DefaultSummaryMaxTokens = 400
 
 // SessionSummary is a deterministic, token-bounded summary of a worker session.
 type SessionSummary struct {
-	SessionID           string   `json:"session_id"`
-	Harness             string   `json:"harness,omitempty"`
-	Timestamp           string   `json:"timestamp,omitempty"`
-	FilesTouched        []string `json:"files_touched"`
-	NotesCaptured       []string `json:"notes_captured"`
-	FailuresEncountered []string `json:"failures_encountered"`
-	CommandsRun         []string `json:"commands_run"`
-	VerificationOutcome string   `json:"verification_outcome"`
-	TokenCount          int      `json:"token_count"`
-	SummaryMarkdown     string   `json:"summary_markdown"`
+	SessionID           string   `json:"session_id"`           // Canonical session or episode identifier.
+	Harness             string   `json:"harness,omitempty"`    // Agent harness that produced the session.
+	Timestamp           string   `json:"timestamp,omitempty"`  // RFC3339 timestamp of session completion or start.
+	FilesTouched        []string `json:"files_touched"`        // Ordered, deduplicated repository-relative file paths touched.
+	NotesCaptured       []string `json:"notes_captured"`       // Formatted one-line summaries of notes linked to the session.
+	FailuresEncountered []string `json:"failures_encountered"` // Formatted command or tool failures with exit codes and digests.
+	CommandsRun         []string `json:"commands_run"`         // Ordered, deduplicated shell or test commands executed.
+	VerificationOutcome string   `json:"verification_outcome"` // Terminal verification state ("verified", "completed (unverified)", "failed", or "incomplete").
+	TokenCount          int      `json:"token_count"`          // Estimated token count of SummaryMarkdown.
+	SummaryMarkdown     string   `json:"summary_markdown"`     // Token-bounded Markdown rendering of the session summary.
 }
 
 // SummaryNoteItem represents a candidate knowledge item inside an inbox note.
 type SummaryNoteItem struct {
-	Type    dossiers.EntryType `json:"type"`
-	Title   string             `json:"title"`
-	Why     string             `json:"why,omitempty"`
-	Do      string             `json:"do,omitempty"`
-	Anchors []string           `json:"anchors,omitempty"`
-	Scope   string             `json:"scope,omitempty"`
+	Type    dossiers.EntryType `json:"type"`              // Dossier entry category (e.g., invariant, gotcha, decision).
+	Title   string             `json:"title"`             // Concise headline of the knowledge item.
+	Why     string             `json:"why,omitempty"`     // Rationale or root-cause explanation.
+	Do      string             `json:"do,omitempty"`      // Actionable guidance or rule.
+	Anchors []string           `json:"anchors,omitempty"` // File or symbol anchors associated with the item.
+	Scope   string             `json:"scope,omitempty"`   // Repository scope path for the item.
 }
 
 // SummaryNote represents a Stage 1 note loaded for session summarization without
 // creating an episode -> inbox -> delivery -> index -> episode import cycle.
 type SummaryNote struct {
-	ID             string            `json:"id"`
-	Source         string            `json:"source,omitempty"`
-	SessionID      string            `json:"session_id,omitempty"`
-	ConversationID string            `json:"conversation_id,omitempty"`
-	Kind           string            `json:"kind,omitempty"`
-	Scope          string            `json:"scope,omitempty"`
-	Statement      string            `json:"statement,omitempty"`
-	Items          []SummaryNoteItem `json:"items,omitempty"`
+	ID             string            `json:"id"`                        // Stable ULID or content-hash identifier used for cross-directory deduplication.
+	Source         string            `json:"source,omitempty"`          // Origin of the note (e.g., "memory_note", "distill").
+	SessionID      string            `json:"session_id,omitempty"`      // Session ID associated with the note.
+	ConversationID string            `json:"conversation_id,omitempty"` // Conversation UUID associated with the note.
+	Kind           string            `json:"kind,omitempty"`            // Flat note kind when Items is unpopulated.
+	Scope          string            `json:"scope,omitempty"`           // Default scope for the note.
+	Statement      string            `json:"statement,omitempty"`       // Flat statement text when Items is unpopulated.
+	Items          []SummaryNoteItem `json:"items,omitempty"`           // Structured knowledge items contained in the note.
 }
 
+// flatToolError represents a pre-extracted tool error record inside flat JSON episode fixtures.
 type flatToolError struct {
-	Tool         string `json:"tool"`
-	Command      string `json:"command"`
-	ExitCode     int    `json:"exit_code"`
-	StderrDigest string `json:"stderr_digest"`
-	Message      string `json:"message"`
+	Tool         string `json:"tool"`          // Harness tool identifier (e.g. "run_command" or "edit_file") that produced the failure.
+	Command      string `json:"command"`       // Command string executed by the tool.
+	ExitCode     int    `json:"exit_code"`     // Non-zero process exit code.
+	StderrDigest string `json:"stderr_digest"` // Short stderr excerpt describing the failure.
+	Message      string `json:"message"`       // Fallback error message string.
 }
 
+// flatEpisodeJSON models both standard Episode JSON files and flat evaluation fixture JSON files.
 type flatEpisodeJSON struct {
-	SchemaVersion        string          `json:"schema_version"`
-	ID                   string          `json:"id"`
-	EpisodeID            string          `json:"episode_id"`
-	SessionID            string          `json:"session_id"`
-	Harness              string          `json:"harness"`
-	Timestamp            string          `json:"timestamp"`
-	TouchedFiles         []string        `json:"touched_files"`
-	ToolSequence         []string        `json:"tool_sequence"`
-	VerificationCommands []string        `json:"verification_commands"`
-	ToolErrors           []flatToolError `json:"tool_errors"`
-	NoteIDs              []string        `json:"note_ids"`
-	TerminalSuccess      *bool           `json:"terminal_success"`
-	Header               *Header         `json:"header"`
-	Steps                []harness.Step  `json:"steps"`
+	SchemaVersion        string          `json:"schema_version"`        // Optional fixture schema version.
+	ID                   string          `json:"id"`                    // Fallback episode or fixture ID.
+	EpisodeID            string          `json:"episode_id"`            // Top-level ULID episode identifier in flat evaluation fixtures.
+	SessionID            string          `json:"session_id"`            // Harness conversation UUID in flat evaluation fixtures.
+	Harness              string          `json:"harness"`               // Agent harness adapter slug ("antigravity" or "claude-code").
+	Timestamp            string          `json:"timestamp"`             // ISO-8601 session timestamp string.
+	TouchedFiles         []string        `json:"touched_files"`         // Pre-extracted list of modified files.
+	ToolSequence         []string        `json:"tool_sequence"`         // Pre-extracted sequence of tool commands.
+	VerificationCommands []string        `json:"verification_commands"` // Pre-extracted verification commands.
+	ToolErrors           []flatToolError `json:"tool_errors"`           // Pre-extracted tool failure records.
+	NoteIDs              []string        `json:"note_ids"`              // Note IDs linked to the episode.
+	TerminalSuccess      *bool           `json:"terminal_success"`      // Explicit terminal success override flag.
+	Header               *Header         `json:"header"`                // Nested Episode Header when reading structured Episode JSON.
+	Steps                []harness.Step  `json:"steps"`                 // Nested step slice when reading structured Episode JSON.
 }
 
 // BuildSessionSummary constructs a deterministic SessionSummary from an Episode and optional SummaryNotes,
 // enforcing a strict token budget (defaulting to 400 tokens when maxTokens <= 0).
 func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *SessionSummary {
+	// --- Step 1: Initialize summary defaults and handle nil episode ---
 	if maxTokens <= 0 {
 		maxTokens = DefaultSummaryMaxTokens
 	}
@@ -103,6 +127,7 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 		return summary
 	}
 
+	// --- Step 2: Resolve session identity and timestamp metadata ---
 	sessionID := strings.TrimSpace(ep.Header.SessionID)
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(ep.Header.EpisodeID)
@@ -123,7 +148,7 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 
 	repoRoot, _ := metadataString(ep.Header.Metadata, "repo_root")
 
-	// 1. FilesTouched
+	// --- Step 3: Collect and normalize touched file paths ---
 	var filesTouched []string
 	filesTouched = append(filesTouched, metadataStringSlice(ep.Header.Metadata, "touched_files")...)
 
@@ -147,7 +172,7 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 	}
 	summary.FilesTouched = dedupStringsPreserveOrder(filesTouched)
 
-	// 2. CommandsRun, VerificationCommands, FailuresEncountered
+	// --- Step 4: Extract commands run, verification commands, and step failures ---
 	var commandsRun []string
 	var verificationCmds []string
 	var failures []string
@@ -215,7 +240,7 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 	verificationCmds = dedupStringsPreserveOrder(verificationCmds)
 	summary.FailuresEncountered = dedupStringsPreserveOrder(failures)
 
-	// 3. NotesCaptured
+	// --- Step 5: Match and format captured notes associated with the session ---
 	epNoteIDs := metadataStringSlice(ep.Header.Metadata, "note_ids")
 	noteIDSet := make(map[string]bool, len(epNoteIDs))
 	for _, id := range epNoteIDs {
@@ -253,7 +278,7 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 	}
 	summary.NotesCaptured = dedupStringsPreserveOrder(notesCaptured)
 
-	// 4. VerificationOutcome
+	// --- Step 6: Classify verification outcome and render token-bounded Markdown ---
 	terminalSuccess := deriveTerminalSuccess(ep, hasStepActivity, len(summary.FailuresEncountered) > 0, len(verificationCmds) > 0, lastVerificationFailed)
 	switch {
 	case terminalSuccess && len(verificationCmds) > 0:
@@ -266,13 +291,14 @@ func BuildSessionSummary(ep *Episode, notes []*SummaryNote, maxTokens int) *Sess
 		summary.VerificationOutcome = "incomplete"
 	}
 
-	// 5. Render SummaryMarkdown within maxTokens
 	summary.SummaryMarkdown = buildBoundedSummaryMarkdown(summary, maxTokens)
 	summary.TokenCount = dossiers.EstimateTokens(summary.SummaryMarkdown)
 	return summary
 }
 
+// deriveTerminalSuccess determines whether the episode completed without an unresolved terminal failure.
 func deriveTerminalSuccess(ep *Episode, hasActivity, hasFailures, hasVerification, lastVerificationFailed bool) bool {
+	// --- Step 1: Check explicit metadata override and header status ---
 	if ep == nil {
 		return false
 	}
@@ -291,6 +317,8 @@ func deriveTerminalSuccess(ep *Episode, hasActivity, hasFailures, hasVerificatio
 	if lastVerificationFailed {
 		return false
 	}
+
+	// --- Step 2: Evaluate unverified failure states and trailing command outcome ---
 	if hasFailures && !hasVerification && status != "completed" && status != "verified" && status != "parsed" && status != "captured" {
 		return false
 	}
@@ -309,7 +337,10 @@ func deriveTerminalSuccess(ep *Episode, hasActivity, hasFailures, hasVerificatio
 	return true
 }
 
+// inspectStepFailure checks whether steps[idx] (or its paired tool-output follow-up step) failed,
+// returning the failure flag, optional exit code, and a single-line error digest.
 func inspectStepFailure(steps []harness.Step, idx int) (failed bool, exitCode *int, digest string) {
+	// --- Step 1: Check direct exit code, test failure count, and outcome markers on the step ---
 	s := steps[idx]
 	if s.ExitCode != nil && *s.ExitCode != 0 {
 		code := *s.ExitCode
@@ -326,6 +357,8 @@ func inspectStepFailure(steps []harness.Step, idx int) (failed bool, exitCode *i
 	if looksLikeErrorText(s.Excerpt) {
 		return true, extractExitCode(s.Excerpt), firstDigestLine(s.Excerpt)
 	}
+
+	// --- Step 2: Inspect the immediately following output step when command and output are split ---
 	if s.Command != "" && s.Excerpt == "" && idx+1 < len(steps) {
 		next := steps[idx+1]
 		if next.Command == "" && next.Kind == harness.StepKindCommand {
@@ -341,12 +374,16 @@ func inspectStepFailure(steps []harness.Step, idx int) (failed bool, exitCode *i
 	return false, nil, ""
 }
 
+// looksLikeErrorText reports whether text contains common CLI or test runner failure markers.
 func looksLikeErrorText(text string) bool {
+	// --- Step 1: Trim and normalize text for case-insensitive matching ---
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return false
 	}
 	lower := strings.ToLower(trimmed)
+
+	// --- Step 2: Check against known CLI, build, and test runner failure substrings ---
 	for _, marker := range []string{
 		"encountered error in tool execution",
 		"exit status ",
@@ -363,6 +400,7 @@ func looksLikeErrorText(text string) bool {
 	return false
 }
 
+// extractExitCode parses a non-zero integer exit code from command output text if present.
 func extractExitCode(text string) *int {
 	lower := strings.ToLower(text)
 	for _, prefix := range []string{"exit status ", "exit code: ", "exit code "} {
@@ -377,6 +415,7 @@ func extractExitCode(text string) *int {
 	return nil
 }
 
+// firstDigestLine returns the first non-empty, non-timestamp line across candidates, truncated to 140 chars.
 func firstDigestLine(candidates ...string) string {
 	for _, c := range candidates {
 		for _, line := range strings.Split(strings.TrimSpace(c), "\n") {
@@ -393,11 +432,15 @@ func firstDigestLine(candidates ...string) string {
 	return ""
 }
 
+// isVerificationCommand reports whether cmd invokes a recognized build, test, or lint tool.
 func isVerificationCommand(cmd string) bool {
+	// --- Step 1: Normalize command string ---
 	lower := strings.ToLower(strings.TrimSpace(cmd))
 	if lower == "" {
 		return false
 	}
+
+	// --- Step 2: Match against canonical test, build, and lint command prefixes ---
 	for _, token := range []string{
 		"go test",
 		"go vet",
@@ -422,7 +465,9 @@ func isVerificationCommand(cmd string) bool {
 	return false
 }
 
+// formatSummaryNoteLines formats a SummaryNote and its items into concise single-line bullet strings.
 func formatSummaryNoteLines(n *SummaryNote) []string {
+	// --- Step 1: Handle nil notes or flat single-statement notes ---
 	if n == nil {
 		return nil
 	}
@@ -444,6 +489,8 @@ func formatSummaryNoteLines(n *SummaryNote) []string {
 		}
 		return []string{id}
 	}
+
+	// --- Step 2: Format each structured note item with kind, scope, and headline ---
 	var out []string
 	for _, item := range n.Items {
 		kind := strings.TrimSpace(string(item.Type))
@@ -478,6 +525,7 @@ func formatSummaryNoteLines(n *SummaryNote) []string {
 	return out
 }
 
+// firstSingleLine returns the first non-empty trimmed line of s.
 func firstSingleLine(s string) string {
 	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
@@ -487,13 +535,16 @@ func firstSingleLine(s string) string {
 	return ""
 }
 
+// buildBoundedSummaryMarkdown progressively tightens item and character limits until
+// the rendered Markdown fits within maxTokens.
 func buildBoundedSummaryMarkdown(s *SessionSummary, maxTokens int) string {
+	// --- Step 1: Define progressive truncation tiers ---
 	type budgetStep struct {
-		maxFiles    int
-		maxNotes    int
-		maxFailures int
-		maxCmds     int
-		maxChars    int
+		maxFiles    int // Maximum number of touched files to list before summarizing remainder.
+		maxNotes    int // Maximum number of captured notes to list.
+		maxFailures int // Maximum number of failure items to list.
+		maxCmds     int // Maximum number of commands to list.
+		maxChars    int // Maximum character length per bullet item.
 	}
 	steps := []budgetStep{
 		{15, 10, 8, 12, 140},
@@ -505,6 +556,7 @@ func buildBoundedSummaryMarkdown(s *SessionSummary, maxTokens int) string {
 		{0, 0, 0, 0, 24},
 	}
 
+	// --- Step 2: Render at each tier until token estimate is within budget ---
 	var rendered string
 	for _, st := range steps {
 		rendered = renderSummaryMarkdown(s, st.maxFiles, st.maxNotes, st.maxFailures, st.maxCmds, st.maxChars, maxTokens)
@@ -513,6 +565,7 @@ func buildBoundedSummaryMarkdown(s *SessionSummary, maxTokens int) string {
 		}
 	}
 
+	// --- Step 3: Enforce hard byte ceiling if even the minimal tier exceeds maxTokens ---
 	maxBytes := maxTokens * 4
 	if maxBytes > 0 && len(rendered) > maxBytes {
 		rendered = strings.TrimSpace(rendered[:maxBytes])
@@ -520,7 +573,9 @@ func buildBoundedSummaryMarkdown(s *SessionSummary, maxTokens int) string {
 	return rendered
 }
 
+// renderSummaryMarkdown renders s as Markdown using the specified per-section item and character limits.
 func renderSummaryMarkdown(s *SessionSummary, maxFiles, maxNotes, maxFailures, maxCmds, maxItemChars, maxTokens int) string {
+	// --- Step 1: Write header metadata block ---
 	var b strings.Builder
 	sid := s.SessionID
 	if sid == "" {
@@ -535,6 +590,7 @@ func renderSummaryMarkdown(s *SessionSummary, maxFiles, maxNotes, maxFailures, m
 		b.WriteString(fmt.Sprintf("- **Timestamp:** %s\n", s.Timestamp))
 	}
 
+	// --- Step 2: Define bounded section writer helper ---
 	writeSection := func(title string, items []string, limit int) {
 		b.WriteString(fmt.Sprintf("\n### %s\n", title))
 		if len(items) == 0 {
@@ -561,6 +617,7 @@ func renderSummaryMarkdown(s *SessionSummary, maxFiles, maxNotes, maxFailures, m
 		}
 	}
 
+	// --- Step 3: Render each summary section ---
 	writeSection("Files Touched", s.FilesTouched, maxFiles)
 	writeSection("Notes Captured", s.NotesCaptured, maxNotes)
 	writeSection("Failures Encountered", s.FailuresEncountered, maxFailures)
@@ -576,6 +633,7 @@ func renderSummaryMarkdown(s *SessionSummary, maxFiles, maxNotes, maxFailures, m
 // SummarizeSessionInput resolves target as either a stored episode ID, an episode JSON/.jsonl.zst file,
 // or a raw transcript file/directory on disk, pairs it with matching notes, and returns a SessionSummary.
 func SummarizeSessionInput(dataDir, repoID, repoRoot, target string, maxTokens int) (*SessionSummary, error) {
+	// --- Step 1: Validate target and resolve episode from store or filesystem ---
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return nil, ErrEmptySessionID
@@ -592,11 +650,15 @@ func SummarizeSessionInput(dataDir, repoID, repoRoot, target string, maxTokens i
 		ep.Header.Metadata["repo_root"] = repoRoot
 	}
 
+	// --- Step 2: Load candidate notes and build bounded session summary ---
 	notes := loadCandidateNotes(dataDir, repoID, repoRoot)
 	return BuildSessionSummary(ep, notes, maxTokens), nil
 }
 
+// resolveEpisodeInput locates and loads an Episode from the episode store, a JSON fixture,
+// or a raw transcript path.
 func resolveEpisodeInput(dataDir, repoID, repoRoot, target string) (*Episode, error) {
+	// --- Step 1: Probe episode stores and evidence JSON directories when dataDir and repoID are set ---
 	if dataDir != "" && repoID != "" {
 		stores := []*Store{
 			NewStore(filepath.Join(dataDir, "repos"), repoID),
@@ -632,6 +694,7 @@ func resolveEpisodeInput(dataDir, repoID, repoRoot, target string) (*Episode, er
 		}
 	}
 
+	// --- Step 2: Check whether target is a direct file path (.jsonl.zst or .json) ---
 	fi, err := os.Stat(target)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrEpisodeNotFound, target)
@@ -648,10 +711,14 @@ func resolveEpisodeInput(dataDir, repoID, repoRoot, target string) (*Episode, er
 		}
 	}
 
+	// --- Step 3: Fall back to parsing target as a raw transcript file or directory ---
 	return parseRawTranscriptToEpisode(target, repoID, repoRoot)
 }
 
+// tryReadEpisodeJSONFile attempts to parse path as either a structured Episode JSON file
+// or a flat evaluation fixture JSON file.
 func tryReadEpisodeJSONFile(path, repoRoot string) (*Episode, bool) {
+	// --- Step 1: Read and unmarshal JSON file into flatEpisodeJSON ---
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
@@ -667,6 +734,8 @@ func tryReadEpisodeJSONFile(path, repoRoot string) (*Episode, bool) {
 		}
 		return ep, true
 	}
+
+	// --- Step 2: Validate flat fixture identity fields ---
 	sid := strings.TrimSpace(flat.SessionID)
 	if sid == "" {
 		sid = strings.TrimSpace(flat.EpisodeID)
@@ -681,6 +750,7 @@ func tryReadEpisodeJSONFile(path, repoRoot string) (*Episode, bool) {
 		sid = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
 
+	// --- Step 3: Populate Header.Metadata from flat fixture fields ---
 	meta := make(map[string]any)
 	if repoRoot != "" {
 		meta["repo_root"] = repoRoot
@@ -747,7 +817,10 @@ func tryReadEpisodeJSONFile(path, repoRoot string) (*Episode, bool) {
 	}, true
 }
 
+// parseRawTranscriptToEpisode streams a raw Antigravity, Claude Code, or compacted JSONL
+// transcript from pathOrDir and normalizes it into an Episode.
 func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, error) {
+	// --- Step 1: Open raw transcript stream and configure 50 MB line scanner ---
 	rc, sessionIDHint, err := openRawTranscriptStream(pathOrDir)
 	if err != nil {
 		return nil, err
@@ -769,6 +842,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 		claudeTools     = make(map[string]int)
 	)
 
+	// --- Step 2: Scan JSONL records across compacted, Antigravity, and Claude Code schemas ---
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 || string(line) == "CHECKPOINT" {
@@ -780,6 +854,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			continue
 		}
 
+		// Handle compacted episode header line if present on line 1.
 		if len(steps) == 0 {
 			if _, hasEpID := raw["episode_id"]; hasEpID {
 				var hdr Header
@@ -797,6 +872,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			}
 		}
 
+		// Handle pre-normalized harness.Step lines.
 		if kindVal, ok := raw["kind"].(string); ok && (raw["cmd"] != nil || raw["file"] != nil || raw["i"] != nil || raw["text"] != nil) {
 			var st harness.Step
 			if err := json.Unmarshal(line, &st); err == nil && st.Kind != "" {
@@ -807,6 +883,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			}
 		}
 
+		// Extract session ID and timestamp bounds.
 		for _, k := range []string{"sessionId", "session_id", "conversation_id"} {
 			if sv, ok := raw[k].(string); ok && strings.TrimSpace(sv) != "" {
 				sessionID = strings.TrimSpace(sv)
@@ -826,14 +903,15 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			}
 		}
 
+		// Handle Antigravity tool_calls array.
 		if tcRaw, hasTC := raw["tool_calls"]; hasTC && tcRaw != nil {
 			if harnessName == "" {
 				harnessName = HarnessAntigravity
 			}
 			tcBytes, _ := json.Marshal(tcRaw)
 			var calls []struct {
-				Name string         `json:"name"`
-				Args map[string]any `json:"args"`
+				Name string         `json:"name"` // Tool name invoked in the step.
+				Args map[string]any `json:"args"` // Tool arguments map.
 			}
 			if err := json.Unmarshal(tcBytes, &calls); err == nil && len(calls) > 0 {
 				pendingCmd = -1
@@ -870,6 +948,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			}
 		}
 
+		// Handle Antigravity source/content steps and pair tool output with pendingCmd.
 		if src, ok := raw["source"].(string); ok {
 			if harnessName == "" {
 				harnessName = HarnessAntigravity
@@ -901,6 +980,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 			continue
 		}
 
+		// Handle Claude Code message.content tool_use and tool_result blocks.
 		if msgMap, ok := raw["message"].(map[string]any); ok {
 			if harnessName == "" {
 				harnessName = HarnessClaudeCode
@@ -974,6 +1054,7 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 		}
 	}
 
+	// --- Step 3: Validate scanner state and assemble Episode ---
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("scanning transcript %s: %w", pathOrDir, err)
 	}
@@ -1004,7 +1085,9 @@ func parseRawTranscriptToEpisode(pathOrDir, repoID, repoRoot string) (*Episode, 
 	}, nil
 }
 
+// openRawTranscriptStream opens a transcript JSONL file from pathOrDir and derives a session ID hint.
 func openRawTranscriptStream(pathOrDir string) (io.ReadCloser, string, error) {
+	// --- Step 1: Handle direct file paths and infer session ID from parent directory ---
 	fi, err := os.Stat(pathOrDir)
 	if err != nil {
 		return nil, "", fmt.Errorf("stat transcript %s: %w", pathOrDir, err)
@@ -1029,6 +1112,7 @@ func openRawTranscriptStream(pathOrDir string) (io.ReadCloser, string, error) {
 		return f, base, nil
 	}
 
+	// --- Step 2: Probe standard conversation directory transcript locations ---
 	sessionIDHint := filepath.Base(filepath.Clean(pathOrDir))
 	if sessionIDHint == "logs" {
 		grand := filepath.Dir(filepath.Dir(filepath.Clean(pathOrDir)))
@@ -1049,6 +1133,7 @@ func openRawTranscriptStream(pathOrDir string) (io.ReadCloser, string, error) {
 		}
 	}
 
+	// --- Step 3: Fall back to the first sorted .jsonl file in the directory ---
 	entries, err := os.ReadDir(pathOrDir)
 	if err == nil {
 		var jsonlFiles []string
@@ -1070,11 +1155,14 @@ func openRawTranscriptStream(pathOrDir string) (io.ReadCloser, string, error) {
 	return nil, "", fmt.Errorf("no transcript jsonl file found in %s", pathOrDir)
 }
 
+// extractClaudeToolResultContent flattens string or content-block array payloads from Claude tool_result items.
 func extractClaudeToolResultContent(v any) string {
+	// --- Step 1: Dispatch on raw string vs structured content-block array ---
 	switch val := v.(type) {
 	case string:
 		return val
 	case []any:
+		// --- Step 2: Concatenate non-empty text blocks in order ---
 		var parts []string
 		for _, item := range val {
 			if m, ok := item.(map[string]any); ok {
@@ -1089,7 +1177,9 @@ func extractClaudeToolResultContent(v any) string {
 	}
 }
 
+// loadCandidateNotes loads deduplicated SummaryNote records from evidence/notes and .memory/inbox.
 func loadCandidateNotes(dataDir, repoID, repoRoot string) []*SummaryNote {
+	// --- Step 1: Build candidate note directories list ---
 	var dirs []string
 	if dataDir != "" && repoID != "" {
 		dirs = append(dirs,
@@ -1101,6 +1191,7 @@ func loadCandidateNotes(dataDir, repoID, repoRoot string) []*SummaryNote {
 		dirs = append(dirs, filepath.Join(repoRoot, ".memory", "inbox"))
 	}
 
+	// --- Step 2: Scan JSON files across directories and deduplicate by note ID ---
 	seen := make(map[string]bool)
 	var out []*SummaryNote
 
@@ -1132,7 +1223,10 @@ func loadCandidateNotes(dataDir, repoID, repoRoot string) []*SummaryNote {
 	return out
 }
 
+// parseNoteFileFlexible unmarshals a JSON note file supporting both multi-item inbox notes
+// and flat single-statement evidence notes.
 func parseNoteFileFlexible(path string) (*SummaryNote, bool) {
+	// --- Step 1: Read and unmarshal primary SummaryNote structure ---
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
@@ -1141,15 +1235,17 @@ func parseNoteFileFlexible(path string) (*SummaryNote, bool) {
 	if err := json.Unmarshal(data, &n); err != nil {
 		return nil, false
 	}
+
+	// --- Step 2: Backfill flat note fields when Items slice is empty ---
 	var flat struct {
-		ID             string `json:"id"`
-		SessionID      string `json:"session_id"`
-		ConversationID string `json:"conversation_id"`
-		Kind           string `json:"kind"`
-		Type           string `json:"type"`
-		Scope          string `json:"scope"`
-		Statement      string `json:"statement"`
-		Title          string `json:"title"`
+		ID             string `json:"id"`              // Fallback note identifier.
+		SessionID      string `json:"session_id"`      // Fallback session identifier.
+		ConversationID string `json:"conversation_id"` // Fallback conversation UUID.
+		Kind           string `json:"kind"`            // Fallback entry kind.
+		Type           string `json:"type"`            // Alternate entry type key.
+		Scope          string `json:"scope"`           // Fallback repository scope.
+		Statement      string `json:"statement"`       // Primary flat statement text.
+		Title          string `json:"title"`           // Alternate headline text.
 	}
 	_ = json.Unmarshal(data, &flat)
 	if n.ID == "" {
@@ -1182,6 +1278,7 @@ func parseNoteFileFlexible(path string) (*SummaryNote, bool) {
 	return &n, true
 }
 
+// normalizeSummaryFilePath converts p to a clean slash-separated path relative to repoRoot when possible.
 func normalizeSummaryFilePath(p, repoRoot string) string {
 	p = strings.TrimSpace(p)
 	if p == "" {
@@ -1197,6 +1294,7 @@ func normalizeSummaryFilePath(p, repoRoot string) string {
 	return p
 }
 
+// stringFromMap returns the first non-empty string value in m matching one of keys.
 func stringFromMap(m map[string]any, keys ...string) (string, bool) {
 	if m == nil {
 		return "", false
@@ -1209,6 +1307,7 @@ func stringFromMap(m map[string]any, keys ...string) (string, bool) {
 	return "", false
 }
 
+// metadataString extracts a non-empty string value for key from metadata map m.
 func metadataString(m map[string]any, key string) (string, bool) {
 	if m == nil {
 		return "", false
@@ -1219,7 +1318,9 @@ func metadataString(m map[string]any, key string) (string, bool) {
 	return "", false
 }
 
+// metadataStringSlice extracts a slice of non-empty strings for key from metadata map m.
 func metadataStringSlice(m map[string]any, key string) []string {
+	// --- Step 1: Guard against nil map and dispatch on slice type ---
 	if m == nil {
 		return nil
 	}
@@ -1227,6 +1328,7 @@ func metadataStringSlice(m map[string]any, key string) []string {
 	case []string:
 		return v
 	case []any:
+		// --- Step 2: Coerce interface slice elements into trimmed non-empty strings ---
 		var out []string
 		for _, item := range v {
 			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
@@ -1239,6 +1341,7 @@ func metadataStringSlice(m map[string]any, key string) []string {
 	}
 }
 
+// dedupStringsPreserveOrder removes empty and duplicate strings from items while preserving first-seen order.
 func dedupStringsPreserveOrder(items []string) []string {
 	seen := make(map[string]bool, len(items))
 	out := make([]string, 0, len(items))

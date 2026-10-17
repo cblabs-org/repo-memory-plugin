@@ -1,3 +1,38 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/index/entries.go
+ * Description: Provides CRUD, FTS5 BM25 full-text search, error-pattern lookup,
+ *               scope alias resolution, and historical entry queries on Index.
+ *
+ * Exported Types / Functions:
+ * - ErrNotFound:                Sentinel error returned when an entry or record is missing.
+ * - ScoredEntry:                Pairs a dossiers.Entry with its positive BM25 relevance score.
+ * - ErrorPatternResult:         Represents a matched failure-signature error pattern row.
+ * - Index:
+ *   - UpsertEntry():            Inserts or updates an entry and synchronizes its anchors and error patterns.
+ *   - InsertEntry():            Inserts or replaces an entry and resets its child rows.
+ *   - GetEntry():               Retrieves a single entry and its anchors by ID.
+ *   - DeleteEntry():            Deletes an entry and its associated anchors and error patterns.
+ *   - ListEntriesByScope():     Returns all entries belonging to a dossier scope.
+ *   - ListEntriesBySource():    Returns all entries matching a provenance source.
+ *   - ListProceduralEntries():  Returns all procedural/recipe entries ordered by ID.
+ *   - ListAllEntries():         Returns all active entries ordered by ID.
+ *   - SearchEntriesWithScore(): Performs an FTS5 BM25 search returning scored entries.
+ *   - SearchEntries():          Performs an FTS5 search returning matching entries.
+ *   - InsertErrorPattern():     Registers an error pattern for a failure-signature entry.
+ *   - LookupErrorPatterns():    Returns matching error patterns for a command prefix.
+ *   - UpsertAlias():            Records or updates a dossier scope alias mapping.
+ *   - ResolveAlias():           Follows the scope alias chain to its target scope.
+ *   - InsertHistory():          Appends a retired or superseded entry record to entry_history.
+ *   - GetHistory():             Retrieves historical records for an entry ID.
+ *   - QueryHistoryByScope():    Returns historical records for a dossier scope.
+ */
+
 package index
 
 import (
@@ -14,6 +49,7 @@ import (
 // ErrNotFound is returned when an entry or record is not found in the index.
 var ErrNotFound = errors.New("not found")
 
+// parseTime parses an RFC3339Nano or RFC3339 timestamp string, returning the zero Time on failure.
 func parseTime(s string) time.Time {
 	if s == "" {
 		return time.Time{}
@@ -27,6 +63,7 @@ func parseTime(s string) time.Time {
 	return time.Time{}
 }
 
+// formatTime formats a non-zero time as UTC RFC3339Nano, or returns an empty string for the zero Time.
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -34,6 +71,7 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+// boolToInt converts a boolean into a SQLite integer flag (1 or 0).
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -43,6 +81,7 @@ func boolToInt(b bool) int {
 
 // UpsertEntry inserts or updates an entry in the entries table.
 func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
+	// --- Step 1: Normalize timestamps before opening the write transaction ---
 	createdAt := formatTime(entry.CreatedAt)
 	updatedAt := formatTime(entry.UpdatedAt)
 	if updatedAt == "" {
@@ -50,6 +89,7 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 	}
 
 	return idx.WriteTx(ctx, func(tx *sql.Tx) error {
+		// --- Step 2: Upsert the primary row in the entries table ---
 		query := `
 		INSERT INTO entries (
 			id, type, kind, dossier_scope, text, source,
@@ -99,6 +139,7 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 			return fmt.Errorf("upserting entry %s: %w", entry.ID, err)
 		}
 
+		// --- Step 3: Replace entry anchors if provided ---
 		if len(entry.Anchors) > 0 {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM entry_anchors WHERE entry_id = ?", entry.ID); err != nil {
 				return err
@@ -121,6 +162,7 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 			}
 		}
 
+		// --- Step 4: Synchronize error_patterns with the entry type and scope ---
 		if entry.Type != dossiers.EntryTypeFailureSignature {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM error_patterns WHERE entry_id = ?", entry.ID); err != nil {
 				return err
@@ -138,6 +180,7 @@ func (idx *Index) UpsertEntry(ctx context.Context, entry dossiers.Entry) error {
 // InsertEntry inserts or replaces an entry and all of its child rows (entry_anchors, error_patterns)
 // while keeping entries_fts synchronized without orphan FTS rows.
 func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
+	// --- Step 1: Format entry timestamps ---
 	createdAt := formatTime(entry.CreatedAt)
 	updatedAt := formatTime(entry.UpdatedAt)
 	if updatedAt == "" {
@@ -145,6 +188,7 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 	}
 
 	return idx.WriteTx(ctx, func(tx *sql.Tx) error {
+		// --- Step 2: Clear existing child anchor and error-pattern rows ---
 		if _, err := tx.ExecContext(ctx, "DELETE FROM entry_anchors WHERE entry_id = ?", entry.ID); err != nil {
 			return fmt.Errorf("clearing anchors for %s: %w", entry.ID, err)
 		}
@@ -152,6 +196,7 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 			return fmt.Errorf("clearing error patterns for %s: %w", entry.ID, err)
 		}
 
+		// --- Step 3: Upsert the entry row so FTS triggers maintain entries_fts ---
 		query := `
 		INSERT INTO entries (
 			id, type, kind, dossier_scope, text, source,
@@ -201,6 +246,7 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 			return fmt.Errorf("inserting entry %s: %w", entry.ID, err)
 		}
 
+		// --- Step 4: Insert deduplicated entry anchors ---
 		if len(entry.Anchors) > 0 {
 			stmt, err := tx.PrepareContext(ctx, "INSERT INTO entry_anchors (entry_id, anchor) VALUES (?, ?)")
 			if err != nil {
@@ -220,6 +266,7 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 			}
 		}
 
+		// --- Step 5: Extract and insert error patterns for failure-signature entries ---
 		if entry.Type == dossiers.EntryTypeFailureSignature {
 			cmdPrefix, pattern := parseErrorPatternFromEntry(entry)
 			if _, err := tx.ExecContext(ctx,
@@ -234,8 +281,9 @@ func (idx *Index) InsertEntry(ctx context.Context, entry dossiers.Entry) error {
 	})
 }
 
-// GetEntry retrieves an entry by its ID.
+// GetEntry retrieves an entry by its ID. It returns ErrNotFound (wrapped) if no entry exists with id.
 func (idx *Index) GetEntry(ctx context.Context, id string) (*dossiers.Entry, error) {
+	// --- Step 1: Query and scan the entry row by primary key ---
 	query := `
 	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
 	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
@@ -277,6 +325,7 @@ func (idx *Index) GetEntry(ctx context.Context, id string) (*dossiers.Entry, err
 		return nil, fmt.Errorf("getting entry %s: %w", id, err)
 	}
 
+	// --- Step 2: Populate typed fields and derive fallback cognitive kind ---
 	e.Type = dossiers.EntryType(typeStr)
 	e.Kind = dossiers.CognitiveKind(kindStr)
 	if !e.Kind.Valid() {
@@ -289,6 +338,7 @@ func (idx *Index) GetEntry(ctx context.Context, id string) (*dossiers.Entry, err
 	e.CreatedAt = parseTime(createdAtStr.String)
 	e.UpdatedAt = parseTime(updatedAtStr.String)
 
+	// --- Step 3: Load associated anchors for the entry ---
 	anchors, err := idx.getEntryAnchors(ctx, e.ID)
 	if err != nil {
 		return nil, err
@@ -314,7 +364,9 @@ func (idx *Index) DeleteEntry(ctx context.Context, id string) error {
 	})
 }
 
+// scanEntryRows scans a sql.Rows cursor over the standard 17 entry columns into a slice of dossiers.Entry.
 func scanEntryRows(rows *sql.Rows) ([]dossiers.Entry, error) {
+	// --- Step 1: Iterate over SQL rows and scan each column ---
 	var results []dossiers.Entry
 	for rows.Next() {
 		var e dossiers.Entry
@@ -342,6 +394,8 @@ func scanEntryRows(rows *sql.Rows) ([]dossiers.Entry, error) {
 		); err != nil {
 			return nil, fmt.Errorf("scanning entry row: %w", err)
 		}
+
+		// --- Step 2: Normalize domain enums, nullable strings, and timestamps ---
 		e.Type = dossiers.EntryType(typeStr)
 		e.Kind = dossiers.CognitiveKind(kindStr)
 		if !e.Kind.Valid() {
@@ -363,6 +417,7 @@ func scanEntryRows(rows *sql.Rows) ([]dossiers.Entry, error) {
 
 // ListEntriesByScope returns all entries belonging to the specified dossier scope.
 func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossiers.Entry, error) {
+	// --- Step 1: Query entries filtered by dossier_scope ---
 	query := `
 	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
 	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
@@ -380,6 +435,7 @@ func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossi
 	}
 	defer rows.Close()
 
+	// --- Step 2: Decode entry rows and hydrate their anchors ---
 	results, err := scanEntryRows(rows)
 	if err != nil {
 		return nil, err
@@ -401,6 +457,7 @@ func (idx *Index) ListEntriesByScope(ctx context.Context, scope string) ([]dossi
 
 // ListEntriesBySource returns all entries matching the specified provenance source.
 func (idx *Index) ListEntriesBySource(ctx context.Context, source string) ([]dossiers.Entry, error) {
+	// --- Step 1: Query entries filtered by provenance source ---
 	query := `
 	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
 	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
@@ -418,6 +475,7 @@ func (idx *Index) ListEntriesBySource(ctx context.Context, source string) ([]dos
 	}
 	defer rows.Close()
 
+	// --- Step 2: Decode entry rows and hydrate their anchors ---
 	results, err := scanEntryRows(rows)
 	if err != nil {
 		return nil, err
@@ -439,6 +497,7 @@ func (idx *Index) ListEntriesBySource(ctx context.Context, source string) ([]dos
 
 // ListProceduralEntries returns all active entries where type IN ('recipe', 'procedure') or kind = 'procedural', ordered by id.
 func (idx *Index) ListProceduralEntries(ctx context.Context) ([]dossiers.Entry, error) {
+	// --- Step 1: Query procedural and recipe entries ordered by ID ---
 	query := `
 	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
 	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
@@ -456,6 +515,7 @@ func (idx *Index) ListProceduralEntries(ctx context.Context) ([]dossiers.Entry, 
 	}
 	defer rows.Close()
 
+	// --- Step 2: Decode entry rows and hydrate their anchors ---
 	results, err := scanEntryRows(rows)
 	if err != nil {
 		return nil, err
@@ -477,6 +537,7 @@ func (idx *Index) ListProceduralEntries(ctx context.Context) ([]dossiers.Entry, 
 
 // ListAllEntries returns all active entries ordered by id.
 func (idx *Index) ListAllEntries(ctx context.Context) ([]dossiers.Entry, error) {
+	// --- Step 1: Query all rows from the entries table ordered by ID ---
 	query := `
 	SELECT id, type, COALESCE(kind, ''), dossier_scope, text, source,
 	       COALESCE(source_doc_path, ''), COALESCE(source_doc_blob_sha, ''),
@@ -493,6 +554,7 @@ func (idx *Index) ListAllEntries(ctx context.Context) ([]dossiers.Entry, error) 
 	}
 	defer rows.Close()
 
+	// --- Step 2: Decode entry rows and hydrate their anchors ---
 	results, err := scanEntryRows(rows)
 	if err != nil {
 		return nil, err
@@ -512,9 +574,10 @@ func (idx *Index) ListAllEntries(ctx context.Context) ([]dossiers.Entry, error) 
 	return results, nil
 }
 
+// ScoredEntry pairs a matched dossier entry with its positive BM25 relevance score.
 type ScoredEntry struct {
-	Entry dossiers.Entry
-	Score float64
+	Entry dossiers.Entry // Hydrated active dossier entry returned by the FTS5 join.
+	Score float64        // Non-negative relevance score (-bm25) where higher values indicate stronger matches.
 }
 
 // SearchEntriesWithScore performs an FTS5 search over the entries_fts table,
@@ -522,6 +585,7 @@ type ScoredEntry struct {
 // In SQLite FTS5, bm25() returns negative numbers where more negative is more relevant.
 // This function negates the value (-bm25) so higher score represents higher relevance.
 func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]ScoredEntry, error) {
+	// --- Step 1: Validate and execute the FTS5 match query ---
 	matchQuery := strings.TrimSpace(query)
 	if matchQuery == "" {
 		return []ScoredEntry{}, nil
@@ -545,6 +609,7 @@ func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]S
 	}
 	defer rows.Close()
 
+	// --- Step 2: Scan matched entries and convert negative SQLite BM25 scores into positive relevance ---
 	var results []ScoredEntry
 	for rows.Next() {
 		var e dossiers.Entry
@@ -599,6 +664,7 @@ func (idx *Index) SearchEntriesWithScore(ctx context.Context, query string) ([]S
 		return nil, err
 	}
 
+	// --- Step 3: Populate anchors for each scored entry ---
 	for i := range results {
 		anchors, err := idx.getEntryAnchors(ctx, results[i].Entry.ID)
 		if err != nil {
@@ -628,10 +694,10 @@ func (idx *Index) SearchEntries(ctx context.Context, query string) ([]dossiers.E
 
 // ErrorPatternResult represents a matched error pattern.
 type ErrorPatternResult struct {
-	EntryID       string `json:"entry_id"`
-	CommandPrefix string `json:"command_prefix"`
-	Pattern       string `json:"pattern"`
-	DossierScope  string `json:"dossier_scope"`
+	EntryID       string `json:"entry_id"`       // ID of the associated failure-signature entry.
+	CommandPrefix string `json:"command_prefix"` // Command prefix constraint (empty matches any command).
+	Pattern       string `json:"pattern"`        // Error substring or pattern to match against command output.
+	DossierScope  string `json:"dossier_scope"`  // Dossier scope owning the failure-signature entry.
 }
 
 // InsertErrorPattern registers an error pattern for a failure-signature entry.
@@ -651,6 +717,7 @@ func (idx *Index) InsertErrorPattern(ctx context.Context, entryID, commandPrefix
 
 // LookupErrorPatterns returns matching failure-signature entries for a command.
 func (idx *Index) LookupErrorPatterns(ctx context.Context, commandPrefix string) ([]ErrorPatternResult, error) {
+	// --- Step 1: Build the SQL query matching wildcard or prefix-overlapping command patterns ---
 	commandPrefix = strings.TrimSpace(commandPrefix)
 	var query string
 	var args []any
@@ -671,6 +738,7 @@ func (idx *Index) LookupErrorPatterns(ctx context.Context, commandPrefix string)
 		args = []any{commandPrefix, commandPrefix, commandPrefix}
 	}
 
+	// --- Step 2: Execute the query and scan matching ErrorPatternResult rows ---
 	rows, err := idx.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("looking up error patterns for %q: %w", commandPrefix, err)
@@ -706,6 +774,7 @@ func (idx *Index) UpsertAlias(ctx context.Context, oldScope, newScope string) er
 
 // ResolveAlias follows the alias chain to return the final target scope.
 func (idx *Index) ResolveAlias(ctx context.Context, scope string) (string, error) {
+	// --- Step 1: Initialize alias traversal state with cycle protection ---
 	current := strings.TrimSpace(scope)
 	if current == "" {
 		return "", nil
@@ -714,6 +783,7 @@ func (idx *Index) ResolveAlias(ctx context.Context, scope string) (string, error
 	maxDepth := 10
 	visited := make(map[string]bool)
 
+	// --- Step 2: Follow alias hops up to maxDepth or until no further redirect exists ---
 	for depth := 0; depth < maxDepth; depth++ {
 		var next string
 		err := idx.db.QueryRowContext(ctx,
@@ -737,6 +807,7 @@ func (idx *Index) ResolveAlias(ctx context.Context, scope string) (string, error
 
 // InsertHistory inserts a retired or superseded entry record into history.
 func (idx *Index) InsertHistory(ctx context.Context, entry dossiers.Entry, reason string) error {
+	// --- Step 1: Derive history record metadata and retirement timestamp ---
 	histReason := reason
 	if histReason == "" {
 		histReason = entry.RetiredReason
@@ -747,6 +818,7 @@ func (idx *Index) InsertHistory(ctx context.Context, entry dossiers.Entry, reaso
 		retiredAt = formatTime(time.Now().UTC())
 	}
 
+	// --- Step 2: Insert the historical entry snapshot into entry_history ---
 	query := `
 	INSERT INTO entry_history (id, entry_id, type, dossier_scope, text, reason, superseded_by, retired_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -769,6 +841,7 @@ func (idx *Index) InsertHistory(ctx context.Context, entry dossiers.Entry, reaso
 
 // GetHistory retrieves historical entries for a given entry ID.
 func (idx *Index) GetHistory(ctx context.Context, entryID string) ([]dossiers.Entry, error) {
+	// --- Step 1: Query entry_history rows matching entry_id or history id ---
 	query := `
 	SELECT id, entry_id, type, dossier_scope, text, reason, superseded_by, retired_at
 	FROM entry_history
@@ -781,6 +854,7 @@ func (idx *Index) GetHistory(ctx context.Context, entryID string) ([]dossiers.En
 	}
 	defer rows.Close()
 
+	// --- Step 2: Scan rows into retired dossiers.Entry values ---
 	results := make([]dossiers.Entry, 0)
 	for rows.Next() {
 		var histID, eID, typeStr, scope, text, reason, supersededBy, retiredAt sql.NullString
@@ -805,6 +879,7 @@ func (idx *Index) GetHistory(ctx context.Context, entryID string) ([]dossiers.En
 // QueryHistoryByScope returns retired/superseded entries from entry_history
 // for the given scope. This uses a plain read — no write transaction.
 func (idx *Index) QueryHistoryByScope(ctx context.Context, scope string) ([]dossiers.Entry, error) {
+	// --- Step 1: Query entry_history filtered by dossier_scope ---
 	rows, err := idx.db.QueryContext(ctx,
 		`SELECT entry_id, type, dossier_scope, text, reason, superseded_by, retired_at
 		 FROM entry_history
@@ -815,6 +890,7 @@ func (idx *Index) QueryHistoryByScope(ctx context.Context, scope string) ([]doss
 	}
 	defer rows.Close()
 
+	// --- Step 2: Decode historical rows into retired dossiers.Entry records ---
 	var results []dossiers.Entry
 	for rows.Next() {
 		var eID, typeStr, dScope, text, reason, supersededBy, retiredAt sql.NullString

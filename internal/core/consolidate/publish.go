@@ -1,3 +1,31 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/consolidate/publish.go
+ * Description: Manages multi-tier filesystem paths, user/branch/repo tier op
+ *              recording, automatic promotion of merged feature-branch ops into
+ *              shared repository memory, and multi-tier SQLite FTS5 index rebuilds.
+ *
+ * Exported Types / Functions:
+ * - BranchPromotionResult:       Holds branches and op batches promoted from .memory/local/ops/ to .memory/ops/.
+ * - SanitizeBranchSlug():        Normalizes a branch name into a filesystem-safe lowercase slug.
+ * - EnsureMemoryGitignore():     Ensures <repoRoot>/.memory/.gitignore contains required local exclusions.
+ * - UserTierBaseDir():           Returns the Tier 3 (user:) base directory (<dataDir>/<repoID>/user-dossiers).
+ * - BranchTierOpsDir():          Returns the Tier 4 (branch:) ops directory.
+ * - BranchTierDossiersDir():     Returns the Tier 4 (branch:) dossiers directory.
+ * - RepoTierBaseDir():           Returns the Tier 5 (repo:) base directory (<repoRoot>/.memory).
+ * - RecordUserTier():            Records validOps into the developer-local Tier 3 directory and renders dossiers.
+ * - RecordRepoTier():            Records validOps into the shared repository Tier 5 directory and renders dossiers.
+ * - RecordBranchTier():          Records validOps into the gitignored Tier 4 branch-local lane and renders dossiers.
+ * - PromoteMergedBranchOps():    Promotes op batches from merged feature branches into shared .memory/ops/.
+ * - DefaultBranchMergedChecker(): Returns a predicate that checks whether a branch is merged into the default branch.
+ * - RebuildMultiTierIndex():     Rebuilds the SQLite FTS5 index from repo, active branch, and user tier op logs.
+ */
+
 package consolidate
 
 import (
@@ -20,6 +48,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
+// nonAlnumSlugRe matches runs of non-alphanumeric characters replaced by hyphens in branch slugs.
 var nonAlnumSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // SanitizeBranchSlug normalizes a branch name into a filesystem-safe lowercase slug
@@ -68,8 +97,8 @@ func RecordUserTier(ctx context.Context, dataDir, repoID string, validOps []ops.
 	return RecordAndRenderTier(ctx, UserTierBaseDir(dataDir, repoID), validOps, inboxStore, consolidatedNoteIDs, now)
 }
 
-// RecordRepoTier records validOps into the shared repository Tier 5 directory (<repoRoot>/.memory)
-// and renders its dossiers and ATLAS.md.
+// RecordRepoTier records validOps into the shared repository Tier 5 directory (<repoRoot>/.memory),
+// ensuring .memory/.gitignore is initialized before projecting shared dossiers and ATLAS.md.
 func RecordRepoTier(ctx context.Context, repoRoot string, validOps []ops.Op, inboxStore *inbox.Store, consolidatedNoteIDs []string, now time.Time) (*RecordAndRenderResult, error) {
 	if err := EnsureMemoryGitignore(repoRoot); err != nil {
 		return nil, err
@@ -80,6 +109,7 @@ func RecordRepoTier(ctx context.Context, repoRoot string, validOps []ops.Op, inb
 // RecordBranchTier records validOps into the gitignored Tier 4 branch-local lane
 // (.memory/local/ops/<branch-slug>/ and .memory/local/dossiers/<branch-slug>/).
 func RecordBranchTier(ctx context.Context, repoRoot, branchSlug string, validOps []ops.Op, inboxStore *inbox.Store, consolidatedNoteIDs []string, now time.Time) (*RecordAndRenderResult, error) {
+	// --- Step 1: Ensure .memory/.gitignore exists and resolve branch-tier directories ---
 	if err := EnsureMemoryGitignore(repoRoot); err != nil {
 		return nil, err
 	}
@@ -87,13 +117,13 @@ func RecordBranchTier(ctx context.Context, repoRoot, branchSlug string, validOps
 	opsDir := BranchTierOpsDir(repoRoot, branchSlug)
 	dossiersDir := BranchTierDossiersDir(repoRoot, branchSlug)
 
+	// --- Step 2: Record the op batch and render projected dossiers ---
 	res, err := RecordAndRenderDirs(ctx, opsDir, dossiersDir, validOps, inboxStore, consolidatedNoteIDs, now)
 	if err != nil {
 		return nil, err
 	}
 
-	// Also render <scope>.md and <scope>.history.md directly under BranchTierDossiersDir(repoRoot, branchSlug)
-	// so callers inspecting .memory/local/dossiers/<branch-slug>/<scope>.md or via dossiers.NewWriter both succeed.
+	// --- Step 3: Write direct <scope>.md and <scope>.history.md files under dossiersDir for direct layout compatibility ---
 	if err := writeDirectDossierFiles(dossiersDir, res.Dossiers); err != nil {
 		return nil, fmt.Errorf("writing direct branch dossiers to %s: %w", dossiersDir, err)
 	}
@@ -101,7 +131,9 @@ func RecordBranchTier(ctx context.Context, repoRoot, branchSlug string, validOps
 	return res, nil
 }
 
+// writeDirectDossierFiles renders <scope>.md and <scope>.history.md directly under dossiersDir.
 func writeDirectDossierFiles(dossiersDir string, projected map[string]*dossiers.Dossier) error {
+	// --- Step 1: Iterate over projected dossiers and compute direct file paths ---
 	for _, d := range projected {
 		if d == nil || (len(d.Entries) == 0 && len(d.History) == 0) {
 			continue
@@ -110,6 +142,7 @@ func writeDirectDossierFiles(dossiersDir string, projected map[string]*dossiers.
 		scopePath := filepath.Join(dossiersDir, scopeRel+".md")
 		historyPath := filepath.Join(dossiersDir, scopeRel+".history.md")
 
+		// --- Step 2: Write or remove the active dossier markdown file ---
 		if len(d.Entries) == 0 {
 			if err := os.Remove(scopePath); err != nil && !os.IsNotExist(err) {
 				return err
@@ -124,6 +157,7 @@ func writeDirectDossierFiles(dossiersDir string, projected map[string]*dossiers.
 			}
 		}
 
+		// --- Step 3: Write the companion history markdown file when history entries exist ---
 		if len(d.History) > 0 {
 			if err := os.MkdirAll(filepath.Dir(historyPath), 0o755); err != nil {
 				return err
@@ -139,14 +173,15 @@ func writeDirectDossierFiles(dossiersDir string, projected map[string]*dossiers.
 
 // BranchPromotionResult holds the branches and op batches promoted from .memory/local/ops/ to .memory/ops/.
 type BranchPromotionResult struct {
-	PromotedBranches []string      `json:"promoted_branches,omitempty"`
-	PromotedBatches  []ops.OpBatch `json:"promoted_batches,omitempty"`
+	PromotedBranches []string      `json:"promoted_branches,omitempty"` // Sanitized branch slugs whose ops were promoted.
+	PromotedBatches  []ops.OpBatch `json:"promoted_batches,omitempty"`  // OpBatch records moved into shared .memory/ops/.
 }
 
 // PromoteMergedBranchOps scans <repoRoot>/.memory/local/ops/ for branch-scoped op batches whose feature
 // branch has merged into the default branch, promotes those batch files into <repoRoot>/.memory/ops/,
 // deletes the promoted .memory/local/{ops,dossiers}/<branch-slug>/ directories, and re-renders .memory/dossiers/ and .memory/ATLAS.md.
 func PromoteMergedBranchOps(ctx context.Context, repoRoot string) (*BranchPromotionResult, error) {
+	// --- Step 1: Enumerate branch subdirectories under .memory/local/ops ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -172,6 +207,7 @@ func PromoteMergedBranchOps(ctx context.Context, repoRoot string) (*BranchPromot
 	}
 	sort.Strings(branchSlugs)
 
+	// --- Step 2: Check each branch for merge readiness and promote batch files to .memory/ops ---
 	for _, branchSlug := range branchSlugs {
 		branchOpsDir := filepath.Join(localOpsRoot, branchSlug)
 		batches, batchFiles, err := readAllBranchBatches(ctx, branchOpsDir)
@@ -197,6 +233,7 @@ func PromoteMergedBranchOps(ctx context.Context, repoRoot string) (*BranchPromot
 			}
 		}
 
+		// --- Step 3: Remove promoted branch-local ops and dossier directories ---
 		if err := os.RemoveAll(branchOpsDir); err != nil {
 			return nil, fmt.Errorf("removing promoted branch ops directory %s: %w", branchOpsDir, err)
 		}
@@ -209,6 +246,7 @@ func PromoteMergedBranchOps(ctx context.Context, repoRoot string) (*BranchPromot
 		res.PromotedBatches = append(res.PromotedBatches, batches...)
 	}
 
+	// --- Step 4: Re-render shared repository dossiers and ATLAS.md when batches were promoted ---
 	if len(res.PromotedBatches) > 0 {
 		if _, err := RecordAndRenderTier(ctx, RepoTierBaseDir(repoRoot), nil, nil, nil, time.Now().UTC()); err != nil {
 			return nil, fmt.Errorf("re-rendering shared dossiers after branch promotion: %w", err)
@@ -218,12 +256,15 @@ func PromoteMergedBranchOps(ctx context.Context, repoRoot string) (*BranchPromot
 	return res, nil
 }
 
+// branchBatchFile holds the relative path and raw JSON bytes of a branch-local op batch file.
 type branchBatchFile struct {
-	relPath  string
-	rawBytes []byte
+	relPath  string // Path relative to the branch ops directory (e.g. "2026-10/01J....json").
+	rawBytes []byte // Raw JSON file contents to copy into .memory/ops/.
 }
 
+// readAllBranchBatches loads all OpBatch records and raw JSON batch files from branchOpsDir.
 func readAllBranchBatches(ctx context.Context, branchOpsDir string) ([]ops.OpBatch, []branchBatchFile, error) {
+	// --- Step 1: Iterate parsed OpBatch records in chronological ULID order ---
 	reader := ops.NewReader(branchOpsDir)
 	var batches []ops.OpBatch
 	for batch, err := range reader.Iterate(ctx) {
@@ -235,6 +276,7 @@ func readAllBranchBatches(ctx context.Context, branchOpsDir string) ([]ops.OpBat
 		}
 	}
 
+	// --- Step 2: Walk branchOpsDir to collect raw .json files for promotion ---
 	var files []branchBatchFile
 	err := filepath.WalkDir(branchOpsDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -263,7 +305,10 @@ func readAllBranchBatches(ctx context.Context, branchOpsDir string) ([]ops.OpBat
 	return batches, files, nil
 }
 
+// isBranchReadyForPromotion reports whether repoRoot is currently on the default branch and
+// branchSlug has either been merged into HEAD or deleted after its anchored files landed on disk.
 func isBranchReadyForPromotion(ctx context.Context, repoRoot, branchSlug string, batches []ops.OpBatch) bool {
+	// --- Step 1: Verify the working tree is currently on the default branch ---
 	currentBranch, _ := gitops.GetCurrentBranchWithContext(ctx, repoRoot)
 	defaultBranch := resolveDefaultBranch(ctx, repoRoot)
 
@@ -275,7 +320,7 @@ func isBranchReadyForPromotion(ctx context.Context, repoRoot, branchSlug string,
 
 	targetSlug := SanitizeBranchSlug(branchSlug)
 
-	// 1. Check git branch --merged HEAD for a merged branch matching targetSlug.
+	// --- Step 2: Check `git branch --merged HEAD` for a merged branch matching targetSlug ---
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--merged", "HEAD")
 	if out, err := cmd.Output(); err == nil {
 		lines := strings.Split(string(out), "\n")
@@ -290,8 +335,7 @@ func isBranchReadyForPromotion(ctx context.Context, repoRoot, branchSlug string,
 		}
 	}
 
-	// 2. Fallback if the feature branch ref was deleted after merge: verify the branch ref does not exist
-	// as an unmerged local branch and all file anchors referenced in batches now exist on disk under repoRoot.
+	// --- Step 3: If the branch ref was deleted after merge, verify it is not an unmerged local branch and all anchored files exist ---
 	allBranchesCmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--format=%(refname:short)")
 	if out, err := allBranchesCmd.Output(); err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
@@ -316,6 +360,7 @@ func isBranchReadyForPromotion(ctx context.Context, repoRoot, branchSlug string,
 	return true
 }
 
+// resolveDefaultBranch queries refs/remotes/origin/HEAD for the repository's default branch name, falling back to "main".
 func resolveDefaultBranch(ctx context.Context, repoRoot string) string {
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
 	if out, err := cmd.Output(); err == nil {
@@ -328,6 +373,7 @@ func resolveDefaultBranch(ctx context.Context, repoRoot string) string {
 	return "main"
 }
 
+// refExists reports whether ref resolves to a valid git revision in repoRoot.
 func refExists(ctx context.Context, repoRoot, ref string) bool {
 	if strings.TrimSpace(ref) == "" {
 		return false
@@ -338,8 +384,9 @@ func refExists(ctx context.Context, repoRoot, ref string) bool {
 
 // DefaultBranchMergedChecker returns a function that checks whether a given branch
 // has been merged into main, master, or HEAD.
-func DefaultBranchMergedChecker(repoRoot string) func(string) bool {
+func DefaultBranchMergedChecker(repoRoot string) func(branch string) bool {
 	return func(branch string) bool {
+		// --- Step 1: Normalize target branch name and handle default branches ---
 		target := strings.TrimSpace(branch)
 		if strings.TrimSpace(repoRoot) == "" || target == "" {
 			return false
@@ -353,6 +400,7 @@ func DefaultBranchMergedChecker(repoRoot string) func(string) bool {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		// --- Step 2: Collect existing default base refs (origin default, main, master, trunk, HEAD) ---
 		currentBranch, _ := gitops.GetCurrentBranchWithContext(ctx, repoRoot)
 		currentShort := strings.TrimSpace(currentBranch)
 
@@ -375,6 +423,7 @@ func DefaultBranchMergedChecker(repoRoot string) func(string) bool {
 			baseRefs = append(baseRefs, "HEAD")
 		}
 
+		// --- Step 3: Check `git branch --merged` and `git merge-base --is-ancestor` against each base ref ---
 		for _, baseRef := range baseRefs {
 			cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--merged", baseRef)
 			if out, err := cmd.Output(); err == nil {
@@ -400,7 +449,9 @@ func DefaultBranchMergedChecker(repoRoot string) func(string) bool {
 	}
 }
 
+// extractBatchFileAnchors collects deduplicated normalized file paths from all "anchors" fields across batches.
 func extractBatchFileAnchors(batches []ops.OpBatch) []string {
+	// --- Step 1: Define deduplicating file-path collector ---
 	seen := make(map[string]bool)
 	var out []string
 	addAnchor := func(raw string) {
@@ -411,6 +462,7 @@ func extractBatchFileAnchors(batches []ops.OpBatch) []string {
 		}
 	}
 
+	// --- Step 2: Scan all operations across batches for string or slice anchor fields ---
 	for _, b := range batches {
 		for _, op := range b.Ops {
 			if op.Fields == nil {
@@ -438,6 +490,7 @@ func extractBatchFileAnchors(batches []ops.OpBatch) []string {
 // 2. Active branch: ops (<repoRoot>/.memory/local/ops/<SanitizeBranchSlug(currentBranch)>), and
 // 3. Personal user: ops (<dataDir>/<repoID>/user-dossiers/ops).
 func RebuildMultiTierIndex(ctx context.Context, idx *index.Index, dataDir, repoID, repoRoot, currentBranch string) error {
+	// --- Step 1: Validate index handle and initialize default context ---
 	if idx == nil {
 		return fmt.Errorf("index cannot be nil")
 	}
@@ -455,6 +508,7 @@ func RebuildMultiTierIndex(ctx context.Context, idx *index.Index, dataDir, repoI
 		}
 	}
 
+	// --- Step 2: Attach op-log readers for existing repo, active branch, and user tier directories ---
 	if strings.TrimSpace(repoRoot) != "" {
 		addReaderIfDirExists(filepath.Join(repoRoot, ".memory", "ops"))
 		if strings.TrimSpace(currentBranch) != "" {
@@ -469,5 +523,6 @@ func RebuildMultiTierIndex(ctx context.Context, idx *index.Index, dataDir, repoI
 		return nil
 	}
 
+	// --- Step 3: Rebuild the SQLite FTS5 index from the combined op-log readers ---
 	return idx.RebuildFromOpLogs(ctx, readers...)
 }

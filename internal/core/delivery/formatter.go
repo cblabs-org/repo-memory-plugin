@@ -1,8 +1,25 @@
 /*
-formatter.go renders ranked repository memory entries, skill pointer lines,
-and edit-gate denial messages for injection into agent harnesses, and coalesces
-multiple formatted context blocks into a single wrapper block per invocation.
-*/
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/delivery/formatter.go
+ * Description: Renders ranked repository memory entries, graduated skill
+ *              pointers, and edit-gate denial messages for harness injection,
+ *              and coalesces multiple formatted context blocks into a single
+ *              wrapper block per invocation.
+ *
+ * Exported Types / Functions:
+ * - FormatEntry():            Formats a single dossier entry as a tagged memory line.
+ * - FormatEntryForMoment():   Formats an entry for a delivery moment, substituting skill pointers when graduated.
+ * - FormatEntries():          Formats ranked entries into a wrapped Markdown context block.
+ * - FormatEntriesForMoment(): Formats ranked entries for a specific delivery moment and workspace.
+ * - CoalesceContextBlocks():  Merges and deduplicates multiple context blocks under one header.
+ * - FormatGateDeny():         Formats an edit-gate denial message for PreToolUse enforcement.
+ * - ContentHash():            Computes the hex-encoded SHA-256 digest of a rendered text string.
+ */
 
 package delivery
 

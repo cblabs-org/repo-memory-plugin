@@ -1,3 +1,30 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/index/index.go
+ * Description: Opens and manages the SQLite and FTS5 index database over
+ *               episodes, entities, and repository memory entries.
+ *
+ * Exported Types / Functions:
+ * - Index: SQLite and FTS5 index over episodes, entities, and dossier entries.
+ *
+ *   Lifecycle:
+ *   - NewIndex():         Opens or creates a read-write Index backed by SQLite in WAL mode.
+ *   - NewReadOnlyIndex(): Opens an existing SQLite Index in read-only mode.
+ *   - Close():            Closes the underlying database connection. [io.Closer]
+ *
+ *   Own Public API:
+ *   - InsertEpisode():    Inserts an episode record into the episodes_fts virtual table.
+ *   - SearchEpisodes():   Performs a full-text search against the episodes_fts table.
+ *
+ * - EpisodeRecord:        Row representation for the episodes FTS5 table.
+ * - IndexPath():          Returns the canonical SQLite index file path for a repository.
+ */
+
 package index
 
 import (
@@ -19,11 +46,11 @@ func IndexPath(dataDir, repoID string) string {
 
 // Index provides SQLite FTS indexing over episodes and v2 entries.
 type Index struct {
-	db *sql.DB
+	db *sql.DB // Underlying SQLite database connection handle.
 }
 
 // NewIndex opens or creates a new Index backed by SQLite at dbPath.
-// It configures WAL mode for better concurrency.
+// It configures WAL mode for better concurrency. The caller must call Close when finished.
 func NewIndex(dbPath string) (*Index, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=recursive_triggers(1)&_pragma=foreign_keys(1)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
@@ -40,6 +67,7 @@ func NewIndex(dbPath string) (*Index, error) {
 }
 
 // NewReadOnlyIndex opens an Index backed by SQLite at dbPath in read-only mode.
+// The caller must call Close when finished.
 func NewReadOnlyIndex(dbPath string) (*Index, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
@@ -54,7 +82,9 @@ func (idx *Index) Close() error {
 	return idx.db.Close()
 }
 
+// initSchema creates all index tables, FTS5 virtual tables, and synchronization triggers if they do not exist.
 func (idx *Index) initSchema() error {
+	// --- Step 1: Execute base DDL for tables, FTS5 virtual tables, and triggers ---
 	query := `
 	CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(
 		episode_id,
@@ -157,13 +187,17 @@ func (idx *Index) initSchema() error {
 	if err != nil {
 		return fmt.Errorf("initializing schema: %w", err)
 	}
+
+	// --- Step 2: Run incremental column migrations on the entries table ---
 	if err := idx.migrateEntriesColumns(); err != nil {
 		return fmt.Errorf("migrating entries columns: %w", err)
 	}
 	return nil
 }
 
+// migrateEntriesColumns inspects existing columns on the entries table and adds any missing v2 columns.
 func (idx *Index) migrateEntriesColumns() error {
+	// --- Step 1: Query existing column definitions from PRAGMA table_info(entries) ---
 	rows, err := idx.db.Query("PRAGMA table_info(entries)")
 	if err != nil {
 		return err
@@ -186,9 +220,10 @@ func (idx *Index) migrateEntriesColumns() error {
 	}
 	rows.Close()
 
+	// --- Step 2: Define required v2 columns and add any that are absent ---
 	type colSpec struct {
-		name string
-		ddl  string
+		name string // SQLite column identifier.
+		ddl  string // Column type and default constraint.
 	}
 	required := []colSpec{
 		{"kind", "TEXT DEFAULT ''"},
@@ -214,17 +249,18 @@ func (idx *Index) migrateEntriesColumns() error {
 
 // EpisodeRecord represents a row in the episodes FTS table.
 type EpisodeRecord struct {
-	EpisodeID    string
-	SessionID    string
-	Content      string
-	FilesTouched string
-	Outcomes     string
-	Date         time.Time
-	Snippet      string
+	EpisodeID    string    // Primary key matching the compacted Episode.Header.EpisodeID in episodes/*.jsonl.zst.
+	SessionID    string    // Originating conversation or session identifier.
+	Content      string    // Concatenated step text and commands for full-text search.
+	FilesTouched string    // Space-separated list of unique file paths touched during the episode.
+	Outcomes     string    // Newline-separated step outcomes recorded in the episode.
+	Date         time.Time // Timestamp when the episode started (or ended).
+	Snippet      string    // Highlighted FTS5 match snippet populated during search.
 }
 
 // InsertEpisode inserts a new episode record into the FTS index.
 func (idx *Index) InsertEpisode(ctx context.Context, record EpisodeRecord) error {
+	// --- Step 1: Execute FTS5 insert statement for the episode record ---
 	query := `
 	INSERT INTO episodes_fts (episode_id, session_id, content, files_touched, outcomes, date)
 	VALUES (?, ?, ?, ?, ?, ?)
@@ -245,6 +281,7 @@ func (idx *Index) InsertEpisode(ctx context.Context, record EpisodeRecord) error
 
 // SearchEpisodes performs a full-text search against the episodes FTS table.
 func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]EpisodeRecord, error) {
+	// --- Step 1: Query episodes_fts ordered by BM25 relevance ---
 	query := `
 	SELECT episode_id, session_id, content, snippet(episodes_fts, 2, '>', '', '...', 64), files_touched, outcomes, date 
 	FROM episodes_fts 
@@ -257,6 +294,7 @@ func (idx *Index) SearchEpisodes(ctx context.Context, matchQuery string) ([]Epis
 	}
 	defer rows.Close()
 
+	// --- Step 2: Scan matching rows and parse RFC3339 dates ---
 	var results []EpisodeRecord
 	for rows.Next() {
 		var r EpisodeRecord

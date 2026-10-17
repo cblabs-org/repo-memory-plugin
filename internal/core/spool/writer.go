@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/spool/writer.go
+ * Description: Atomically writes durable JSON spool entries to the spool
+ *              directory with Windows-safe handle closure and retry semantics.
+ *
+ * Exported Types / Functions:
+ * - Writer: Writes durable spool entries into a configured spool directory.
+ *   - NewWriter(): Constructs a Writer targeting the given spool directory.
+ *   - SpoolDir():  Returns the configured spool directory path.
+ *   - Write():     Atomically writes a spool Entry and returns its destination path.
+ * - Write(): Package-level helper that writes an Entry to spoolDir.
+ */
+
 package spool
 
 import (
@@ -12,7 +31,7 @@ import (
 
 // Writer writes durable spool entries into the spool directory.
 type Writer struct {
-	spoolDir string
+	spoolDir string // Target directory path where spool JSON files are written.
 }
 
 // NewWriter returns a new Writer targeting the given spool directory.
@@ -27,8 +46,9 @@ func (w *Writer) SpoolDir() string {
 
 // Write writes the given spool entry to a unique temporary file in the spool directory,
 // flushes and closes it, and then atomically renames it to its final destination name.
-// Respects Windows file-locking semantics by closing all handles prior to rename.
+// It respects Windows file-locking semantics by closing all handles prior to rename.
 func (w *Writer) Write(entry Entry) (string, error) {
+	// --- Step 1: Validate spool directory and populate default entry fields ---
 	if w.spoolDir == "" {
 		return "", fmt.Errorf("spool directory cannot be empty")
 	}
@@ -60,7 +80,7 @@ func (w *Writer) Write(entry Entry) (string, error) {
 		return "", fmt.Errorf("marshaling spool entry: %w", err)
 	}
 
-	// 1. Create temporary file directly in spoolDir (same filesystem for atomic rename).
+	// --- Step 2: Create a hidden temporary file in spoolDir ---
 	// The leading dot ensures readers filter it out while in-progress.
 	tmpFile, err := os.CreateTemp(w.spoolDir, ".spool_tmp_*")
 	if err != nil {
@@ -68,7 +88,7 @@ func (w *Writer) Write(entry Entry) (string, error) {
 	}
 	tmpPath := tmpFile.Name()
 
-	// 2. Write data and flush to disk.
+	// --- Step 3: Write payload, flush to disk, and close handle before rename ---
 	if _, err := tmpFile.Write(data); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
@@ -80,20 +100,18 @@ func (w *Writer) Write(entry Entry) (string, error) {
 		return "", fmt.Errorf("syncing spool entry: %w", err)
 	}
 
-	// 3. Close the file handle BEFORE renaming.
 	// On Windows, attempting to rename an open file fails with ERROR_ACCESS_DENIED.
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("closing temp spool file: %w", err)
 	}
 
-	// 4. Construct final destination filename.
+	// --- Step 4: Construct sortable destination filename and atomically rename ---
 	// Lexicographically sortable timestamp without colons (safe for Windows filenames).
 	tsFormatted := entry.Timestamp.Format("20060102T150405.000000000Z")
 	finalFilename := fmt.Sprintf("%s_%s_%s.json", tsFormatted, entry.Kind, entry.ID)
 	destPath := filepath.Join(w.spoolDir, finalFilename)
 
-	// 5. Atomically rename with retry loop for Windows file-system edge cases.
 	if err := atomicRename(tmpPath, destPath); err != nil {
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("renaming temp spool file: %w", err)
@@ -107,6 +125,7 @@ func Write(spoolDir string, entry Entry) (string, error) {
 	return NewWriter(spoolDir).Write(entry)
 }
 
+// randomHex returns a cryptographically random hex string encoded from bytes random bytes.
 func randomHex(bytes int) (string, error) {
 	b := make([]byte, bytes)
 	if _, err := rand.Read(b); err != nil {

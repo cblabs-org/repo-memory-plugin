@@ -1,3 +1,18 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_garden.go
+ * Description: CLI subcommand for running dossier gardening (broken-anchor
+ *              cleanup, duplicate merge, token-cap splitting, and doc freshness).
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -14,17 +29,19 @@ import (
 )
 
 var (
-	gardenRepoDir   string
-	gardenDryRun    bool
-	gardenJSON      bool
-	gardenMaxTokens int
+	gardenRepoDir   string // Target repository root directory (--repo).
+	gardenDryRun    bool   // Whether to preview gardening operations without writing (--dry-run).
+	gardenJSON      bool   // Whether to output structured JSON result (--json).
+	gardenMaxTokens int    // Maximum estimated tokens per dossier before splitting (--max-tokens).
 )
 
+// gardenCmd defines the `repo-memory garden` subcommand.
 var gardenCmd = &cobra.Command{
 	Use:   "garden [repo-dir]",
 	Short: "Run dossier gardening (broken-anchor cleanup, duplicate merge, cap split, and doc freshness)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve target repository root and repository ID ---
 		targetDir := "."
 		if gardenRepoDir != "" {
 			targetDir = gardenRepoDir
@@ -54,6 +71,7 @@ var gardenCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 2: Execute dossier gardening pass ---
 		epStore := episode.NewStore(dataDir, repoID)
 		exec := tick.NewPipelineExecutor(dataDir, repoRoot, repoID, nil, epStore)
 
@@ -65,6 +83,7 @@ var gardenCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 3: Format and emit gardening summary ---
 		if gardenJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")

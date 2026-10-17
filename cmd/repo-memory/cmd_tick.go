@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_tick.go
+ * Description: Implements the `repo-memory tick` (alias `run`) CLI command,
+ *              advancing asynchronous background jobs with harness session
+ *              attribution, transcript copying, and housekeeping.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -15,6 +31,7 @@ func init() {
 	tick.RegisterAttributor(antigravity.NewSessionAttributor())
 }
 
+// tickCmd defines the `repo-memory tick` subcommand for advancing background jobs.
 var tickCmd = &cobra.Command{
 	Use:     "tick",
 	Aliases: []string{"run"},

@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/dossiers/reproject.go
+ * Description: Multi-directory operation log reprojection, human-edit capture,
+ *              loss-prevention validation for pre-existing entry IDs, verified
+ *              stamps, and human decisions, and diff classification against on-disk dossiers.
+ *
+ * Exported Types / Functions:
+ * - ErrHumanDecisionLost: Sentinel error returned when reprojecting would drop existing entries/decisions.
+ * - LostEntryViolation:   Details of a pre-existing dossier entry missing from the projected op-log.
+ * - ReprojectOptions:     Configuration parameters for an op-log reprojection run.
+ * - ReprojectResult:      Summary counts, file diff lists, and loss violations from a reprojection run.
+ * - Reproject():          Replays op-logs across directories, validates against data loss, and writes dossiers.
+ */
+
 package dossiers
 
 import (
@@ -21,52 +41,57 @@ var ErrHumanDecisionLost = errors.New("reproject would lose existing entry ID, v
 
 // LostEntryViolation describes an existing dossier entry that is missing from the projected op-log.
 type LostEntryViolation struct {
-	EntryID string `json:"entry_id"`
-	Scope   string `json:"scope"`
-	Reason  string `json:"reason"`
+	EntryID string `json:"entry_id"` // Identifier of the missing dossier entry.
+	Scope   string `json:"scope"`    // Dossier scope where the entry existed on disk.
+	Reason  string `json:"reason"`   // Explanation of why the loss was flagged.
 }
 
 // ReprojectOptions configures an op-log reprojection run.
 type ReprojectOptions struct {
-	MemoryDir string   // e.g. filepath.Join(repoRoot, ".memory")
-	OpsDirs   []string // e.g. [<repoRoot>/.memory/ops, <dataDir>/repos/<repoID>/ops-local, <dataDir>/user/ops]
-	DryRun    bool
-	AllowLoss bool
+	MemoryDir string   // Target .memory directory (e.g. filepath.Join(repoRoot, ".memory")).
+	OpsDirs   []string // Ordered op-log directories (e.g. [<repoRoot>/.memory/ops, <dataDir>/repos/<repoID>/ops-local, <dataDir>/user/ops]).
+	DryRun    bool     // When true, computes diffs and loss checks without writing files.
+	AllowLoss bool     // When true, proceeds even if pre-existing on-disk entries are absent from the op-log.
 }
 
 // ReprojectResult reports the outcome of an op-log reprojection run.
 type ReprojectResult struct {
-	DryRun                  bool                 `json:"dry_run"`
-	DossiersProjected       int                  `json:"dossiers_projected"`
-	ActiveEntries           int                  `json:"active_entries"`
-	HistoryEntries          int                  `json:"history_entries"`
-	PreExistingEntries      int                  `json:"pre_existing_entries"`
-	VerifiedPreserved       int                  `json:"verified_preserved"`
-	HumanDecisionsPreserved int                  `json:"human_decisions_preserved"`
-	HandEditsCaptured       int                  `json:"hand_edits_captured,omitempty"`
-	FilesAdded              []string             `json:"files_added,omitempty"`
-	FilesUpdated            []string             `json:"files_updated,omitempty"`
-	FilesUnchanged          []string             `json:"files_unchanged,omitempty"`
-	FilesRemoved            []string             `json:"files_removed,omitempty"`
-	LostEntries             []LostEntryViolation `json:"lost_entries,omitempty"`
-	QuestionsUpdated        bool                 `json:"questions_updated,omitempty"`
-	SkillsGraduated         int                  `json:"skills_graduated,omitempty"`
+	DryRun                  bool                 `json:"dry_run"`                      // Whether the run was executed in dry-run mode.
+	DossiersProjected       int                  `json:"dossiers_projected"`           // Count of non-empty dossiers produced by projection.
+	ActiveEntries           int                  `json:"active_entries"`               // Total active entries across all projected dossiers.
+	HistoryEntries          int                  `json:"history_entries"`              // Total retired/superseded entries across all projected dossiers.
+	PreExistingEntries      int                  `json:"pre_existing_entries"`         // Count of entries found in on-disk dossiers prior to reprojection.
+	VerifiedPreserved       int                  `json:"verified_preserved"`           // Count of on-disk verified stamps preserved in projected entries.
+	HumanDecisionsPreserved int                  `json:"human_decisions_preserved"`    // Count of human decisions/invariants preserved in projected entries.
+	HandEditsCaptured       int                  `json:"hand_edits_captured,omitempty"` // Count of manual Markdown edits captured into the op-log.
+	FilesAdded              []string             `json:"files_added,omitempty"`        // Relative paths of newly created dossier or Atlas files.
+	FilesUpdated            []string             `json:"files_updated,omitempty"`      // Relative paths of modified dossier or Atlas files.
+	FilesUnchanged          []string             `json:"files_unchanged,omitempty"`    // Relative paths of unchanged dossier or Atlas files.
+	FilesRemoved            []string             `json:"files_removed,omitempty"`      // Relative paths of orphaned dossier files removed on write.
+	LostEntries             []LostEntryViolation `json:"lost_entries,omitempty"`       // Pre-existing entries missing from the projected op-log.
+	QuestionsUpdated        bool                 `json:"questions_updated,omitempty"`  // Whether open questions state was updated during the run.
+	SkillsGraduated         int                  `json:"skills_graduated,omitempty"`   // Number of procedural entries graduated to skills.
 }
 
+// preExistingDiskEntry captures metadata extracted from an existing on-disk
+// dossier Markdown file prior to reprojection.
 type preExistingDiskEntry struct {
-	ID              string
-	Scope           string
-	Type            EntryType
-	Source          string
-	Verified        string
-	IsHistory       bool
-	IsHumanDecision bool
+	ID              string    // Entry identifier parsed from the H3 heading.
+	Scope           string    // Dossier scope derived from the relative file path.
+	Type            EntryType // Entry type parsed from metadata or inferred from ID prefix.
+	Source          string    // Entry source parsed from metadata, if present.
+	Verified        string    // Verified stamp parsed from metadata, if present.
+	IsHistory       bool      // Whether the entry was parsed from a .history.md file.
+	IsHumanDecision bool      // Whether the entry represents a human decision, invariant, or ruled-out item.
 }
 
 // Reproject replays the op-log across OpsDirs, verifies that no pre-existing entry IDs,
 // verified stamps, or human decisions in MemoryDir/dossiers are lost, and (when !DryRun)
 // writes the regenerated dossiers and ATLAS.md.
+// It returns ErrHumanDecisionLost (discoverable via errors.Is) if any pre-existing entry is
+// missing and opts.AllowLoss is false.
 func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, map[string]*Dossier, error) {
+	// --- Step 1: Normalize options and filter existing op-log directories ---
 	if opts.MemoryDir == "" {
 		opts.MemoryDir = ".memory"
 	}
@@ -90,6 +115,7 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 		}
 	}
 
+	// --- Step 2: Project dossiers across all configured op-log directories ---
 	dossiersMap, err := projectAcrossOpsDirs(ctx, existingOpsDirs)
 	if err != nil {
 		return nil, nil, err
@@ -113,7 +139,7 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 		}
 	}
 
-	// Scan pre-existing dossier files on disk for entry IDs, verified stamps, and human decisions.
+	// --- Step 3: Audit pre-existing on-disk dossiers for lost entries or verified stamps ---
 	dossiersDir := filepath.Join(opts.MemoryDir, "dossiers")
 	diskEntries, err := scanPreExistingDossierEntries(dossiersDir)
 	if err != nil {
@@ -165,7 +191,7 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 		return res, dossiersMap, fmt.Errorf("%w: %d entries/decisions missing", ErrHumanDecisionLost, len(res.LostEntries))
 	}
 
-	// Detect and capture any human prose edits (OpAmend / OpAdd) on existing on-disk dossier files before re-rendering.
+	// --- Step 4: Detect and capture human hand-edits in on-disk dossier files ---
 	var handOps []ops.Op
 	var sortedScopes []string
 	for s := range dossiersMap {
@@ -227,7 +253,7 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 		}
 	}
 
-	// Compute expected rendered files under opts.MemoryDir and compare against disk.
+	// --- Step 5: Classify file diffs and write regenerated dossiers when not in DryRun ---
 	expectedFiles := buildExpectedRenderedFiles(dossiersMap)
 	classifyRenderedFileDiff(opts.MemoryDir, expectedFiles, res)
 
@@ -241,7 +267,10 @@ func Reproject(ctx context.Context, opts ReprojectOptions) (*ReprojectResult, ma
 	return res, dossiersMap, nil
 }
 
+// projectAcrossOpsDirs merges and chronologically sorts operation batches across
+// one or more op-log directories and projects them into a Dossier map.
 func projectAcrossOpsDirs(ctx context.Context, dirs []string) (map[string]*Dossier, error) {
+	// --- Step 1: Handle zero or single directory fast paths ---
 	if len(dirs) == 0 {
 		return make(map[string]*Dossier), nil
 	}
@@ -249,6 +278,7 @@ func projectAcrossOpsDirs(ctx context.Context, dirs []string) (map[string]*Dossi
 		return NewProjector(ops.NewReader(dirs[0])).Project(ctx)
 	}
 
+	// --- Step 2: Collect and deduplicate batches across all directories ---
 	var allBatches []*ops.OpBatch
 	seenBatchID := make(map[string]bool)
 	for _, dir := range dirs {
@@ -270,6 +300,7 @@ func projectAcrossOpsDirs(ctx context.Context, dirs []string) (map[string]*Dossi
 		}
 	}
 
+	// --- Step 3: Sort batches chronologically (breaking ties by BatchID) and project ---
 	sort.SliceStable(allBatches, func(i, j int) bool {
 		if !allBatches[i].CreatedAt.Equal(allBatches[j].CreatedAt) {
 			return allBatches[i].CreatedAt.Before(allBatches[j].CreatedAt)
@@ -291,7 +322,10 @@ func projectAcrossOpsDirs(ctx context.Context, dirs []string) (map[string]*Dossi
 	return NewProjector(nil).projectFromSeq(iter.Seq2[*ops.OpBatch, error](seq))
 }
 
+// scanPreExistingDossierEntries walks dossiersDir and extracts all entry IDs and
+// verification/human-decision metadata from existing .md and .history.md files.
 func scanPreExistingDossierEntries(dossiersDir string) ([]preExistingDiskEntry, error) {
+	// --- Step 1: Verify dossiersDir exists and collect all Markdown files ---
 	info, err := os.Stat(dossiersDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -318,6 +352,7 @@ func scanPreExistingDossierEntries(dossiersDir string) ([]preExistingDiskEntry, 
 	}
 	sort.Strings(mdFiles)
 
+	// --- Step 2: Parse entries from each Markdown file, preferring active over history ---
 	byID := make(map[string]preExistingDiskEntry)
 	for _, fullPath := range mdFiles {
 		rel, err := filepath.Rel(dossiersDir, fullPath)
@@ -344,6 +379,7 @@ func scanPreExistingDossierEntries(dossiersDir string) ([]preExistingDiskEntry, 
 		}
 	}
 
+	// --- Step 3: Return deduplicated entries sorted by ID ---
 	ids := make([]string, 0, len(byID))
 	for id := range byID {
 		ids = append(ids, id)
@@ -357,14 +393,17 @@ func scanPreExistingDossierEntries(dossiersDir string) ([]preExistingDiskEntry, 
 	return out, nil
 }
 
+// parseDiskMarkdownEntries parses H3 entry headers and their backtick metadata
+// lines from a single dossier Markdown file.
 func parseDiskMarkdownEntries(content, scope string, isHistory bool) []preExistingDiskEntry {
+	// --- Step 1: Parse base entry map and scan lines for H3 headers and metadata ---
 	renderedMap := parseMarkdownEntries(content)
 	lines := strings.Split(content, "\n")
 
 	metaByID := make(map[string]struct {
-		entryType EntryType
-		source    string
-		verified  string
+		entryType EntryType // Parsed entry type token.
+		source    string    // Parsed source field.
+		verified  string    // Parsed verified stamp.
 	})
 
 	for i := 0; i < len(lines); i++ {
@@ -428,6 +467,7 @@ func parseDiskMarkdownEntries(content, scope string, isHistory bool) []preExisti
 		}
 	}
 
+	// --- Step 2: Assemble preExistingDiskEntry records with inferred fallback types ---
 	var result []preExistingDiskEntry
 	for id := range renderedMap {
 		meta := metaByID[id]
@@ -448,6 +488,8 @@ func parseDiskMarkdownEntries(content, scope string, isHistory bool) []preExisti
 	return result
 }
 
+// isHumanDecisionTypeOrSource reports whether an entry's type or source marks it
+// as a human decision, invariant, or ruled-out approach protected against loss.
 func isHumanDecisionTypeOrSource(entryType EntryType, source string) bool {
 	t := strings.ToLower(strings.TrimSpace(string(entryType)))
 	switch t {
@@ -458,7 +500,10 @@ func isHumanDecisionTypeOrSource(entryType EntryType, source string) bool {
 	return s == "human" || s == "hand-edit" || strings.HasPrefix(s, "human") || strings.HasPrefix(s, "hand-edit")
 }
 
+// buildExpectedRenderedFiles renders all non-empty active/history dossiers and
+// ATLAS.md in memory, returning a map of relative path to expected Markdown content.
 func buildExpectedRenderedFiles(dossiersMap map[string]*Dossier) map[string]string {
+	// --- Step 1: Sort dossier scopes for deterministic iteration ---
 	expected := make(map[string]string)
 	atlas := &Atlas{}
 
@@ -468,6 +513,7 @@ func buildExpectedRenderedFiles(dossiersMap map[string]*Dossier) map[string]stri
 	}
 	sort.Strings(scopes)
 
+	// --- Step 2: Render active and history Markdown for each non-empty dossier ---
 	for _, scope := range scopes {
 		d := dossiersMap[scope]
 		if len(d.Entries) == 0 && len(d.History) == 0 {
@@ -498,11 +544,16 @@ func buildExpectedRenderedFiles(dossiersMap map[string]*Dossier) map[string]stri
 		})
 	}
 
+	// --- Step 3: Render ATLAS.md ---
 	expected["ATLAS.md"] = RenderAtlas(atlas)
 	return expected
 }
 
+// classifyRenderedFileDiff compares expected rendered files against existing
+// files under memoryDir and populates FilesAdded, FilesUpdated, FilesUnchanged,
+// and FilesRemoved on res.
 func classifyRenderedFileDiff(memoryDir string, expected map[string]string, res *ReprojectResult) {
+	// --- Step 1: Load existing ATLAS.md and dossier Markdown files from disk ---
 	existingOnDisk := make(map[string]string)
 
 	atlasPath := filepath.Join(memoryDir, "ATLAS.md")
@@ -527,6 +578,7 @@ func classifyRenderedFileDiff(memoryDir string, expected map[string]string, res 
 		})
 	}
 
+	// --- Step 2: Classify expected files as added, unchanged, or updated ---
 	var keys []string
 	for k := range expected {
 		keys = append(keys, k)
@@ -545,6 +597,7 @@ func classifyRenderedFileDiff(memoryDir string, expected map[string]string, res 
 		}
 	}
 
+	// --- Step 3: Identify orphaned on-disk files slated for removal ---
 	for rel := range existingOnDisk {
 		if _, ok := expected[rel]; !ok {
 			res.FilesRemoved = append(res.FilesRemoved, rel)

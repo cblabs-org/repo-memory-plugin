@@ -1,3 +1,38 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/consolidate/filter.go
+ * Description: Implements deterministic pre-consolidation gates including the
+ *              P13 Echo Filter, echo reconfirmation via passing build/test steps,
+ *              and the VD18 Pre-Consolidation Corroboration Gate.
+ *
+ * Exported Types / Functions:
+ * - EchoFilterResult:                Holds the partitioned outcome of the deterministic P13 Echo Filter.
+ * - CorroborationResult:             Holds the outcome of the VD18 Pre-Consolidation Corroboration Gate.
+ * - NormalizeTitle():                Lowercases text, strips headings/IDs/punctuation, and collapses spaces.
+ * - ExtractEntryTitle():             Extracts the title from the first line of an entry's text.
+ * - ExtractEntryDo():                Extracts the Do: line content from an entry's text if present.
+ * - StripAnchorSymbol():             Strips file: prefixes and #symbol or :line suffixes from an anchor.
+ * - AnchorsOverlap():                Reports whether two anchor slices share a file, prefix, or symbol.
+ * - FlattenActiveEntries():          Collects all active entries across dossiers in deterministic order.
+ * - IsUnknownExposureNote():         Reports whether a note originated without an exposure list.
+ * - FilterEchoes():                  Executes the deterministic P13 Echo Filter on an inbox note.
+ * - IsEchoReconfirmed():             Reports whether an echoed item was reconfirmed by edit + test pass.
+ * - HasPassingBuildOrTestAfterEdit(): Reports whether an episode edited an anchored file and passed a test/build.
+ * - IsEditToAnchoredFile():          Reports whether a step is an edit/write targeting one of anchorPaths.
+ * - IsPassingBuildOrTestStep():      Reports whether a step is a passing test or build/test command step.
+ * - IsBuildOrTestCommand():          Reports whether a command string invokes a build, test, or lint tool.
+ * - RequiresCorroboration():         Reports whether a candidate NoteItem must pass the VD18 corroboration gate.
+ * - IsVerifiedStamp():               Reports whether a string represents a positive verification stamp.
+ * - EnforceCorroborationGate():      Enforces the VD18 Pre-Consolidation Corroboration Gate on candidate items.
+ * - HasVerifiedStaticAnchor():       Reports whether an item has at least one verified static file/symbol anchor.
+ * - HasExplicitUserConfirmation():   Reports whether an episode contains genuine human confirmation of an item.
+ */
+
 package consolidate
 
 import (
@@ -17,9 +52,13 @@ import (
 )
 
 var (
-	leadingHeadingRe   = regexp.MustCompile(`^#{1,6}\s*`)
+	// leadingHeadingRe matches leading Markdown heading hashes (e.g. "### ").
+	leadingHeadingRe = regexp.MustCompile(`^#{1,6}\s*`)
+	// leadingBracketIDRe matches a leading bracketed entry ID tag (e.g. "[inv-01J...] ").
 	leadingBracketIDRe = regexp.MustCompile(`^\[[a-zA-Z0-9_-]+\]\s*`)
+	// inlineEntryIDTagRe matches inline bracketed entry ID tags anywhere in a title string.
 	inlineEntryIDTagRe = regexp.MustCompile(`(?i)\[(inv|con|rul|fail|err|got|dec|proc|rec|iface|issue|iss|docseed|seed)-[a-z0-9_-]+\]`)
+	// punctuationReplacer normalizes common punctuation characters into spaces during title normalization.
 	punctuationReplacer = strings.NewReplacer(
 		"-", " ",
 		"_", " ",
@@ -33,23 +72,25 @@ var (
 		"(", " ",
 		")", " ",
 	)
+	// inlineWhyRe matches an inline "Why:" clause marker.
 	inlineWhyRe = regexp.MustCompile(`(?i)\bwhy:\s*`)
-	inlineDoRe  = regexp.MustCompile(`(?i)\bdo:\s*`)
+	// inlineDoRe matches an inline "Do:" clause marker.
+	inlineDoRe = regexp.MustCompile(`(?i)\bdo:\s*`)
 )
 
 // EchoFilterResult holds the partitioned outcome of running the deterministic P13 Echo Filter.
 type EchoFilterResult struct {
-	Kept                 []inbox.NoteItem
-	Suppressed           []inbox.NoteItem
-	Reconfirmed          []inbox.NoteItem
-	EchoSuppressionCount int
+	Kept                 []inbox.NoteItem // Candidate items retained for Stage 2 consolidation (including reconfirmed items).
+	Suppressed           []inbox.NoteItem // Candidate items suppressed as unconfirmed echoes of exposed entries.
+	Reconfirmed          []inbox.NoteItem // Echoed items retained because the episode edited an anchored file and passed a test/build.
+	EchoSuppressionCount int              // Total count of items suppressed by the P13 Echo Filter.
 }
 
 // CorroborationResult holds the outcome of running the Pre-Consolidation Corroboration Gate (VD18).
 type CorroborationResult struct {
-	Items                       []inbox.NoteItem
-	Downgraded                  []inbox.NoteItem
-	CorroborationDowngradeCount int
+	Items                       []inbox.NoteItem // Candidate items after corroboration stamping or open-issue downgrade.
+	Downgraded                  []inbox.NoteItem // Uncorroborated rule items that were downgraded to open-issue.
+	CorroborationDowngradeCount int              // Total count of items downgraded by the VD18 gate.
 }
 
 // NormalizeTitle lowercases s, strips markdown heading prefixes and bracketed entry ID tags,
@@ -71,6 +112,7 @@ func NormalizeTitle(s string) string {
 // ExtractEntryTitle extracts the title from the first line of entry.Text, stripping
 // any ### [<id>] or [<id>] prefix and stopping before inline Why:/Do: clauses if present.
 func ExtractEntryTitle(entryText string) string {
+	// --- Step 1: Locate the first non-empty, non-metadata line in entryText ---
 	lines := strings.Split(strings.TrimSpace(entryText), "\n")
 	var firstLine string
 	for _, line := range lines {
@@ -88,11 +130,13 @@ func ExtractEntryTitle(entryText string) string {
 		return ""
 	}
 
+	// --- Step 2: Strip markdown heading markers and leading bracketed entry IDs ---
 	firstLine = leadingHeadingRe.ReplaceAllString(firstLine, "")
 	firstLine = strings.TrimSpace(firstLine)
 	firstLine = leadingBracketIDRe.ReplaceAllString(firstLine, "")
 	firstLine = strings.TrimSpace(firstLine)
 
+	// --- Step 3: Truncate before any inline Why: or Do: clause ---
 	cutIdx := len(firstLine)
 	if loc := inlineWhyRe.FindStringIndex(firstLine); loc != nil && loc[0] > 0 && loc[0] < cutIdx {
 		cutIdx = loc[0]
@@ -105,6 +149,7 @@ func ExtractEntryTitle(entryText string) string {
 
 // ExtractEntryDo extracts the Do: line content from entry.Text if present.
 func ExtractEntryDo(entryText string) string {
+	// --- Step 1: Scan for a dedicated line starting with "Do:" ---
 	lines := strings.Split(entryText, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -115,6 +160,8 @@ func ExtractEntryDo(entryText string) string {
 			return strings.TrimSpace(trimmed[3:])
 		}
 	}
+
+	// --- Step 2: Fall back to inline "Do:" match within a single-line entry ---
 	if loc := inlineDoRe.FindStringIndex(entryText); loc != nil {
 		rest := entryText[loc[1]:]
 		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
@@ -132,6 +179,7 @@ func ExtractEntryDo(entryText string) string {
 // normalizes slashes (\ -> /), and strips leading ./ or /.
 // Returns "" for bare symbol anchors (e.g. "symbol:Foo" or "#Foo").
 func StripAnchorSymbol(anchor string) string {
+	// --- Step 1: Reject empty or bare symbol anchors and strip file: prefixes ---
 	s := strings.TrimSpace(anchor)
 	if s == "" {
 		return ""
@@ -143,12 +191,16 @@ func StripAnchorSymbol(anchor string) string {
 	if strings.HasPrefix(lower, "file:") {
 		s = strings.TrimSpace(s[5:])
 	}
+
+	// --- Step 2: Strip #symbol or :line/:symbol suffixes ---
 	if idx := strings.IndexByte(s, '#'); idx >= 0 {
 		s = s[:idx]
 	}
 	if idx := strings.IndexByte(s, ':'); idx >= 0 {
 		s = s[:idx]
 	}
+
+	// --- Step 3: Normalize slashes and strip relative/leading path prefixes ---
 	s = strings.TrimSpace(s)
 	s = strings.ReplaceAll(s, "\\", "/")
 	for strings.HasPrefix(s, "./") || strings.HasPrefix(s, "/") {
@@ -168,6 +220,7 @@ func StripAnchorSymbol(anchor string) string {
 // extractAnchorSymbol extracts a non-numeric symbol suffix from an anchor (e.g. "path/file.go#MyFunc"
 // or "path/file.go:MyFunc"), returning "" if no symbol suffix is present or if the suffix is a line number.
 func extractAnchorSymbol(anchor string) string {
+	// --- Step 1: Trim anchor and isolate any # or : suffix ---
 	s := strings.TrimSpace(anchor)
 	if s == "" {
 		return ""
@@ -184,7 +237,8 @@ func extractAnchorSymbol(anchor string) string {
 	if sym == "" {
 		return ""
 	}
-	// Check if sym is purely numeric or a numeric line range like "42" or "42-50".
+
+	// --- Step 2: Reject purely numeric line numbers or line ranges (e.g. "42" or "42-50") ---
 	linePart := sym
 	if dash := strings.IndexByte(linePart, '-'); dash >= 0 {
 		linePart = linePart[:dash]
@@ -198,9 +252,12 @@ func extractAnchorSymbol(anchor string) string {
 // AnchorsOverlap returns true if a and b share at least one normalized file path or raw symbol anchor,
 // or if one anchor path is a directory prefix of the other, or if both slices are empty.
 func AnchorsOverlap(a, b []string) bool {
+	// --- Step 1: Treat two unanchored slices as overlapping ---
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
+
+	// --- Step 2: Check pairwise raw equality and normalized path/directory-prefix overlap ---
 	for _, rawA := range a {
 		trimA := strings.TrimSpace(rawA)
 		pathA := StripAnchorSymbol(trimA)
@@ -223,6 +280,7 @@ func AnchorsOverlap(a, b []string) bool {
 // FlattenActiveEntries collects all non-retired, non-superseded entries across all dossiers
 // in deterministic sorted order (by scope, then entry ID).
 func FlattenActiveEntries(dossiersMap map[string]*dossiers.Dossier) []dossiers.Entry {
+	// --- Step 1: Sort dossier scopes deterministically ---
 	if len(dossiersMap) == 0 {
 		return nil
 	}
@@ -232,6 +290,7 @@ func FlattenActiveEntries(dossiersMap map[string]*dossiers.Dossier) []dossiers.E
 	}
 	sort.Strings(scopes)
 
+	// --- Step 2: Collect and sort non-retired, non-superseded entries per scope ---
 	var active []dossiers.Entry
 	seen := make(map[string]bool)
 	for _, scope := range scopes {
@@ -252,6 +311,8 @@ func FlattenActiveEntries(dossiersMap map[string]*dossiers.Dossier) []dossiers.E
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].ID < entries[j].ID
 		})
+
+		// --- Step 3: Deduplicate by entry ID across scopes ---
 		for _, e := range entries {
 			if e.ID != "" && seen[e.ID] {
 				continue
@@ -284,6 +345,7 @@ func IsUnknownExposureNote(note *inbox.Note) bool {
 // is suppressed unless the source episode modified one of the entry's anchored files and subsequently
 // passed a build or test step.
 func FilterEchoes(note *inbox.Note, activeEntries []dossiers.Entry, ep *episode.Episode) EchoFilterResult {
+	// --- Step 1: Index active entries by ID ---
 	var res EchoFilterResult
 	if note == nil || len(note.Items) == 0 {
 		return res
@@ -301,6 +363,7 @@ func FilterEchoes(note *inbox.Note, activeEntries []dossiers.Entry, ep *episode.
 		}
 	}
 
+	// --- Step 2: Build the set of exposed entry IDs and entries from ExposureList (or all active entries if unknown) ---
 	exposedIDs := make(map[string]bool)
 	exposedEntries := make([]dossiers.Entry, 0)
 	seenExposedEntry := make(map[string]bool)
@@ -338,6 +401,7 @@ func FilterEchoes(note *inbox.Note, activeEntries []dossiers.Entry, ep *episode.
 	}
 	sort.Strings(sortedExposedIDs)
 
+	// --- Step 3: Evaluate each candidate item for explicit ID echo or semantic Title/Do + anchor overlap ---
 	for _, item := range note.Items {
 		var matchedEntry *dossiers.Entry
 		isEcho := false
@@ -387,6 +451,7 @@ func FilterEchoes(note *inbox.Note, activeEntries []dossiers.Entry, ep *episode.
 			continue
 		}
 
+		// --- Step 4: Retain reconfirmed echoes or suppress unconfirmed echoes ---
 		combinedAnchors := combineAnchors(matchedEntry.Anchors, item.Anchors)
 		if IsEchoReconfirmed(ep, combinedAnchors) {
 			if !IsVerifiedStamp(item.Verified) {
@@ -403,6 +468,7 @@ func FilterEchoes(note *inbox.Note, activeEntries []dossiers.Entry, ep *episode.
 	return res
 }
 
+// containsEntryIDToken reports whether any string in fields contains entryID case-insensitively.
 func containsEntryIDToken(entryID string, fields ...string) bool {
 	target := strings.ToLower(strings.TrimSpace(entryID))
 	if target == "" {
@@ -419,6 +485,7 @@ func containsEntryIDToken(entryID string, fields ...string) bool {
 	return false
 }
 
+// combineAnchors merges two anchor slices into a single deduplicated slice preserving order.
 func combineAnchors(a, b []string) []string {
 	seen := make(map[string]bool, len(a)+len(b))
 	var out []string
@@ -444,6 +511,7 @@ func IsEchoReconfirmed(ep *episode.Episode, combinedAnchors []string) bool {
 // HasPassingBuildOrTestAfterEdit returns true if the episode contains an edit step to at least one
 // of the anchored files/directories followed by a subsequent passing build or test step.
 func HasPassingBuildOrTestAfterEdit(ep *episode.Episode, anchors []string) bool {
+	// --- Step 1: Extract normalized file paths from anchors ---
 	if ep == nil || len(ep.Steps) == 0 || len(anchors) == 0 {
 		return false
 	}
@@ -458,6 +526,7 @@ func HasPassingBuildOrTestAfterEdit(ep *episode.Episode, anchors []string) bool 
 		return false
 	}
 
+	// --- Step 2: Locate the earliest edit step targeting one of anchorPaths ---
 	editPos := -1
 	editStepIdx := -1
 	for pos, step := range ep.Steps {
@@ -471,6 +540,7 @@ func HasPassingBuildOrTestAfterEdit(ep *episode.Episode, anchors []string) bool 
 		return false
 	}
 
+	// --- Step 3: Verify that a subsequent step in the episode passed a build or test ---
 	for pos, step := range ep.Steps {
 		if pos <= editPos && (step.Index <= editStepIdx || editStepIdx <= 0) {
 			continue
@@ -484,6 +554,7 @@ func HasPassingBuildOrTestAfterEdit(ep *episode.Episode, anchors []string) bool 
 
 // IsEditToAnchoredFile reports whether step is an edit/write step targeting one of anchorPaths.
 func IsEditToAnchoredFile(step harness.Step, anchorPaths []string) bool {
+	// --- Step 1: Check whether the step kind or action represents a file edit/write ---
 	isEdit := step.Kind == harness.StepKindEdit ||
 		strings.EqualFold(step.Action, "edit") ||
 		strings.EqualFold(step.Action, "write")
@@ -491,6 +562,7 @@ func IsEditToAnchoredFile(step harness.Step, anchorPaths []string) bool {
 		return false
 	}
 
+	// --- Step 2: Normalize the step's target file path and match against anchorPaths ---
 	rawFile := strings.TrimSpace(step.File)
 	if rawFile == "" {
 		return false
@@ -514,6 +586,7 @@ func IsEditToAnchoredFile(step harness.Step, anchorPaths []string) bool {
 
 // IsPassingBuildOrTestStep reports whether step is a passing test step or a passing build/test command step.
 func IsPassingBuildOrTestStep(step harness.Step) bool {
+	// --- Step 1: Evaluate dedicated test steps ---
 	switch step.Kind {
 	case harness.StepKindTest:
 		if step.Failed > 0 || isFailOutcome(step.Outcome) {
@@ -523,6 +596,7 @@ func IsPassingBuildOrTestStep(step harness.Step) bool {
 			return *step.ExitCode == 0
 		}
 		return step.Passed > 0 || isPassOutcome(step.Outcome)
+	// --- Step 2: Evaluate shell command steps that invoke build or test tools ---
 	case harness.StepKindCommand:
 		if !IsBuildOrTestCommand(step.Command) || isFailOutcome(step.Outcome) {
 			return false
@@ -536,6 +610,7 @@ func IsPassingBuildOrTestStep(step harness.Step) bool {
 	}
 }
 
+// isPassOutcome reports whether outcome represents a successful execution status string.
 func isPassOutcome(outcome string) bool {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case "pass", "passed", "ok", "success", "succeeded", "0":
@@ -545,6 +620,7 @@ func isPassOutcome(outcome string) bool {
 	}
 }
 
+// isFailOutcome reports whether outcome represents a failed or timed-out execution status string.
 func isFailOutcome(outcome string) bool {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case "fail", "failed", "failure", "error", "errored", "timeout", "timed_out":
@@ -554,10 +630,12 @@ func isFailOutcome(outcome string) bool {
 	}
 }
 
+// buildOrTestTokenRe matches standalone build, test, and linter binary invocations in shell commands.
 var buildOrTestTokenRe = regexp.MustCompile(`(?i)(?:^|[;&|()\s/])(pytest|py\.test|make|cmake|ninja|gradle|gradlew|ctest|jest|vitest|golangci-lint)(?:$|[;&|()\s])`)
 
 // IsBuildOrTestCommand reports whether cmd invokes a build, test, lint, or verification tool.
 func IsBuildOrTestCommand(cmd string) bool {
+	// --- Step 1: Check multi-word build and test command phrases ---
 	lower := strings.ToLower(strings.TrimSpace(cmd))
 	if lower == "" {
 		return false
@@ -603,12 +681,15 @@ func IsBuildOrTestCommand(cmd string) bool {
 			return true
 		}
 	}
+
+	// --- Step 2: Check standalone build/test runner tokens ---
 	return buildOrTestTokenRe.MatchString(lower)
 }
 
 // RequiresCorroboration reports whether a candidate NoteItem is a semantic or procedural rule
 // (or requests an edit gate) that must pass the VD18 Pre-Consolidation Corroboration Gate.
 func RequiresCorroboration(item inbox.NoteItem) bool {
+	// --- Step 1: Check if the item's cognitive type is a rule or procedure ---
 	switch item.Type {
 	case dossiers.EntryTypeInvariant,
 		dossiers.EntryTypeContract,
@@ -617,6 +698,8 @@ func RequiresCorroboration(item inbox.NoteItem) bool {
 		dossiers.EntryTypeProcedure:
 		return true
 	}
+
+	// --- Step 2: Check if any field requests an edit gate ---
 	if strings.Contains(strings.ToLower(item.Do), "gate: edit") ||
 		strings.Contains(strings.ToLower(item.Why), "gate: edit") ||
 		strings.Contains(strings.ToLower(item.Verified), "gate: edit") ||
@@ -644,11 +727,13 @@ func IsVerifiedStamp(v string) bool {
 // (2) a verified static code/symbol anchor in HEAD/repoRoot, or (3) explicit human USER_INPUT
 // confirmation in ep. Uncorroborated rules are downgraded to open-issue with a deterministic closes_when.
 func EnforceCorroborationGate(note *inbox.Note, items []inbox.NoteItem, ep *episode.Episode, repoRoot string) CorroborationResult {
+	// --- Step 1: Return early when there are no candidate items ---
 	var res CorroborationResult
 	if len(items) == 0 {
 		return res
 	}
 
+	// --- Step 2: Evaluate each item against exempt sources and the three corroboration checks ---
 	for _, item := range items {
 		if !RequiresCorroboration(item) {
 			res.Items = append(res.Items, item)
@@ -693,7 +778,7 @@ func EnforceCorroborationGate(note *inbox.Note, items []inbox.NoteItem, ep *epis
 			continue
 		}
 
-		// Downgrade uncorroborated rule to open-issue.
+		// --- Step 3: Downgrade uncorroborated rule to open-issue with a deterministic closes_when predicate ---
 		item.Type = dossiers.EntryTypeOpenIssue
 		item.Verified = "unverified"
 		if strings.TrimSpace(item.ClosesWhen) == "" {
@@ -713,10 +798,14 @@ func EnforceCorroborationGate(note *inbox.Note, items []inbox.NoteItem, ep *epis
 	return res
 }
 
+// hasPassingCommandPrefix reports whether ep contains a passing command or test step matching any prefix in commands.
 func hasPassingCommandPrefix(ep *episode.Episode, commands []string) bool {
+	// --- Step 1: Validate episode steps and command prefixes ---
 	if ep == nil || len(ep.Steps) == 0 || len(commands) == 0 {
 		return false
 	}
+
+	// --- Step 2: Scan passing command/test steps for a matching command prefix ---
 	for _, step := range ep.Steps {
 		if step.Kind != harness.StepKindCommand && step.Kind != harness.StepKindTest {
 			continue
@@ -750,6 +839,7 @@ func hasPassingCommandPrefix(ep *episode.Episode, commands []string) bool {
 // HasVerifiedStaticAnchor reports whether item has at least one static file (and optional symbol)
 // anchor verified to exist via item.AnchorChecks, note.AnchorChecks, or live repoRoot inspection.
 func HasVerifiedStaticAnchor(note *inbox.Note, item inbox.NoteItem, repoRoot string) bool {
+	// --- Step 1: Index pre-verified anchor checks from item, note, or repoRoot ---
 	if len(item.Anchors) == 0 {
 		return false
 	}
@@ -782,6 +872,7 @@ func HasVerifiedStaticAnchor(note *inbox.Note, item inbox.NoteItem, repoRoot str
 		}
 	}
 
+	// --- Step 2: Verify file existence and optional symbol substring presence for each anchor ---
 	for _, rawAnchor := range item.Anchors {
 		trimmed := strings.TrimSpace(rawAnchor)
 		normPath := StripAnchorSymbol(trimmed)
@@ -819,6 +910,7 @@ func HasVerifiedStaticAnchor(note *inbox.Note, item inbox.NoteItem, repoRoot str
 	return false
 }
 
+// userConfirmPhrases lists human confirmation and directive words checked in StepKindUser turns.
 var userConfirmPhrases = []string{
 	"confirm",
 	"approved",
@@ -836,6 +928,7 @@ var userConfirmPhrases = []string{
 // (excluding SYSTEM_SDK and [repo-memory ...] injections) that confirms item either by step citation
 // or by confirmation phrasing + shared significant token/anchor.
 func HasExplicitUserConfirmation(ep *episode.Episode, item inbox.NoteItem) bool {
+	// --- Step 1: Collect cited step indices, significant item tokens, and anchor paths ---
 	if ep == nil || len(ep.Steps) == 0 {
 		return false
 	}
@@ -857,6 +950,7 @@ func HasExplicitUserConfirmation(ep *episode.Episode, item inbox.NoteItem) bool 
 		}
 	}
 
+	// --- Step 2: Inspect genuine human StepKindUser steps for citation or phrase+token match ---
 	for _, step := range ep.Steps {
 		if step.Kind != harness.StepKindUser {
 			continue
@@ -902,6 +996,7 @@ func HasExplicitUserConfirmation(ep *episode.Episode, item inbox.NoteItem) bool 
 	return false
 }
 
+// confirmStopwords lists common confirmation and function words excluded from significant token matching.
 var confirmStopwords = map[string]bool{
 	"confirm":   true,
 	"confirmed": true,
@@ -923,6 +1018,7 @@ var confirmStopwords = map[string]bool{
 	"should":    true,
 }
 
+// extractSignificantTokens returns normalized tokens of length >= 4 that are not in confirmStopwords.
 func extractSignificantTokens(s string) map[string]bool {
 	norm := NormalizeTitle(s)
 	fields := strings.Fields(norm)
@@ -935,7 +1031,10 @@ func extractSignificantTokens(s string) map[string]bool {
 	return out
 }
 
+// formatVerifiedStamp constructs a canonical "YYYY-MM-DD (<commit7>, <tag>)" verification stamp
+// from note and episode metadata.
 func formatVerifiedStamp(note *inbox.Note, ep *episode.Episode, tag string) string {
+	// --- Step 1: Resolve the verification date and commit SHA from note or episode header ---
 	dateStr := time.Now().UTC().Format("2006-01-02")
 	commitStr := ""
 	if note != nil {
@@ -958,6 +1057,8 @@ func formatVerifiedStamp(note *inbox.Note, ep *episode.Episode, tag string) stri
 			}
 		}
 	}
+
+	// --- Step 2: Abbreviate commit SHA to 7 chars and format the stamp ---
 	if len(commitStr) > 7 {
 		commitStr = commitStr[:7]
 	}

@@ -1,3 +1,27 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/seed/doc_seed.go
+ * Description: Deterministically extracts structured, repository-anchored knowledge
+ *              operations from Markdown documentation, developer guides, and SKILL.md
+ *              files, and reconciles them idempotently against existing doc-seed entries.
+ *
+ * Exported Types / Functions:
+ * - DocSeedOptions:      Configures repository root, ops directory, and doc globs for doc seeding.
+ * - DocSeedFileStat:     Per-file summary of added, amended, retired, or skipped doc-seed entries.
+ * - DocSeedResult:       Aggregate counts and emitted operations from a SeedDocs execution.
+ * - DocSeedSource:       Wraps deterministic documentation seeding and reconciliation.
+ *   - Seed():            Executes the documentation seed reconciliation pass.
+ * - ComputeGitBlobSHA(): Computes the canonical Git blob SHA-1 for a file or byte slice.
+ * - ParseDocToOps():     Extracts structured, anchored dossier operations from a Markdown document.
+ * - SeedDocs():          Scans configured docs and reconciles doc-seed entries idempotently.
+ */
+
+// Package seed extracts and reconciles initial repository knowledge from Principal Architect reports and Markdown documentation.
 package seed
 
 import (
@@ -21,41 +45,41 @@ import (
 
 // DocSeedOptions configures a doc-seeding run.
 type DocSeedOptions struct {
-	RepoRoot string
-	OpsDir   string
-	DocPaths []string // Optional explicit repo-relative paths; if empty, uses config.ResolveDocSeedGlobs(RepoRoot, RepoCfg)
-	RepoCfg  config.RepoConfig
-	DryRun   bool
+	RepoRoot string            // Root directory of the target Git repository.
+	OpsDir   string            // Path to .memory/ops/ where operation batches are stored.
+	DocPaths []string          // Optional explicit repo-relative paths; if empty, uses config.ResolveDocSeedGlobs(RepoRoot, RepoCfg).
+	RepoCfg  config.RepoConfig // Repository configuration containing doc-seed inclusion/exclusion globs.
+	DryRun   bool              // When true, computes reconciliation results without writing ops batches.
 }
 
 // DocSeedFileStat summarizes doc-seeding activity for a single file.
 type DocSeedFileStat struct {
-	Path    string `json:"path"`
-	BlobSHA string `json:"blob_sha"`
-	Added   int    `json:"added"`
-	Amended int    `json:"amended"`
-	Retired int    `json:"retired"`
-	Skipped bool   `json:"skipped"`
+	Path    string `json:"path"`     // Repository-relative Markdown file path.
+	BlobSHA string `json:"blob_sha"` // Canonical Git blob SHA-1 of the file contents.
+	Added   int    `json:"added"`    // Count of newly added doc-seed entries.
+	Amended int    `json:"amended"`  // Count of existing doc-seed entries amended or moved.
+	Retired int    `json:"retired"`  // Count of stale doc-seed entries retired.
+	Skipped bool   `json:"skipped"`  // True when the file was unchanged or yielded zero changes.
 }
 
 // DocSeedResult holds the aggregate results of a SeedDocs run.
 type DocSeedResult struct {
-	FilesScanned  int               `json:"files_scanned"`
-	FilesSeeded   int               `json:"files_seeded"`
-	FilesSkipped  int               `json:"files_skipped"`
-	EntriesAdded  int               `json:"entries_added"`
-	EntriesAmend  int               `json:"entries_amended"`
-	EntriesRetire int               `json:"entries_retired"`
-	Files         []DocSeedFileStat `json:"files,omitempty"`
-	Ops           []ops.Op          `json:"ops,omitempty"`
+	FilesScanned  int               `json:"files_scanned"`   // Total Markdown files evaluated.
+	FilesSeeded   int               `json:"files_seeded"`    // Files that produced at least one add, amend, or retire op.
+	FilesSkipped  int               `json:"files_skipped"`   // Files skipped due to matching blob SHA or no changes.
+	EntriesAdded  int               `json:"entries_added"`   // Total OpAdd operations emitted across all files.
+	EntriesAmend  int               `json:"entries_amended"` // Total OpAmend operations emitted across all files.
+	EntriesRetire int               `json:"entries_retired"` // Total OpRetire operations emitted across all files.
+	Files         []DocSeedFileStat `json:"files,omitempty"` // Per-file seeding statistics.
+	Ops           []ops.Op          `json:"ops,omitempty"`   // Ordered slice of all emitted reconciliation operations.
 }
 
 // DocSeedSource wraps deterministic doc seeding and reconciliation.
 type DocSeedSource struct {
-	Opts     DocSeedOptions
-	ScopeCfg *config.ScopeConfig
-	Reader   *ops.Reader
-	Writer   *ops.Writer
+	Opts     DocSeedOptions      // Seeding options and repository path configuration.
+	ScopeCfg *config.ScopeConfig // Optional declared scope configuration for anchor resolution.
+	Reader   *ops.Reader         // Reader for projecting existing doc-seed entries.
+	Writer   *ops.Writer         // Writer for persisting reconciled doc-seed operation batches.
 }
 
 // Seed executes the doc seed reconciliation.
@@ -66,6 +90,7 @@ func (s *DocSeedSource) Seed(ctx context.Context) (*DocSeedResult, error) {
 // ComputeGitBlobSHA computes the canonical Git blob SHA-1 ("blob <len>\x00<content>").
 // If content is nil and repoRoot/relPath are provided, it reads the file from disk first.
 func ComputeGitBlobSHA(repoRoot, relPath string, content []byte) string {
+	// --- Step 1: Load file bytes from disk or git hash-object when content is nil ---
 	if content == nil && repoRoot != "" && relPath != "" {
 		fullPath := filepath.Join(repoRoot, filepath.FromSlash(relPath))
 		data, err := os.ReadFile(fullPath)
@@ -80,6 +105,8 @@ func ComputeGitBlobSHA(repoRoot, relPath string, content []byte) string {
 			return ""
 		}
 	}
+
+	// --- Step 2: Hash the canonical Git blob header and payload ---
 	header := fmt.Sprintf("blob %d\x00", len(content))
 	h := sha1.New()
 	_, _ = h.Write([]byte(header))
@@ -88,12 +115,12 @@ func ComputeGitBlobSHA(repoRoot, relPath string, content []byte) string {
 }
 
 var (
-	numberedBulletRe = regexp.MustCompile(`^\d+[.)]\s+(.*)$`)
-	boldPrefixRe     = regexp.MustCompile(`^\*\*([^*]{3,80})\*\*\s*[:—-]\s*(.+)$`)
-	tocLinkOnlyRe    = regexp.MustCompile(`^\[[^\]]+\]\(#[^)]+\)$`)
-	wordSplitRe      = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
-	markdownLinkRe   = regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)
-	alertTagRe       = regexp.MustCompile(`^\[!(?:IMPORTANT|WARNING|CAUTION|NOTE|TIP)\]\s*`)
+	numberedBulletRe = regexp.MustCompile(`^\d+[.)]\s+(.*)$`)                            // Matches numbered Markdown list items ("1. " or "1) ").
+	boldPrefixRe     = regexp.MustCompile(`^\*\*([^*]{3,80})\*\*\s*[:—-]\s*(.+)$`)       // Matches bold lead-in labels at the start of a bullet.
+	tocLinkOnlyRe    = regexp.MustCompile(`^\[[^\]]+\]\(#[^)]+\)$`)                      // Matches pure table-of-contents anchor links.
+	wordSplitRe      = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)                             // Splits text into alphanumeric keyword tokens.
+	markdownLinkRe   = regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)                     // Extracts target URLs/paths from Markdown links.
+	alertTagRe       = regexp.MustCompile(`^\[!(?:IMPORTANT|WARNING|CAUTION|NOTE|TIP)\]\s*`) // Matches GitHub-style alert tags in blockquotes.
 )
 
 func init() {
@@ -103,6 +130,7 @@ func init() {
 	allowedSingleSegmentNames["CMakeLists.txt"] = true
 }
 
+// isValidDocDirAnchor reports whether p is a recognized top-level repository directory anchor.
 func isValidDocDirAnchor(p string) bool {
 	switch strings.TrimSuffix(strings.TrimSpace(p), "/") {
 	case "src", "include", "modules", "test", "scripts", "web", "lib", "hardware", "docs", "template-app", "sample-app":
@@ -111,7 +139,10 @@ func isValidDocDirAnchor(p string) bool {
 	return false
 }
 
+// expandSubmoduleAnchorsForScopes synthesizes placeholder header paths under modules/*, src/*, and lib/*
+// so config.DeriveModuleScopes recognizes two-level module directories with >= 3 files.
 func expandSubmoduleAnchorsForScopes(anchors []string) []string {
+	// --- Step 1: Copy original anchors and append synthetic module probes ---
 	out := make([]string, 0, len(anchors))
 	seenDir := make(map[string]bool)
 	for _, a := range anchors {
@@ -131,27 +162,29 @@ func expandSubmoduleAnchorsForScopes(anchors []string) []string {
 	return out
 }
 
+// repoSymbolIndex caches C++/Go symbol-to-module and method-to-header mappings for a repository root.
 type repoSymbolIndex struct {
-	symbolToModule      map[string]string
-	methodToHeaders     map[string][]string
-	orchestratorHdr     string
-	orchestratorStemLow string
-	defaultAnchors      []string
+	symbolToModule      map[string]string   // Maps PascalCase symbol or interface names to their owning module header path.
+	methodToHeaders     map[string][]string // Maps method names (e.g. "begin", "register*") to declaring header paths.
+	orchestratorHdr     string              // Header path of the highest-fanout composition root module.
+	orchestratorStemLow string              // Lowercase stem of the orchestrator module name.
+	defaultAnchors      []string            // Ordered fallback repository anchor paths discovered on disk.
 }
 
 var (
-	symIdxMu          sync.RWMutex
-	symIdxByRoot      = make(map[string]*repoSymbolIndex)
-	activeRepoSymIdx  *repoSymbolIndex
-	typeDeclRe        = regexp.MustCompile(`\b(?:class|struct)\s+([A-Z][A-Za-z0-9_]{2,})\b`)
-	quotedIncludeRe   = regexp.MustCompile(`#include\s+"([^"]+)"`)
-	cCommentRe        = regexp.MustCompile(`(?s)//[^\n]*|/\*.*?\*/`)
-	methodDeclRe      = regexp.MustCompile(`\b(?:void|bool)\s+([a-z][A-Za-z0-9_]{2,})\s*\(([^)]*)\)`)
-	ifaceParamRe      = regexp.MustCompile(`\bI[A-Z][A-Za-z0-9_]+\b`)
-	forwardDeclLineRe = regexp.MustCompile(`^\s*(?:class|struct)\s+\w+\s*;`)
-	classHeaderLineRe = regexp.MustCompile(`(?:class|struct)\s+\w+\s*:`)
+	symIdxMu          sync.RWMutex                                                          // Protects symIdxByRoot and activeRepoSymIdx.
+	symIdxByRoot      = make(map[string]*repoSymbolIndex)                                   // Cache of built symbol indexes keyed by cleaned repoRoot.
+	activeRepoSymIdx  *repoSymbolIndex                                                      // Most recently activated repository symbol index.
+	typeDeclRe        = regexp.MustCompile(`\b(?:class|struct)\s+([A-Z][A-Za-z0-9_]{2,})\b`) // Matches C++ class or struct declarations.
+	quotedIncludeRe   = regexp.MustCompile(`#include\s+"([^"]+)"`)                          // Matches quoted C/C++ #include directives.
+	cCommentRe        = regexp.MustCompile(`(?s)//[^\n]*|/\*.*?\*/`)                        // Matches C/C++ line and block comments for stripping.
+	methodDeclRe      = regexp.MustCompile(`\b(?:void|bool)\s+([a-z][A-Za-z0-9_]{2,})\s*\(([^)]*)\)`) // Matches C++ void/bool method signatures.
+	ifaceParamRe      = regexp.MustCompile(`\bI[A-Z][A-Za-z0-9_]+\b`)                       // Matches I-prefixed interface type names in parameter lists.
+	forwardDeclLineRe = regexp.MustCompile(`^\s*(?:class|struct)\s+\w+\s*;`)                // Matches C++ forward declaration lines.
+	classHeaderLineRe = regexp.MustCompile(`(?:class|struct)\s+\w+\s*:`)                    // Matches C++ class inheritance header lines.
 )
 
+// genericSymbolRoleTokens lists architectural role suffixes excluded when computing domain token overlap.
 var genericSymbolRoleTokens = map[string]bool{
 	"contributor": true,
 	"provider":    true,
@@ -165,6 +198,7 @@ var genericSymbolRoleTokens = map[string]bool{
 	"engine":      true,
 }
 
+// ignoredMethodKeywords lists C/C++ control-flow and operator keywords excluded from method extraction.
 var ignoredMethodKeywords = map[string]bool{
 	"if":            true,
 	"for":           true,
@@ -177,16 +211,25 @@ var ignoredMethodKeywords = map[string]bool{
 	"catch":         true,
 }
 
+// isUpperASCII reports whether b is an uppercase ASCII letter ('A'–'Z').
 func isUpperASCII(b byte) bool { return b >= 'A' && b <= 'Z' }
+
+// isLowerASCII reports whether b is a lowercase ASCII letter ('a'–'z').
 func isLowerASCII(b byte) bool { return b >= 'a' && b <= 'z' }
+
+// isLowerOrDigitASCII reports whether b is a lowercase ASCII letter or decimal digit.
 func isLowerOrDigitASCII(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
 
+// extractCamelTokens splits a PascalCase or camelCase identifier into lowercase word tokens of length >= 3.
 func extractCamelTokens(s string) []string {
+	// --- Step 1: Strip leading 'I' interface prefix when followed by an uppercase letter ---
 	if len(s) >= 2 && s[0] == 'I' && isUpperASCII(s[1]) {
 		s = s[1:]
 	}
+
+	// --- Step 2: Scan PascalCase words and acronym runs ---
 	var out []string
 	i := 0
 	for i < len(s) {
@@ -222,6 +265,7 @@ func extractCamelTokens(s string) []string {
 	return out
 }
 
+// isCandidateSymbol reports whether sym is a multi-token PascalCase identifier or an I*able interface name.
 func isCandidateSymbol(sym string) bool {
 	if len(sym) < 3 || !isUpperASCII(sym[0]) {
 		return false
@@ -233,6 +277,7 @@ func isCandidateSymbol(sym string) bool {
 	return len(sym) >= 4 && sym[0] == 'I' && isUpperASCII(sym[1]) && strings.HasSuffix(sym, "able")
 }
 
+// setActiveRepoSymbolIndex builds or retrieves the symbol index for repoRoot and sets it as active.
 func setActiveRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	idx := getOrBuildRepoSymbolIndex(repoRoot)
 	symIdxMu.Lock()
@@ -241,13 +286,16 @@ func setActiveRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	return idx
 }
 
+// getActiveRepoSymbolIndex returns the currently active repository symbol index.
 func getActiveRepoSymbolIndex() *repoSymbolIndex {
 	symIdxMu.RLock()
 	defer symIdxMu.RUnlock()
 	return activeRepoSymIdx
 }
 
+// getOrBuildRepoSymbolIndex returns the cached repoSymbolIndex for repoRoot or builds and caches a new one.
 func getOrBuildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
+	// --- Step 1: Check the read-locked symbol index cache ---
 	cleanRoot := filepath.Clean(strings.TrimSpace(repoRoot))
 	if cleanRoot == "" {
 		return &repoSymbolIndex{}
@@ -259,6 +307,7 @@ func getOrBuildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	}
 	symIdxMu.RUnlock()
 
+	// --- Step 2: Build the symbol index from disk and store in cache ---
 	built := buildRepoSymbolIndex(cleanRoot)
 	symIdxMu.Lock()
 	symIdxByRoot[cleanRoot] = built
@@ -266,7 +315,9 @@ func getOrBuildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	return built
 }
 
+// buildRepoSymbolIndex scans include/ and modules/ directories under repoRoot to map symbols and methods to headers.
 func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
+	// --- Step 1: Initialize empty symbol index and validate repoRoot ---
 	idx := &repoSymbolIndex{
 		symbolToModule:  make(map[string]string),
 		methodToHeaders: make(map[string][]string),
@@ -279,22 +330,22 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	}
 
 	type moduleInfo struct {
-		name            string
-		mainHdr         string
-		fileStems       map[string]bool
-		hdrText         string
-		allText         string
-		hdrLines        []string
-		modTokens       map[string]bool
-		interfaceFanout int
-		registerCount   int
+		name            string          // Module directory name.
+		mainHdr         string          // Primary module header path relative to repoRoot.
+		fileStems       map[string]bool // Set of filename stems present inside the module directory.
+		hdrText         string          // Concatenated comment-stripped text of the primary module header.
+		allText         string          // Concatenated comment-stripped text of all headers and sources in the module.
+		hdrLines        []string        // Individual lines of hdrText.
+		modTokens       map[string]bool // Lowercase camelCase tokens extracted from the module name.
+		interfaceFanout int             // Count of "interfaces/" includes in the primary header.
+		registerCount   int             // Count of register* methods declared on the module.
 	}
 
 	var modules []moduleInfo
 	candidateSymSet := make(map[string]bool)
 	fromTypeFile := make(map[string]bool)
 
-	// Collect contract symbols from include/interfaces/ headers (plus any include/types/ symbols referenced by them) and identify umbrella header(s).
+	// --- Step 2: Collect contract symbols from include/interfaces/ and include/types/ headers ---
 	includeRoot := filepath.Join(repoRoot, "include")
 	var bestUmbrellaHdr string
 	bestUmbrellaIncludes := -1
@@ -376,7 +427,7 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 		}
 	}
 
-	// Scan module directories under modules/ and src/modules/.
+	// --- Step 3: Scan module directories under modules/ and src/modules/ ---
 	for _, modParent := range []string{"modules", "src/modules"} {
 		parentFull := filepath.Join(repoRoot, filepath.FromSlash(modParent))
 		entries, err := os.ReadDir(parentFull)
@@ -498,7 +549,7 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 		}
 	}
 
-	// Identify top-level orchestrator module (highest interface fanout + register* method count) before mapping symbols.
+	// --- Step 4: Identify the top-level orchestrator module ---
 	var bestOrchestratorHdr string
 	bestFanout := -1
 	bestOrchScore := -1
@@ -513,7 +564,7 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 		}
 	}
 
-	// Map each discovered symbol to its owning module header.
+	// --- Step 5: Score and map each discovered symbol to its owning module header ---
 	modNameSet := make(map[string]bool, len(modules))
 	for _, mod := range modules {
 		modNameSet[mod.name] = true
@@ -537,9 +588,9 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 		}
 
 		type scoredMod struct {
-			score      int
-			fanout     int
-			mainHdr    string
+			score   int    // Relevance score for assigning sym to this module.
+			fanout  int    // Number of interface headers included by this module.
+			mainHdr string // Primary module header path.
 		}
 		var scored []scoredMod
 
@@ -641,7 +692,7 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 		idx.symbolToModule[sym] = best
 	}
 
-	// Build dynamic default fallback anchors from discovered repo structure.
+	// --- Step 6: Populate default fallback anchors from discovered repository structure ---
 	addDefault := func(p string) {
 		if p == "" {
 			return
@@ -667,6 +718,7 @@ func buildRepoSymbolIndex(repoRoot string) *repoSymbolIndex {
 	return idx
 }
 
+// resolveSymbol returns the owning module header path for ident, or "" if unknown.
 func (s *repoSymbolIndex) resolveSymbol(ident string) string {
 	if s == nil || s.symbolToModule == nil {
 		return ""
@@ -674,10 +726,14 @@ func (s *repoSymbolIndex) resolveSymbol(ident string) string {
 	return s.symbolToModule[ident]
 }
 
+// resolveObjectMethod resolves an object.method call token (e.g. "app.registerModule") to matching module headers.
 func (s *repoSymbolIndex) resolveObjectMethod(obj, method string) []string {
+	// --- Step 1: Validate receiver and method lookup inputs ---
 	if s == nil || s.methodToHeaders == nil || method == "" {
 		return nil
 	}
+
+	// --- Step 2: Match lowercase object variable prefix against declaring module headers ---
 	if len(obj) >= 3 && isLowerASCII(obj[0]) {
 		lowObj := strings.ToLower(obj)
 		var matched []string
@@ -697,7 +753,9 @@ func (s *repoSymbolIndex) resolveObjectMethod(obj, method string) []string {
 	return nil
 }
 
+// fallbackAnchors returns up to maxCount valid fallback repository anchors for unanchored skill or developer docs.
 func (s *repoSymbolIndex) fallbackAnchors(isValidRepoPath func(string) bool, maxCount int) []string {
+	// --- Step 1: Collect discovered default anchors and generic directory fallbacks ---
 	var out []string
 	seen := make(map[string]bool)
 	tryAdd := func(cand string) {
@@ -720,7 +778,9 @@ func (s *repoSymbolIndex) fallbackAnchors(isValidRepoPath func(string) bool, max
 	return out
 }
 
+// extractDocAnchors extracts and resolves valid repository file, directory, and symbol anchors from Markdown text.
 func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) bool) []string {
+	// --- Step 1: Extract direct backtick file path anchors ---
 	symIdx := getActiveRepoSymbolIndex()
 	var valid []string
 	seen := make(map[string]bool)
@@ -743,7 +803,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 		}
 	}
 
-	// Inspect backtick spans for headers, directories, method calls, and module/interface symbols.
+	// --- Step 2: Inspect backtick spans for headers, directories, method calls, and module/interface symbols ---
 	matches := backtickRe.FindAllStringSubmatch(text, -1)
 	for _, m := range matches {
 		rawTok := strings.TrimSpace(m[1])
@@ -805,7 +865,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 		}
 	}
 
-	// Inspect Markdown links [label](target) for relative paths or file:// repo paths.
+	// --- Step 3: Inspect Markdown links [label](target) for relative paths or file:// repo paths ---
 	linkMatches := markdownLinkRe.FindAllStringSubmatch(text, -1)
 	for _, lm := range linkMatches {
 		target := strings.TrimSpace(lm[1])
@@ -842,6 +902,7 @@ func extractDocAnchors(text, docRelPath string, isValidRepoPath func(string) boo
 	return valid
 }
 
+// capFallbackAnchors limits anchors to maxCount, prioritizing multi-segment paths over single-segment paths.
 func capFallbackAnchors(anchors []string, maxCount int) []string {
 	if len(anchors) <= maxCount {
 		return append([]string(nil), anchors...)
@@ -858,11 +919,13 @@ func capFallbackAnchors(anchors []string, maxCount int) []string {
 	return append([]string(nil), ordered[:maxCount]...)
 }
 
+// generateDocSeedID hashes relPath, entryType, and normalizedKey into a deterministic "docseed-<hex>" entry ID.
 func generateDocSeedID(relPath, entryType, normalizedKey string) string {
 	sum := sha256.Sum256([]byte(relPath + ":" + entryType + ":" + normalizedKey))
 	return fmt.Sprintf("docseed-%x", sum[:4])
 }
 
+// shortSHA truncates a hex SHA string to at most 12 characters.
 func shortSHA(sha string) string {
 	if len(sha) > 12 {
 		return sha[:12]
@@ -870,12 +933,13 @@ func shortSHA(sha string) string {
 	return sha
 }
 
+// docCandidate holds a single extracted statement or command block prior to anchor filtering and scope resolution.
 type docCandidate struct {
-	heading        string
-	text           string
-	keyHint        string
-	isRecipe       bool
-	sectionAnchors []string
+	heading        string   // Enclosing Markdown section heading.
+	text           string   // Clamped statement or command text.
+	keyHint        string   // Stable key hint derived from heading and bold lead-in label.
+	isRecipe       bool     // True when the candidate was derived from or enriched with a command block.
+	sectionAnchors []string // Inherited anchors from the enclosing heading hierarchy.
 }
 
 // ParseDocToOps deterministically extracts structured, repo-anchored knowledge ops from a markdown document.
@@ -887,6 +951,7 @@ func ParseDocToOps(
 	resolver *config.ScopeResolver,
 	isValidRepoPath func(string) bool,
 ) []ops.Op {
+	// --- Step 1: Normalize inputs and extract document-level fallback anchors ---
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	if isValidRepoPath == nil {
 		isValidRepoPath = IsValidAnchorPathSyntax
@@ -913,6 +978,7 @@ func ParseDocToOps(
 		}
 	}
 
+	// --- Step 2: Scan Markdown lines to collect candidate statements, callouts, and recipes ---
 	lines := strings.Split(strings.TrimPrefix(content, "\uFEFF"), "\n")
 	startIdx := skipYAMLFrontmatter(lines)
 
@@ -1149,6 +1215,7 @@ func ParseDocToOps(
 		}
 	}
 
+	// --- Step 3: Filter candidates, resolve dossier scopes, and emit deterministic OpAdd operations ---
 	var (
 		emitted []ops.Op
 		seenIDs = make(map[string]bool)
@@ -1275,6 +1342,7 @@ func SeedDocs(
 	opsReader *ops.Reader,
 	opsWriter *ops.Writer,
 ) (*DocSeedResult, error) {
+	// --- Step 1: Project existing active doc-seed entries by document path and entry ID ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1305,6 +1373,7 @@ func SeedDocs(
 		}
 	}
 
+	// --- Step 2: Resolve candidate Markdown document paths to scan ---
 	var docPaths []string
 	if len(opts.DocPaths) > 0 {
 		seen := make(map[string]bool)
@@ -1336,6 +1405,7 @@ func SeedDocs(
 		sort.Strings(docPaths)
 	}
 
+	// --- Step 3: Build repository path validator and scope resolver ---
 	isValidRepoPath := buildRepoPathValidator(SeedOptions{RepoRoot: opts.RepoRoot})
 	repoFiles := expandSubmoduleAnchorsForScopes(collectRepoFileAnchors(opts.RepoRoot))
 	rawModuleScopes := config.DeriveModuleScopes(repoFiles)
@@ -1351,6 +1421,7 @@ func SeedDocs(
 	}
 	resolver := config.NewScopeResolver(scopeCfg, moduleScopes, aliasMap)
 
+	// --- Step 4: Reconcile each document against existing doc-seed entries ---
 	res := &DocSeedResult{}
 	var allEmittedOps []ops.Op
 	now := time.Now().UTC()
@@ -1478,6 +1549,7 @@ func SeedDocs(
 		res.Files = append(res.Files, stat)
 	}
 
+	// --- Step 5: Persist emitted operations batch when not in DryRun mode ---
 	res.Ops = allEmittedOps
 
 	if !opts.DryRun && opsWriter != nil && len(allEmittedOps) > 0 {
@@ -1490,6 +1562,7 @@ func SeedDocs(
 	return res, nil
 }
 
+// allHaveBlobSHA reports whether every entry in entries was seeded from blobSHA.
 func allHaveBlobSHA(entries []dossiers.Entry, blobSHA string) bool {
 	if blobSHA == "" || len(entries) == 0 {
 		return false
@@ -1502,6 +1575,7 @@ func allHaveBlobSHA(entries []dossiers.Entry, blobSHA string) bool {
 	return true
 }
 
+// skipYAMLFrontmatter returns the line index immediately following a leading YAML frontmatter block, or 0 if none.
 func skipYAMLFrontmatter(lines []string) int {
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return 0
@@ -1514,11 +1588,15 @@ func skipYAMLFrontmatter(lines []string) int {
 	return 0
 }
 
+// extractFirstCommandLine returns the first non-comment shell command line from a fenced code block.
 func extractFirstCommandLine(lang string, fenceLines []string) string {
+	// --- Step 1: Verify the fence language allows shell commands ---
 	isShellFence := lang == "bash" || lang == "sh" || lang == "shell" || lang == "zsh" || lang == ""
 	if !isShellFence {
 		return ""
 	}
+
+	// --- Step 2: Inspect the first non-empty, non-comment line for CLI invocation patterns ---
 	for _, raw := range fenceLines {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -1545,6 +1623,7 @@ func extractFirstCommandLine(lang string, fenceLines []string) string {
 	return ""
 }
 
+// isProceduralHeading reports whether heading contains keywords indicating a procedural or command section.
 func isProceduralHeading(heading string) bool {
 	lower := strings.ToLower(heading)
 	for _, cue := range []string{"procedure", "recipe", "workflow", "command", "usage", "verification", "build", "test", "cli", "setup"} {
@@ -1555,7 +1634,9 @@ func isProceduralHeading(heading string) bool {
 	return false
 }
 
+// isSelfContainedDocStatement reports whether s is a substantive, self-contained statement (>= 40 chars).
 func isSelfContainedDocStatement(s string) bool {
+	// --- Step 1: Enforce length and trailing semicolon filters ---
 	s = strings.TrimSpace(s)
 	if len(s) < 40 {
 		return false
@@ -1566,7 +1647,8 @@ func isSelfContainedDocStatement(s string) bool {
 	if strings.HasPrefix(s, "`") {
 		return true
 	}
-	// Strip leading emphasis markers (* or _) to inspect first word character
+
+	// --- Step 2: Strip leading emphasis markers (* or _) to inspect the first word character ---
 	trimmed := strings.TrimLeft(s, "*_ \t")
 	if len(trimmed) == 0 {
 		return false
@@ -1581,6 +1663,7 @@ func isSelfContainedDocStatement(s string) bool {
 	return true
 }
 
+// isExcludedDocSeedTargetAnchor reports whether anchor points to experiment logs, evaluations, or PA workspace files.
 func isExcludedDocSeedTargetAnchor(anchor string) bool {
 	norm := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(anchor), "./"))
 	return strings.HasPrefix(norm, "docs/experiments/") ||
@@ -1592,6 +1675,7 @@ func isExcludedDocSeedTargetAnchor(anchor string) bool {
 		strings.Contains(norm, "/principal-architect-workspace/")
 }
 
+// isBulletStart reports whether trimLine begins a Markdown unordered or numbered list item.
 func isBulletStart(trimLine string) bool {
 	if strings.HasPrefix(trimLine, "- ") || strings.HasPrefix(trimLine, "* ") || strings.HasPrefix(trimLine, "+ ") {
 		return true
@@ -1599,6 +1683,7 @@ func isBulletStart(trimLine string) bool {
 	return numberedBulletRe.MatchString(trimLine)
 }
 
+// extractBulletLine strips leading list markers and task-list checkboxes from trimLine.
 func extractBulletLine(trimLine string) (string, bool) {
 	for _, pfx := range []string{"- ", "* ", "+ "} {
 		if strings.HasPrefix(trimLine, pfx) {
@@ -1616,6 +1701,7 @@ func extractBulletLine(trimLine string) (string, bool) {
 	return "", false
 }
 
+// extractKeyHint derives a stable lowercase key hint from heading and any bold lead-in label in bulletText.
 func extractKeyHint(heading, bulletText string) string {
 	if m := boldPrefixRe.FindStringSubmatch(bulletText); m != nil {
 		label := strings.ToLower(collapseWhitespace(strings.TrimSpace(m[1])))
@@ -1627,6 +1713,7 @@ func extractKeyHint(heading, bulletText string) string {
 	return ""
 }
 
+// normalizeCandidateKey returns the normalized lowercase key hint if non-empty, or the normalized text otherwise.
 func normalizeCandidateKey(keyHint, text string) string {
 	if strings.TrimSpace(keyHint) != "" {
 		return strings.ToLower(collapseWhitespace(keyHint))
@@ -1634,10 +1721,12 @@ func normalizeCandidateKey(keyHint, text string) string {
 	return strings.ToLower(collapseWhitespace(text))
 }
 
+// collapseWhitespace replaces runs of whitespace in s with a single space and trims leading/trailing spaces.
 func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// clampText collapses whitespace and truncates s to at most 400 characters with an ellipsis.
 func clampText(s string) string {
 	s = collapseWhitespace(s)
 	const maxLen = 400
@@ -1647,6 +1736,7 @@ func clampText(s string) string {
 	return strings.TrimSpace(s[:maxLen-3]) + "..."
 }
 
+// nonEmptyOrDefault returns strings.TrimSpace(s) when non-empty, or def otherwise.
 func nonEmptyOrDefault(s, def string) string {
 	if strings.TrimSpace(s) != "" {
 		return strings.TrimSpace(s)
@@ -1654,6 +1744,7 @@ func nonEmptyOrDefault(s, def string) string {
 	return def
 }
 
+// filterValidAnchors filters candidates to non-excluded, syntactically valid repository paths.
 func filterValidAnchors(candidates []string, isValidRepoPath func(string) bool) []string {
 	var valid []string
 	seen := make(map[string]bool)
@@ -1669,6 +1760,7 @@ func filterValidAnchors(candidates []string, isValidRepoPath func(string) bool) 
 	return valid
 }
 
+// extractKeywords tokenizes heading and the filename stem of relPath into unique lowercase keywords.
 func extractKeywords(heading, relPath string) []string {
 	combined := heading + " " + strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath))
 	parts := wordSplitRe.Split(strings.ToLower(combined), -1)
@@ -1684,7 +1776,9 @@ func extractKeywords(heading, relPath string) []string {
 	return out
 }
 
+// deriveDocDefaultScope derives a fallback dossier scope name from a skill directory or Markdown filename.
 func deriveDocDefaultScope(relPath string) string {
+	// --- Step 1: Use skill directory slug when relPath is under .agents/skills/ ---
 	clean := filepath.ToSlash(filepath.Clean(relPath))
 	if strings.HasPrefix(clean, ".agents/skills/") {
 		rest := strings.TrimPrefix(clean, ".agents/skills/")
@@ -1693,6 +1787,8 @@ func deriveDocDefaultScope(relPath string) string {
 			return strings.ReplaceAll(segs[0], "_", "-")
 		}
 	}
+
+	// --- Step 2: Normalize the Markdown filename stem as fallback scope ---
 	base := strings.TrimSuffix(filepath.Base(clean), filepath.Ext(clean))
 	base = strings.ToLower(strings.ReplaceAll(base, "_", "-"))
 	base = strings.ReplaceAll(base, " ", "-")
@@ -1702,7 +1798,9 @@ func deriveDocDefaultScope(relPath string) string {
 	return base
 }
 
+// classifyDocEntryType classifies a documentation candidate into a dossiers.EntryType based on cues in heading and text.
 func classifyDocEntryType(relPath, heading, text string, isRecipeHint bool) dossiers.EntryType {
+	// --- Step 1: Check for failure-signature cues ---
 	combined := strings.ToLower(heading + " " + text)
 
 	for _, cue := range []string{
@@ -1713,6 +1811,7 @@ func classifyDocEntryType(relPath, heading, text string, isRecipeHint bool) doss
 		}
 	}
 
+	// --- Step 2: Check for procedural/recipe cues ---
 	isSkill := strings.HasSuffix(relPath, "SKILL.md") || strings.Contains(relPath, ".agents/skills/")
 	if isRecipeHint {
 		return dossiers.EntryTypeRecipe
@@ -1733,6 +1832,7 @@ func classifyDocEntryType(relPath, heading, text string, isRecipeHint bool) doss
 		}
 	}
 
+	// --- Step 3: Check for gotcha, contract, or default invariant cues ---
 	for _, cue := range []string{
 		"gotcha", "caveat", "trap", "quirk", "warning", "caution", "important", "lifetime", "scrubbed", "ignored",
 	} {
@@ -1752,7 +1852,9 @@ func classifyDocEntryType(relPath, heading, text string, isRecipeHint bool) doss
 	return dossiers.EntryTypeInvariant
 }
 
+// collectRepoFileAnchors walks repoRoot and returns all non-hidden multi-segment regular file paths.
 func collectRepoFileAnchors(repoRoot string) []string {
+	// --- Step 1: Walk repository tree skipping hidden, vendor, and PA workspace directories ---
 	var files []string
 	_ = filepath.WalkDir(repoRoot, func(fullPath string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -1784,6 +1886,7 @@ func collectRepoFileAnchors(repoRoot string) []string {
 	return files
 }
 
+// lookupGitCommitTime queries the latest Git commit timestamp for relPath, returning fallback on failure.
 func lookupGitCommitTime(repoRoot, relPath string, fallback time.Time) time.Time {
 	if repoRoot == "" || relPath == "" {
 		return fallback

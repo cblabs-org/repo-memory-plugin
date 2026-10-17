@@ -1,3 +1,36 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/mcpserver/server.go
+ * Description: Defines the MCP Server instance, functional configuration options,
+ *              tool schema definitions, and JSON-RPC tool dispatcher for
+ *              memory_brief, memory_why, memory_history, memory_search,
+ *              memory_note, and memory_status.
+ *
+ * Exported Types / Functions:
+ * - Server:            MCP server instance providing repository memory pull tools.
+ *   - NewServer():     Constructs a Server with an index and functional options.
+ *   - SetLedger():     Sets or replaces the exposure ledger on the server.
+ *   - SetOpsWriter():  Sets or replaces the ops log writer on the server.
+ *   - HandleMemoryAsk(): Legacy episode-search handler (deprecated).
+ *   - DispatchTool():  Routes a named tool call and raw JSON parameters to its handler.
+ * - ServerOption:      Functional option for configuring a Server.
+ * - WithLedger():      Attaches an exposure ledger to record entry pulls.
+ * - WithOpsWriter():   Attaches an ops log writer for recording agent notes.
+ * - WithOpsDir():      Configures the directory for the ops log writer.
+ * - WithInboxStore():  Attaches an inbox note store to the server.
+ * - WithRepoContext(): Configures repository dataDir, repoID, and repoRoot.
+ * - SupportedTools:    Canonical underscore-formatted MCP tool names.
+ * - MemoryAskRequest:  Input parameters for the legacy memory.ask tool.
+ * - MemoryAskResponse: Output payload for the legacy memory.ask tool.
+ * - ToolSchema:        MCP tool name, description, and JSON Schema definition.
+ * - ToolSchemas():     Returns schema definitions for all supported MCP pull tools.
+ */
+
 package mcpserver
 
 import (
@@ -13,13 +46,13 @@ import (
 
 // Server represents the MCP server instance providing memory tools over the index.
 type Server struct {
-	idx        *index.Index
-	ledger     *delivery.Ledger
-	opsWriter  *ops.Writer
-	dataDir    string
-	repoID     string
-	repoRoot   string
-	inboxStore *inbox.Store
+	idx        *index.Index     // SQLite FTS5 index backing memory pull queries.
+	ledger     *delivery.Ledger // Optional conversation exposure ledger for recording pulls.
+	opsWriter  *ops.Writer      // Optional operation log writer for persisting memory_note ops.
+	dataDir    string           // Root repo-memory data directory path.
+	repoID     string           // Canonical 16-hex repository identifier used to scope ledger and inbox writes.
+	repoRoot   string           // Canonical root path of the enrolled repository.
+	inboxStore *inbox.Store     // Optional inbox note store for unconsolidated notes.
 }
 
 // ServerOption is a functional option for configuring a Server.
@@ -96,20 +129,18 @@ var SupportedTools = []string{
 
 // MemoryAskRequest represents the input to the legacy memory.ask tool.
 type MemoryAskRequest struct {
-	Query string `json:"query"`
+	Query string `json:"query"` // Free-text episode search query.
 }
 
 // MemoryAskResponse represents the output of the legacy memory.ask tool.
 type MemoryAskResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted search results or empty-match message.
 }
 
 // HandleMemoryAsk implements the memory.ask tool handler.
 // Deprecated: memory.ask is superseded by v2 pull tools (memory.brief, memory.why, memory.history, memory.search, memory.note).
 func (s *Server) HandleMemoryAsk(ctx context.Context, req MemoryAskRequest) (MemoryAskResponse, error) {
-	// TODO: Check if there are verified claims to return.
-	// Currently there are none, so we immediately fall back to the episode index.
-	
+	// --- Step 1: Query the episode FTS index ---
 	results, err := s.idx.SearchEpisodes(ctx, req.Query)
 	if err != nil {
 		return MemoryAskResponse{}, fmt.Errorf("searching episodes: %w", err)
@@ -119,6 +150,7 @@ func (s *Server) HandleMemoryAsk(ctx context.Context, req MemoryAskRequest) (Mem
 		return MemoryAskResponse{Result: "No results found."}, nil
 	}
 
+	// --- Step 2: Format matched episode snippets into a plain-text response ---
 	var output string
 	for i, res := range results {
 		output += fmt.Sprintf("Result %d [unverified (episode search)]:\n", i+1)
@@ -136,14 +168,15 @@ func (s *Server) HandleMemoryAsk(ctx context.Context, req MemoryAskRequest) (Mem
 
 // ToolSchema describes an MCP tool's name, description, and input schema for registration.
 type ToolSchema struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string         `json:"name"`        // Canonical underscore-formatted tool name.
+	Description string         `json:"description"` // Human- and model-readable tool description.
+	InputSchema map[string]any `json:"inputSchema"` // JSON Schema object describing tool parameters.
 }
 
 // ToolSchemas returns the schema descriptions for all supported MCP pull tools.
 // Tool names use underscores for portability across all model APIs.
 func ToolSchemas() []ToolSchema {
+	// --- Step 1: Return static JSON Schema descriptors for the 6 MCP pull tools ---
 	return []ToolSchema{
 		{
 			Name:        "memory_brief",
@@ -222,9 +255,11 @@ func ToolSchemas() []ToolSchema {
 // DispatchTool routes a tool call by name to the appropriate handler.
 // Accepts both underscore names (canonical) and dotted names (legacy aliases).
 func (s *Server) DispatchTool(ctx context.Context, name string, params json.RawMessage) (any, error) {
+	// --- Step 1: Verify server index availability ---
 	if s.idx == nil {
 		return nil, fmt.Errorf("repo not enrolled: run 'repo-memory enroll' first")
 	}
+	// --- Step 2: Unmarshal tool parameters and dispatch to the matching handler ---
 	switch name {
 	case "memory_brief", "memory.brief":
 		var req MemoryBriefRequest

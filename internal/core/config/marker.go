@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/marker.go
+ * Description: Zero-byte filesystem marker (.memory/.enrolled) creation,
+ *              removal, and sub-millisecond ancestor traversal for fast-path
+ *              hook enrolment checks.
+ *
+ * Exported Types / Functions:
+ * - EnrolledMarkerFile:     Filename of the zero-byte enrolment marker (".enrolled").
+ * - EnrolledMarkerPath():   Returns the path to .memory/.enrolled for a repository root.
+ * - CreateEnrolledMarker(): Creates the zero-byte .memory/.enrolled marker file.
+ * - RemoveEnrolledMarker(): Removes the .memory/.enrolled marker file if present.
+ * - IsEnrolledFast():       Checks whether a directory or any repo ancestor has .memory/.enrolled.
+ */
+
 package config
 
 import (
@@ -45,6 +65,7 @@ func RemoveEnrolledMarker(repoRoot string) error {
 // It uses pure filesystem stats (O(1) filesystem stat, no SQLite or subprocess)
 // to satisfy the <= 5 ms fast-path latency requirement.
 func IsEnrolledFast(dir string) bool {
+	// --- Step 1: Resolve starting directory to an absolute path ---
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
@@ -55,6 +76,8 @@ func IsEnrolledFast(dir string) bool {
 	if err != nil {
 		abs = dir
 	}
+
+	// --- Step 2: Walk upward checking for .memory/.enrolled or a .git boundary ---
 	curr := abs
 	for {
 		marker := filepath.Join(curr, ".memory", EnrolledMarkerFile)

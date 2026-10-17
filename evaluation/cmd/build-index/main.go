@@ -1,4 +1,20 @@
-// build-index builds a standalone index.db from a snapshot ops directory,
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: evaluation/cmd/build-index/main.go
+ * Description: Standalone CLI tool that builds an evaluation SQLite index.db from a
+ *              snapshot operation-log directory, dropping batches whose operations
+ *              occurred after a configured RFC3339 timestamp cutoff.
+ *
+ * Exported Types / Functions:
+ * - None (package main binary entrypoint).
+ */
+
+// The build-index command builds a standalone index.db from a snapshot ops directory,
 // filtering out ops after a timestamp cutoff. Used by the X6-lite evaluation
 // to create per-run indexes for condition (c).
 package main
@@ -19,7 +35,10 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
+// main parses CLI flags, filters operation batches up to the cutoff timestamp,
+// rebuilds the SQLite index from the surviving batches, and verifies the result.
 func main() {
+	// --- Step 1: Parse and validate command-line flags ---
 	opsDir := flag.String("ops", "", "source ops dir (e.g. evaluation/data/<wo>/ops)")
 	filteredDir := flag.String("filtered", "", "output dir for cutoff-filtered ops (e.g. $RUN_ROOT/ops)")
 	dbPath := flag.String("db", "", "output path for index.db")
@@ -37,7 +56,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Step 1: Filter ops — copy only batches where ALL ops are <= cutoff.
+	// --- Step 2: Filter ops and copy only batches where all ops precede the cutoff ---
 	droppedBatches, droppedOps, keptEntries, latestTimestamp, err := filterOps(*opsDir, *filteredDir, cutoffTime)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: filtering ops: %v\n", err)
@@ -51,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Step 2: Build index from filtered ops.
+	// --- Step 3: Build SQLite index from the cutoff-filtered ops ---
 	if err := os.MkdirAll(filepath.Dir(*dbPath), 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: creating db dir: %v\n", err)
 		os.Exit(1)
@@ -70,7 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Step 3: Verify.
+	// --- Step 4: Verify built index entry count and maximum timestamp ---
 	count, maxTS, err := verifyIndex(*dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: verifying index: %v\n", err)
@@ -93,9 +112,10 @@ func main() {
 }
 
 // filterOps copies batch files from srcDir into dstDir, dropping any batch
-// that contains ops with timestamps after cutoff. Fails if a batch mixes
-// pre- and post-cutoff ops (safety check).
+// that contains ops with timestamps after cutoff. It returns an error if a
+// batch mixes pre- and post-cutoff ops.
 func filterOps(srcDir, dstDir string, cutoff time.Time) (droppedBatches, droppedOps, keptEntries int, latest time.Time, err error) {
+	// --- Step 1: Ensure destination directory exists and list month subdirectories ---
 	if err = os.MkdirAll(dstDir, 0o755); err != nil {
 		return
 	}
@@ -106,6 +126,7 @@ func filterOps(srcDir, dstDir string, cutoff time.Time) (droppedBatches, dropped
 		return
 	}
 
+	// --- Step 2: Inspect each batch file in each month directory ---
 	for _, monthEntry := range entries {
 		if !monthEntry.IsDir() {
 			continue
@@ -136,7 +157,7 @@ func filterOps(srcDir, dstDir string, cutoff time.Time) (droppedBatches, dropped
 				return
 			}
 
-			// Check: are ALL ops before cutoff, ALL after, or mixed?
+			// --- Step 3: Classify batch ops relative to cutoff and reject mixed batches ---
 			before, after := 0, 0
 			for _, op := range batch.Ops {
 				if op.Timestamp.After(cutoff) {
@@ -161,7 +182,7 @@ func filterOps(srcDir, dstDir string, cutoff time.Time) (droppedBatches, dropped
 				continue
 			}
 
-			// Keep this batch — copy to filtered dir.
+			// --- Step 4: Copy surviving pre-cutoff batch to the filtered destination ---
 			if err2 = os.MkdirAll(monthDst, 0o755); err2 != nil {
 				err = err2
 				return
@@ -178,20 +199,22 @@ func filterOps(srcDir, dstDir string, cutoff time.Time) (droppedBatches, dropped
 
 // verifyIndex opens the built index.db and returns the entry count and max timestamp.
 func verifyIndex(dbPath string) (count int, maxTS time.Time, err error) {
+	// --- Step 1: Open the SQLite database for direct inspection ---
 	db, err := openSQLite(dbPath)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
 	defer db.Close()
 
+	// --- Step 2: Query entry count and maximum creation timestamp ---
 	row := db.QueryRow("SELECT COUNT(*), COALESCE(MAX(created_at), '') FROM entries")
 	var maxTSStr string
 	if err = row.Scan(&count, &maxTSStr); err != nil {
 		return
 	}
 
+	// --- Step 3: Parse maximum timestamp across supported SQLite date layouts ---
 	if maxTSStr != "" {
-		// Try multiple time formats
 		for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02 15:04:05"} {
 			if t, e := time.Parse(layout, maxTSStr); e == nil {
 				maxTS = t
@@ -202,16 +225,17 @@ func verifyIndex(dbPath string) (count int, maxTS time.Time, err error) {
 	return
 }
 
+// openSQLite initializes the SQLite schema via index.NewIndex and re-opens a raw
+// database/sql handle for verification queries.
 func openSQLite(path string) (*sqlDB, error) {
-	// Use the same driver the index package uses
+	// --- Step 1: Ensure schema is initialized via the index package ---
 	idx, err := index.NewIndex(path)
 	if err != nil {
 		return nil, err
 	}
-	// We need raw SQL access — close the index wrapper and open directly
 	idx.Close()
 
-	// Re-open with database/sql directly
+	// --- Step 2: Open raw database/sql handle ---
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -219,6 +243,7 @@ func openSQLite(path string) (*sqlDB, error) {
 	return &sqlDB{db}, nil
 }
 
+// sqlDB wraps a standard sql.DB handle for verification queries.
 type sqlDB struct {
-	*sql.DB
+	*sql.DB // Underlying SQLite database connection.
 }

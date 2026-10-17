@@ -1,8 +1,32 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/tick.go
+ * Description: Top-level background Ticker orchestration. Acquires a non-blocking
+ *              lockfile, iterates over enrolled repositories to ingest spool items
+ *              and run the multi-stage pipeline, and sweeps idle sessions.
+ *
+ * Exported Types / Functions:
+ * - ErrLocked:             Sentinel error returned when another tick process holds the lock.
+ * - Ticker:                Coordinates periodic background processing across enrolled repositories.
+ *   - NewTicker():         Constructs a Ticker with a data directory, time budget, and options.
+ *   - Run():               Executes one bounded tick pass across all enrolled repositories.
+ *   - ProcessPipeline():   Runs the repository pipeline (defined in pipeline.go).
+ * - TickerOption:          Functional option for configuring a Ticker.
+ * - WithAttributor():      Registers a SessionAttributor on a Ticker.
+ * - WithCopier():          Registers a TranscriptCopier on a Ticker.
+ * - WithHousekeeper():     Registers the Housekeeper LLM harness on a Ticker.
+ */
+
 package tick
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,18 +35,20 @@ import (
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/jobs"
-	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/spool"
+	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
+// ErrLocked is returned by TryLock when another tick instance already holds the advisory lock.
 var ErrLocked = errors.New("tick is already running")
 
+// Ticker coordinates bounded background job ingestion, pipeline execution, and session sweeping.
 type Ticker struct {
-	dataDir     string
-	budget      time.Duration
-	attributors []SessionAttributor
-	copiers     []TranscriptCopier
-	hk          harness.Housekeeper
+	dataDir     string              // Base memory data directory containing registry and per-repo state.
+	budget      time.Duration       // Maximum wall-clock duration for a single Run invocation.
+	attributors []SessionAttributor // Custom session attributors configured on this ticker.
+	copiers     []TranscriptCopier  // Custom transcript copiers configured on this ticker.
+	hk          harness.Housekeeper // Background LLM harness used for distillation and consolidation.
 }
 
 // TickerOption allows configuring optional ticker parameters.
@@ -46,7 +72,6 @@ func WithCopier(c TranscriptCopier) TickerOption {
 	}
 }
 
-
 // WithHousekeeper registers the LLM harness for pipeline processing.
 func WithHousekeeper(hk harness.Housekeeper) TickerOption {
 	return func(t *Ticker) {
@@ -54,6 +79,7 @@ func WithHousekeeper(hk harness.Housekeeper) TickerOption {
 	}
 }
 
+// NewTicker constructs a Ticker configured with dataDir, wall-clock budget, and optional functional options.
 func NewTicker(dataDir string, budget time.Duration, opts ...TickerOption) *Ticker {
 	t := &Ticker{
 		dataDir: dataDir,
@@ -65,7 +91,10 @@ func NewTicker(dataDir string, budget time.Duration, opts ...TickerOption) *Tick
 	return t
 }
 
+// Run executes a single bounded tick cycle across all enrolled repositories.
+// If another tick process holds tick.lock, Run returns nil immediately.
 func (t *Ticker) Run(ctx context.Context) error {
+	// --- Step 1: Apply wall-clock budget deadline and acquire non-blocking tick lock ---
 	deadline := time.Now().Add(t.budget)
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
@@ -84,6 +113,7 @@ func (t *Ticker) Run(ctx context.Context) error {
 	}
 	defer l.Unlock()
 
+	// --- Step 2: Load enrolled repository registry and process each repository ---
 	reg, err := config.LoadRegistry(t.dataDir)
 	if err != nil {
 		return fmt.Errorf("loading registry: %w", err)
@@ -104,7 +134,7 @@ func (t *Ticker) Run(ctx context.Context) error {
 		}
 	}
 
-	// Sweep enrolled repos
+	// --- Step 3: Sweep idle sessions across enrolled repositories ---
 	if err := Sweep(ctx, t.dataDir, enrolledRepos, t.attributors...); err != nil {
 		fmt.Fprintf(os.Stderr, "sweep error: %v\n", err)
 	}
@@ -112,7 +142,10 @@ func (t *Ticker) Run(ctx context.Context) error {
 	return nil
 }
 
+// processRepo ingests queued spool files into the SQLite job store, reclaims expired leases,
+// and executes the multi-stage pipeline for a single repository.
 func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error {
+	// --- Step 1: Ensure spool directory exists and open the repository job store ---
 	repoDataDir := filepath.Join(t.dataDir, repoID)
 	spoolDir := filepath.Join(repoDataDir, "spool")
 	if err := os.MkdirAll(spoolDir, 0755); err != nil {
@@ -125,7 +158,7 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 	}
 	defer store.Close()
 
-	// 2. Ingest spool files as jobs
+	// --- Step 2: Ingest spool files as jobs ---
 	reader := spool.NewReader(spoolDir)
 	_, err = reader.Ingest(func(item spool.Item) error {
 		payloadBytes, _ := json.Marshal(item.Entry)
@@ -152,13 +185,13 @@ func (t *Ticker) processRepo(ctx context.Context, repoRoot, repoID string) error
 		return err
 	}
 
-	// 3. Reclaim expired leases
+	// --- Step 3: Reclaim expired leases ---
 	_, err = store.ReclaimExpiredLeases(ctx, time.Now())
 	if err != nil {
 		return err
 	}
 
-	// 4. Run pipeline
+	// --- Step 4: Run pipeline ---
 	if err := t.ProcessPipeline(ctx, store, repoRoot, repoID); err != nil {
 		fmt.Fprintf(os.Stderr, "pipeline error for repo %s: %v\n", repoID, err)
 	}

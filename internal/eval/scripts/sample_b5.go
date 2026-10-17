@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/eval/scripts/sample_b5.go
+ * Description: Standalone utility script that samples up to 20 episode headers
+ *              from the local episode store (or synthetic fallback headers) and
+ *              writes a CSV labeling sheet for benchmark B5 human evaluation.
+ *
+ * Exported Types / Functions:
+ * - None (package main binary entrypoint).
+ */
+
+// The sample-b5 command samples episode headers and generates a CSV labeling sheet
+// for the B5 human evaluation benchmark.
 package main
 
 import (
@@ -12,7 +30,10 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/episode"
 )
 
+// main loads episode headers, randomly samples up to 20 episodes, and writes
+// b5_labeling_sheet.csv in the current working directory.
 func main() {
+	// --- Step 1: Load episode headers from the local episode store ---
 	fmt.Println("Generating B5 Labeling Sheet...")
 
 	dataDir := config.DataDir()
@@ -28,6 +49,7 @@ func main() {
 		headers = generateDummyHeaders()
 	}
 
+	// --- Step 2: Randomly shuffle and select up to 20 episodes ---
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(headers), func(i, j int) {
 		headers[i], headers[j] = headers[j], headers[i]
@@ -40,6 +62,7 @@ func main() {
 
 	sample := headers[:sampleSize]
 
+	// --- Step 3: Write the sampled episodes to b5_labeling_sheet.csv ---
 	file, err := os.Create("b5_labeling_sheet.csv")
 	if err != nil {
 		log.Fatalf("Failed to create csv file: %v", err)
@@ -73,6 +96,7 @@ func main() {
 	fmt.Printf("Successfully generated b5_labeling_sheet.csv with %d episodes.\n", len(sample))
 }
 
+// generateDummyHeaders synthesizes 25 placeholder episode headers when no stored episodes exist.
 func generateDummyHeaders() []*episode.Header {
 	var headers []*episode.Header
 	for i := 0; i < 25; i++ {

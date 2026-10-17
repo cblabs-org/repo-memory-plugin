@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -11,11 +11,11 @@
  *              Split-Authority YAML frontmatter completion blocks.
  *
  * Exported Types / Functions:
- * - Change:                  Represents a file anchor path and its change description.
- * - CompletionReport:        Normalized decisions, dead ends, findings, and file changes.
+ * - Change:                    Represents a file anchor path and its change description.
+ * - CompletionReport:          Normalized decisions, dead ends, findings, and file changes.
  * - IsValidAnchorPathSyntax(): Validates repository-relative file or symbol anchor syntax.
- * - ParseCompletionReport(): Parses a WORKORDER.md completion report.
- * - ParseProjectReport():    Parses architectural distillation decisions from a PROJECT.md file.
+ * - ParseCompletionReport():   Parses a WORKORDER.md completion report.
+ * - ParseProjectReport():      Parses architectural distillation decisions from a PROJECT.md file.
  */
 
 package seed
@@ -37,7 +37,7 @@ type Change struct {
 // CompletionReport holds normalized findings extracted from a PA work order or project report.
 type CompletionReport struct {
 	Status        string   // Completion status string (e.g. "complete" or "COMPLETED").
-	Changes       []Change // Anchored file modifications.
+	Changes       []Change // File-anchored modification summaries extracted from the completion section.
 	Decisions     []string // Architectural or implementation decisions made.
 	DeadEnds      []string // Ruled-out approaches and warnings.
 	Findings      []string // Out-of-scope findings and open issues.
@@ -47,30 +47,30 @@ type CompletionReport struct {
 
 // workorderFrontmatter models the YAML frontmatter of a v0.1.0+ Split-Authority WORKORDER.md.
 type workorderFrontmatter struct {
-	WOID         string                   `yaml:"wo_id"`
-	PRID         string                   `yaml:"pr_id"`
-	Status       string                   `yaml:"status"`
-	AllowedFiles []string                 `yaml:"allowed_files"`
-	Completion   *workorderCompletionYAML `yaml:"completion"`
+	WOID         string                   `yaml:"wo_id"`         // Canonical work order slug (e.g. "WO-01-schema") declared in YAML frontmatter.
+	PRID         string                   `yaml:"pr_id"`         // Enclosing project or PR identifier declared in YAML frontmatter.
+	Status       string                   `yaml:"status"`        // Top-level work order lifecycle status.
+	AllowedFiles []string                 `yaml:"allowed_files"` // Declared file scope for the work order.
+	Completion   *workorderCompletionYAML `yaml:"completion"`    // Structured Part II completion payload.
 }
 
 // workorderCompletionYAML models the structured Part II completion block in WORKORDER.md frontmatter.
 type workorderCompletionYAML struct {
-	Status             string   `yaml:"status"`
-	FilesModified      []string `yaml:"files_modified"`
-	DecisionsMade      []string `yaml:"decisions_made"`
-	DeadEnds           []string `yaml:"dead_ends"`
-	OutOfScopeFindings []string `yaml:"out_of_scope_findings"`
+	Status             string   `yaml:"status"`                // Completion block status value.
+	FilesModified      []string `yaml:"files_modified"`        // Repository-relative file paths modified.
+	DecisionsMade      []string `yaml:"decisions_made"`        // Architectural or implementation decisions recorded.
+	DeadEnds           []string `yaml:"dead_ends"`             // Ruled-out approaches and failure notes.
+	OutOfScopeFindings []string `yaml:"out_of_scope_findings"` // Deferred issues discovered during execution.
 }
 
 // projectFrontmatter models the YAML frontmatter of a v0.1.0+ Split-Authority PROJECT.md.
 type projectFrontmatter struct {
-	Status  string `yaml:"status"`
+	Status  string `yaml:"status"` // Top-level project status string.
 	Charter struct {
-		PRID           string   `yaml:"pr_id"`
-		Slug           string   `yaml:"slug"`
-		AllowedModules []string `yaml:"allowed_modules"`
-	} `yaml:"charter"`
+		PRID           string   `yaml:"pr_id"`           // Project charter identifier.
+		Slug           string   `yaml:"slug"`            // Short slug name for the project.
+		AllowedModules []string `yaml:"allowed_modules"` // Module paths governed by the project charter.
+	} `yaml:"charter"` // Nested project charter metadata block.
 }
 
 var backtickRe = regexp.MustCompile("`([^`]+)`") // Matches inline code spans in Markdown text.
@@ -123,6 +123,7 @@ func isValidAnchorSymbol(s string) bool {
 
 // stripAnchorSymbol splits an optional #symbol or :symbol suffix from p and returns the file path portion.
 func stripAnchorSymbol(p string) (filePart string, ok bool) {
+	// --- Step 1: Reject empty strings and external URLs ---
 	p = strings.TrimSpace(p)
 	if p == "" {
 		return "", false
@@ -131,6 +132,8 @@ func stripAnchorSymbol(p string) (filePart string, ok bool) {
 	if strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:") || strings.Contains(p, "://") {
 		return "", false
 	}
+
+	// --- Step 2: Split and validate optional #symbol or :symbol suffix ---
 	sepCount := strings.Count(p, "#") + strings.Count(p, ":")
 	if sepCount > 1 {
 		return "", false
@@ -151,6 +154,7 @@ func stripAnchorSymbol(p string) (filePart string, ok bool) {
 // file or directory path (optionally with a #symbol or :symbol suffix) rather than
 // an arbitrary code token, glob, or external path.
 func IsValidAnchorPathSyntax(p string) bool {
+	// --- Step 1: Strip optional symbol suffix and reject disallowed characters ---
 	filePart, ok := stripAnchorSymbol(p)
 	if !ok {
 		return false
@@ -172,6 +176,7 @@ func IsValidAnchorPathSyntax(p string) bool {
 		return false
 	}
 
+	// --- Step 2: Validate path segments and root-level filename rules ---
 	segments := strings.Split(p, "/")
 	for _, seg := range segments {
 		if seg == "" || seg == "." || seg == ".." {
@@ -195,15 +200,18 @@ func IsValidAnchorPathSyntax(p string) bool {
 	return true
 }
 
+// isValidAnchorPathSyntax delegates to IsValidAnchorPathSyntax for internal callers.
 func isValidAnchorPathSyntax(p string) bool {
 	return IsValidAnchorPathSyntax(p)
 }
 
 // extractBacktickPaths extracts deduplicated valid anchor paths from backtick code spans in s.
 func extractBacktickPaths(s string) []string {
+	// --- Step 1: Find all inline code spans in s ---
 	var paths []string
 	matches := backtickRe.FindAllStringSubmatch(s, -1)
 
+	// --- Step 2: Filter and deduplicate syntactically valid anchor paths ---
 	seen := make(map[string]bool)
 	for _, match := range matches {
 		p := strings.TrimSuffix(strings.TrimSpace(match[1]), "/")

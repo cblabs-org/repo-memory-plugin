@@ -1,3 +1,28 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/stop_distill.go
+ * Description: Implements Stage 1 warm-cache Stop hook distillation: evaluates
+ *              v2.2 milestone triggers on primary Stop invocations (executionNum == 0),
+ *              constructs the continuation prompt, and harvests, lints, scrubs,
+ *              and persists `repo-memory-note` YAML blocks on continuation turns
+ *              (executionNum >= 1).
+ *
+ * Exported Types / Functions:
+ * - TurnNoteCooldown:           Minimum interval between non-commit/non-PR turn notes (30m).
+ * - TurnNoteDailyCap:           Maximum turn-note inbox notes harvested per repo per UTC day (20).
+ * - MaxNoteItems:               Maximum items accepted from a single repo-memory-note block (6).
+ * - MilestoneResult:            Summary of whether uncovered transcript steps matched a milestone.
+ * - DetectMilestones():         Scans uncovered transcript steps for the 5 v2.2 milestones.
+ * - BuildTurnNoteRequestPrompt(): Builds the Stage 1 Stop continuation prompt.
+ * - ParseRepoMemoryNoteBlock(): Extracts and parses a repo-memory-note YAML block or NONE.
+ * - LintNoteItems():            Filters and normalizes candidate NoteItems per v2.2 schema rules.
+ */
+
 package antigravity
 
 import (
@@ -29,23 +54,33 @@ const (
 )
 
 var (
-	goalCommandRe      = regexp.MustCompile(`(?im)(?:^|\s)/goal(?:\s|$)`)
-	repoMemoryBlockRe  = regexp.MustCompile("(?is)```repo-memory-note[ \\t]*\\r?\\n(.*?)\\r?\\n?```")
-	yamlBlockRe        = regexp.MustCompile("(?is)```(?:yaml|yml)[ \\t]*\\r?\\n(.*?)\\r?\\n?```")
-	awsAccessKeyRe     = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
-	githubTokenRe      = regexp.MustCompile(`\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}\b|\bgithub_pat_[A-Za-z0-9_]{22,255}\b`)
-	bearerOrTokenRe    = regexp.MustCompile(`(?i)\b(bearer|token)\s+[A-Za-z0-9\-._~+/]{20,}=*`)
-	privateKeyBlockRe  = regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)
+	// goalCommandRe matches the /goal autonomous mode slash command in user or system steps.
+	goalCommandRe = regexp.MustCompile(`(?im)(?:^|\s)/goal(?:\s|$)`)
+	// repoMemoryBlockRe matches fenced ```repo-memory-note code blocks in model replies.
+	repoMemoryBlockRe = regexp.MustCompile("(?is)```repo-memory-note[ \\t]*\\r?\\n(.*?)\\r?\\n?```")
+	// yamlBlockRe matches fallback fenced ```yaml or ```yml code blocks in model replies.
+	yamlBlockRe = regexp.MustCompile("(?is)```(?:yaml|yml)[ \\t]*\\r?\\n(.*?)\\r?\\n?```")
+	// awsAccessKeyRe matches AWS IAM access key IDs starting with AKIA.
+	awsAccessKeyRe = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+	// githubTokenRe matches GitHub classic and fine-grained personal access tokens.
+	githubTokenRe = regexp.MustCompile(`\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}\b|\bgithub_pat_[A-Za-z0-9_]{22,255}\b`)
+	// bearerOrTokenRe matches Bearer or Token authorization headers in note text.
+	bearerOrTokenRe = regexp.MustCompile(`(?i)\b(bearer|token)\s+[A-Za-z0-9\-._~+/]{20,}=*`)
+	// privateKeyBlockRe matches PEM-encoded private key blocks.
+	privateKeyBlockRe = regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)
+	// privateKeyHeaderRe matches standalone PEM private key headers.
 	privateKeyHeaderRe = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)
 )
 
 // MilestoneResult describes the outcome of scanning uncovered transcript steps for a milestone.
 type MilestoneResult struct {
-	Matched      bool
-	IsCommitOrPR bool
-	Reason       string
+	Matched      bool   // True when at least one v2.2 milestone was detected in the uncovered window.
+	IsCommitOrPR bool   // True when the milestone was a git commit or gh pr create (waiving cooldown).
+	Reason       string // Short human-readable description of the matched milestone.
 }
 
+// evaluateStopDistillation dispatches between primary milestone evaluation (executionNum == 0)
+// and turn-note harvesting (executionNum >= 1).
 func evaluateStopDistillation(
 	ctx context.Context,
 	payload *StopPayload,
@@ -66,6 +101,8 @@ func evaluateStopDistillation(
 	evaluateMilestoneGate(ctx, payload, res, dataDir, repoID, repoRoot, repoCfg, transcriptPath)
 }
 
+// evaluateMilestoneGate evaluates whether the completed turn satisfies the Stage 1
+// milestone, cooldown, and daily-cap criteria to request a warm-cache turn note.
 func evaluateMilestoneGate(
 	ctx context.Context,
 	payload *StopPayload,
@@ -74,14 +111,13 @@ func evaluateMilestoneGate(
 	repoCfg config.RepoConfig,
 	transcriptPath string,
 ) {
-	// 1. Check turn_notes config mode ("on" required for primary Stop continuation).
+	// --- Step 1: Check turn_notes config mode, subagent exclusions, and normal idle termination ---
 	if repoCfg.TurnNotesMode() != "on" {
 		return
 	}
 
 	convID := payload.ConversationID
 
-	// 2. Subagent exclusion.
 	if strings.TrimSpace(res.ParentConversationID) != "" || strings.TrimSpace(payload.ParentConversationID) != "" {
 		return
 	}
@@ -89,18 +125,16 @@ func evaluateMilestoneGate(
 		return
 	}
 
-	// 3. Normal turn completion check: NO_TOOL_CALL + fullyIdle.
 	if !strings.EqualFold(strings.TrimSpace(payload.TerminationReason), "NO_TOOL_CALL") || !payload.FullyIdle {
 		return
 	}
 
-	// 4. Parse transcript.
+	// --- Step 2: Parse transcript, load distillation mark, and clamp on rewind ---
 	steps, err := ParseTranscript(transcriptDirFromPath(transcriptPath))
 	if err != nil || len(steps) == 0 {
 		return
 	}
 
-	// 5. Load mark and clamp on rewind.
 	mark, err := state.LoadMark(dataDir, repoID, convID)
 	if err != nil || mark == nil {
 		return
@@ -115,19 +149,18 @@ func evaluateMilestoneGate(
 		_ = state.SaveMark(dataDir, repoID, mark)
 	}
 
-	// 6. Role opt-out and autonomous /goal exclusion.
+	// --- Step 3: Evaluate role opt-out, /goal exclusion, and milestone triggers ---
 	if hasActiveGoalOrRoleOptOut(steps, repoCfg.TurnNotesRoleOptOut) {
 		return
 	}
 
-	// 7. Milestone detection strictly after the mark.
 	isInitialMark := mark.StepIndex == 0 && mark.NoteCount == 0 && mark.LastNoteAt.IsZero()
 	milestone := DetectMilestones(steps, mark.StepIndex, isInitialMark)
 	if !milestone.Matched {
 		return
 	}
 
-	// 8. Cooldown (30m, waived for commits and PRs) & Daily Cap (20 turn-note notes/day).
+	// --- Step 4: Enforce 30m cooldown and daily cap, then issue continuation prompt ---
 	if !milestone.IsCommitOrPR && !mark.LastNoteAt.IsZero() && time.Since(mark.LastNoteAt) < TurnNoteCooldown {
 		return
 	}
@@ -135,7 +168,6 @@ func evaluateMilestoneGate(
 		return
 	}
 
-	// 9. Issue continuation request.
 	mark.PendingRequestStep = latestStepIdx
 	mark.PendingContinuation = true
 	_ = state.SaveMark(dataDir, repoID, mark)
@@ -146,6 +178,8 @@ func evaluateMilestoneGate(
 	res.ContinueReason = prompt
 }
 
+// harvestTurnNote extracts, lints, scrubs, and persists a turn note from the model's
+// continuation reply on executionNum >= 1, advancing the distillation mark.
 func harvestTurnNote(
 	_ context.Context,
 	payload *StopPayload,
@@ -153,7 +187,7 @@ func harvestTurnNote(
 	dataDir, repoID, repoRoot string,
 	transcriptPath string,
 ) {
-	// Loop protection: res.Decision is always empty on executionNum >= 1.
+	// --- Step 1: Enforce loop protection and load pending distillation mark ---
 	res.Decision = ""
 	res.ContinueReason = ""
 
@@ -168,6 +202,7 @@ func harvestTurnNote(
 	startStep := mark.StepIndex
 	pendingStep := mark.PendingRequestStep
 
+	// --- Step 2: Parse transcript, locate reply step, and advance mark ---
 	steps, err := ParseTranscript(transcriptDirFromPath(transcriptPath))
 	var byteOffset int64
 	if fi, statErr := os.Stat(transcriptPath); statErr == nil {
@@ -197,6 +232,7 @@ func harvestTurnNote(
 		return
 	}
 
+	// --- Step 3: Parse and lint repo-memory-note YAML items ---
 	items, isNone, parseErr := ParseRepoMemoryNoteBlock(replyStep.Content)
 	if parseErr != nil || isNone {
 		_ = state.SaveMark(dataDir, repoID, mark)
@@ -209,6 +245,7 @@ func harvestTurnNote(
 		return
 	}
 
+	// --- Step 4: Scrub note fields for secrets/PII and check repository path anchors ---
 	allowedIDs := map[string]bool{}
 	if strings.TrimSpace(convID) != "" {
 		allowedIDs[strings.TrimSpace(convID)] = true
@@ -249,6 +286,7 @@ func harvestTurnNote(
 		validItems[i].AnchorChecks = inbox.CheckAnchors(repoRoot, validItems[i].Anchors)
 	}
 
+	// --- Step 5: Write harvested note to the inbox store and persist updated mark ---
 	var exposures []delivery.ExposureRecord
 	if ledger, lErr := LoadLedger(dataDir, repoID, convID); lErr == nil && ledger != nil {
 		exposures = ledger.GetExposureList()
@@ -281,6 +319,7 @@ func harvestTurnNote(
 	_ = state.SaveMark(dataDir, repoID, mark)
 }
 
+// advanceMarkAndClearPending updates the distillation mark high-water step/offset and clears pending continuation state.
 func advanceMarkAndClearPending(mark *state.Mark, latestStepIdx int, byteOffset int64, latestTimestamp string) {
 	if mark == nil {
 		return
@@ -298,6 +337,7 @@ func advanceMarkAndClearPending(mark *state.Mark, latestStepIdx int, byteOffset 
 	mark.PendingContinuation = false
 }
 
+// transcriptDirFromPath returns transcriptPath if it is a directory, or its parent directory if it is a file.
 func transcriptDirFromPath(transcriptPath string) string {
 	if fi, err := os.Stat(transcriptPath); err == nil && fi.IsDir() {
 		return transcriptPath
@@ -305,7 +345,10 @@ func transcriptDirFromPath(transcriptPath string) string {
 	return filepath.Dir(transcriptPath)
 }
 
+// inspectStepsMetadata scans non-checkpoint, non-gap steps to find the highest step index,
+// its timestamp, and the timestamp at markStepIdx.
 func inspectStepsMetadata(steps []Step, markStepIdx int) (latestStepIdx int, latestTimestamp string, stepAtMarkTimestamp string) {
+	// --- Step 1: Scan real steps for mark timestamp and maximum step index ---
 	for _, s := range steps {
 		if s.IsCheckpoint || s.IsGap {
 			continue
@@ -323,7 +366,9 @@ func inspectStepsMetadata(steps []Step, markStepIdx int) (latestStepIdx int, lat
 	return latestStepIdx, latestTimestamp, stepAtMarkTimestamp
 }
 
+// hasCheckpointAfterStep reports whether a CHECKPOINT step occurred after afterStepIdx.
 func hasCheckpointAfterStep(steps []Step, afterStepIdx int, isInitialMark bool) bool {
+	// --- Step 1: Track effective step index across steps and detect post-mark checkpoints ---
 	lastRealStepIdx := -1
 	for _, s := range steps {
 		if s.IsGap {
@@ -344,7 +389,9 @@ func hasCheckpointAfterStep(steps []Step, afterStepIdx int, isInitialMark bool) 
 	return false
 }
 
+// hasActiveGoalOrRoleOptOut reports whether any user or system step invokes /goal or matches an opted-out role.
 func hasActiveGoalOrRoleOptOut(steps []Step, optOutRoles []string) bool {
+	// --- Step 1: Normalize configured opt-out role substrings ---
 	var normalizedRoles []string
 	for _, r := range optOutRoles {
 		trimmed := strings.ToLower(strings.TrimSpace(r))
@@ -353,6 +400,7 @@ func hasActiveGoalOrRoleOptOut(steps []Step, optOutRoles []string) bool {
 		}
 	}
 
+	// --- Step 2: Scan user and system steps for /goal or opted-out role markers ---
 	for _, s := range steps {
 		if s.IsCheckpoint || s.IsGap {
 			continue
@@ -383,13 +431,16 @@ func hasActiveGoalOrRoleOptOut(steps []Step, optOutRoles []string) bool {
 	return false
 }
 
+// parsedToolCall represents a normalized tool call extracted from a transcript step.
 type parsedToolCall struct {
-	Name    string
-	Args    map[string]any
-	RawArgs string
+	Name    string         // Tool name (e.g., "run_command", "edit_file").
+	Args    map[string]any // Parsed JSON arguments map.
+	RawArgs string         // Raw serialized JSON arguments string.
 }
 
+// extractStepToolCalls parses raw JSON tool_calls from a transcript step into normalized parsedToolCall records.
 func extractStepToolCalls(raw json.RawMessage) []parsedToolCall {
+	// --- Step 1: Unmarshal raw JSON as a list or single tool-call object ---
 	if len(raw) == 0 {
 		return nil
 	}
@@ -403,6 +454,7 @@ func extractStepToolCalls(raw json.RawMessage) []parsedToolCall {
 		}
 	}
 
+	// --- Step 2: Normalize tool name and arguments across Antigravity and OpenAI schemas ---
 	var out []parsedToolCall
 	for _, item := range list {
 		var tc parsedToolCall
@@ -455,6 +507,7 @@ func extractStepToolCalls(raw json.RawMessage) []parsedToolCall {
 	return out
 }
 
+// isCommandToolName reports whether name identifies a shell/command execution tool.
 func isCommandToolName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "run_command", "bash", "execute_command", "shell", "terminal":
@@ -464,6 +517,7 @@ func isCommandToolName(name string) bool {
 	}
 }
 
+// isEditWriteToolName reports whether name identifies a file edit or write tool.
 func isEditWriteToolName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "write_to_file", "replace_file_content", "edit_file", "multi_replace_file_content", "write_file":
@@ -473,6 +527,7 @@ func isEditWriteToolName(name string) bool {
 	}
 }
 
+// extractCommandString extracts the command line string from a parsedToolCall's arguments.
 func extractCommandString(tc parsedToolCall) string {
 	if tc.Args == nil {
 		return ""
@@ -485,6 +540,7 @@ func extractCommandString(tc parsedToolCall) string {
 	return ""
 }
 
+// extractTargetPathFromArgs extracts the target file path from a parsedToolCall's arguments.
 func extractTargetPathFromArgs(tc parsedToolCall) string {
 	if tc.Args == nil {
 		return ""
@@ -497,7 +553,9 @@ func extractTargetPathFromArgs(tc parsedToolCall) string {
 	return ""
 }
 
+// stepCommandFailed reports whether the command tool call at steps[idx] failed based on step status or output markers.
 func stepCommandFailed(steps []Step, idx int) bool {
+	// --- Step 1: Check status and output markers on the tool call step itself ---
 	s := steps[idx]
 	if strings.EqualFold(s.Status, "ERROR") || strings.EqualFold(s.Status, "FAILED") {
 		return true
@@ -505,6 +563,7 @@ func stepCommandFailed(steps []Step, idx int) bool {
 	if hasFailureOutputMarker(s.Content) {
 		return true
 	}
+	// --- Step 2: Inspect the immediately following tool response step before the next planner/user turn ---
 	for j := idx + 1; j < len(steps); j++ {
 		next := steps[j]
 		if next.IsCheckpoint || next.IsGap {
@@ -524,7 +583,9 @@ func stepCommandFailed(steps []Step, idx int) bool {
 	return false
 }
 
+// hasFailureOutputMarker reports whether text contains common CLI or test failure indicators.
 func hasFailureOutputMarker(text string) bool {
+	// --- Step 1: Scan lowercased text for exit code and test/build failure substrings ---
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
@@ -551,12 +612,13 @@ func hasFailureOutputMarker(text string) bool {
 	return false
 }
 
+// normalizeCommandPrefix extracts the canonical tool/subcommand prefix from a shell command string.
 func normalizeCommandPrefix(cmd string) string {
+	// --- Step 1: Split chained commands on && and skip leading env assignments or cd/export ---
 	trimmed := strings.TrimSpace(cmd)
 	if trimmed == "" {
 		return ""
 	}
-	// If chained with &&, inspect the last or primary command segment that is not cd/export.
 	segments := strings.Split(trimmed, "&&")
 	for _, seg := range segments {
 		fields := strings.Fields(strings.TrimSpace(seg))
@@ -570,6 +632,7 @@ func normalizeCommandPrefix(cmd string) string {
 		if first == "cd" || first == "export" {
 			continue
 		}
+		// --- Step 2: Include subcommand token for multi-verb CLI tools ---
 		if len(fields) >= 2 {
 			second := strings.ToLower(fields[1])
 			switch first {
@@ -585,7 +648,9 @@ func normalizeCommandPrefix(cmd string) string {
 	return ""
 }
 
+// isBuildOrTestCommand reports whether cmd invokes a standard build or test runner.
 func isBuildOrTestCommand(cmd string) bool {
+	// --- Step 1: Match command text against known build and test runner invocations ---
 	lower := strings.ToLower(cmd)
 	for _, pat := range []string{
 		"go test",
@@ -611,6 +676,7 @@ func isBuildOrTestCommand(cmd string) bool {
 // DetectMilestones scans transcript steps to determine whether any of the 5 v2.2 milestones
 // occurred in the uncovered window strictly after afterStepIdx (or >= 0 when isInitialMark is true).
 func DetectMilestones(steps []Step, afterStepIdx int, isInitialMark bool) MilestoneResult {
+	// --- Step 1: Initialize tracking state for failed commands and edited files ---
 	var res MilestoneResult
 
 	failedCmdStepByPrefix := make(map[string]int)
@@ -618,6 +684,7 @@ func DetectMilestones(steps []Step, afterStepIdx int, isInitialMark bool) Milest
 	secondEditStepIdx := -1
 	hasBuildOrTestAfterSecondEdit := false
 
+	// --- Step 2: Scan transcript steps for command and edit milestones ---
 	for i, s := range steps {
 		if s.IsCheckpoint || s.IsGap {
 			continue
@@ -696,6 +763,7 @@ func DetectMilestones(steps []Step, afterStepIdx int, isInitialMark bool) Milest
 		}
 	}
 
+	// --- Step 3: Check multi-file edit + build/test milestone ---
 	if hasBuildOrTestAfterSecondEdit {
 		res.Matched = true
 		if res.Reason == "" {
@@ -711,6 +779,7 @@ func DetectMilestones(steps []Step, afterStepIdx int, isInitialMark bool) Milest
 // that when the host prepends "Stop hook blocked termination: " (31 chars), the
 // 60-character collapsible SystemMessageStep header displays cleanly without truncation.
 func BuildTurnNoteRequestPrompt(noteTitles []string, hasCheckpointSinceMark bool) string {
+	// --- Step 1: Assemble the core Stage 1 turn-note instructions and example block ---
 	var b strings.Builder
 	b.WriteString("repo-memory: saving turn note\n\n")
 	b.WriteString("Before you stop, write a memory note for this repository. Cover only what happened since your last memory note, or since the start of the conversation if there is none. Don't continue the task, don't call tools, and don't repeat your previous answer.\n\n")
@@ -735,6 +804,7 @@ func BuildTurnNoteRequestPrompt(noteTitles []string, hasCheckpointSinceMark bool
 	b.WriteString("Allowed types: decision, ruled-out, failure-signature, invariant, contract, convention, gotcha, external-behaviour, procedure, recipe, open-issue.\n")
 	b.WriteString("Required fields: every type needs title and why (except procedure and recipe); do is required for ruled-out, failure-signature, invariant, procedure, and recipe; open-issue may carry closes_when.")
 
+	// --- Step 2: Append earlier note titles for deduplication if a checkpoint occurred since the mark ---
 	if hasCheckpointSinceMark && len(noteTitles) > 0 {
 		b.WriteString("\n\nEarlier note titles in this conversation (do not repeat):\n")
 		for _, title := range noteTitles {
@@ -750,7 +820,9 @@ func BuildTurnNoteRequestPrompt(noteTitles []string, hasCheckpointSinceMark bool
 	return strings.TrimSpace(b.String())
 }
 
+// findHarvestReplyStep locates the latest model response step after pendingRequestStep.
 func findHarvestReplyStep(steps []Step, pendingRequestStep int) *Step {
+	// --- Step 1: Search backwards for a model response strictly after pendingRequestStep ---
 	if pendingRequestStep > 0 {
 		for i := len(steps) - 1; i >= 0; i-- {
 			s := steps[i]
@@ -762,6 +834,7 @@ func findHarvestReplyStep(steps []Step, pendingRequestStep int) *Step {
 			}
 		}
 	}
+	// --- Step 2: Fall back to the most recent model or non-marker step in the transcript ---
 	for i := len(steps) - 1; i >= 0; i-- {
 		s := steps[i]
 		if s.IsCheckpoint || s.IsGap {
@@ -779,6 +852,7 @@ func findHarvestReplyStep(steps []Step, pendingRequestStep int) *Step {
 	return nil
 }
 
+// hasNonEmptyToolCalls reports whether raw contains at least one tool call entry.
 func hasNonEmptyToolCalls(raw json.RawMessage) bool {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
@@ -797,14 +871,16 @@ func hasNonEmptyToolCalls(raw json.RawMessage) bool {
 
 // ParseRepoMemoryNoteBlock extracts and parses a `repo-memory-note` YAML block (or "NONE") from model text.
 func ParseRepoMemoryNoteBlock(text string) (items []inbox.NoteItem, isNone bool, err error) {
+	// --- Step 1: Check for empty text or explicit NONE reply ---
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil, false, errors.New("empty reply text")
 	}
-	if strings.EqualFold(trimmed, "NONE") || strings.EqualFold( strings.Trim(trimmed, "`* \t\r\n."), "NONE") {
+	if strings.EqualFold(trimmed, "NONE") || strings.EqualFold(strings.Trim(trimmed, "`* \t\r\n."), "NONE") {
 		return nil, true, nil
 	}
 
+	// --- Step 2: Extract fenced repo-memory-note or yaml block content ---
 	var blockContent string
 	if m := repoMemoryBlockRe.FindStringSubmatch(trimmed); len(m) >= 2 {
 		blockContent = strings.TrimSpace(m[1])
@@ -821,6 +897,7 @@ func ParseRepoMemoryNoteBlock(text string) (items []inbox.NoteItem, isNone bool,
 		return nil, true, nil
 	}
 
+	// --- Step 3: Unmarshal YAML list or single NoteItem object ---
 	var parsed []inbox.NoteItem
 	if err := yaml.Unmarshal([]byte(blockContent), &parsed); err != nil {
 		var single inbox.NoteItem
@@ -834,6 +911,7 @@ func ParseRepoMemoryNoteBlock(text string) (items []inbox.NoteItem, isNone bool,
 	return parsed, false, nil
 }
 
+// allowedTurnNoteTypes defines the set of entry types permitted in a Stage 1 turn note.
 var allowedTurnNoteTypes = map[dossiers.EntryType]bool{
 	dossiers.EntryTypeDecision:          true,
 	dossiers.EntryTypeRuledOut:          true,
@@ -850,6 +928,7 @@ var allowedTurnNoteTypes = map[dossiers.EntryType]bool{
 
 // LintNoteItems filters and normalizes candidate NoteItems according to the v2.2 turn-note schema rules.
 func LintNoteItems(items []inbox.NoteItem) []inbox.NoteItem {
+	// --- Step 1: Validate entry type, required fields, and cap at MaxNoteItems ---
 	var valid []inbox.NoteItem
 	for _, it := range items {
 		normType := dossiers.EntryType(strings.ToLower(strings.TrimSpace(string(it.Type))))
@@ -893,6 +972,7 @@ func LintNoteItems(items []inbox.NoteItem) []inbox.NoteItem {
 	return valid
 }
 
+// scrubNoteField runs the layered secret/PII scrubber on s under scrubCtx.
 func scrubNoteField(s string, scrubCtx scrub.Context) (string, error) {
 	res, err := scrub.Scrub(s, scrubCtx)
 	if err != nil {
@@ -901,6 +981,7 @@ func scrubNoteField(s string, scrubCtx scrub.Context) (string, error) {
 	return res.Text, nil
 }
 
+// scrubNoteText scrubs s using the note boundary scrubber, falling back to regex redaction on error.
 func scrubNoteText(s string) string {
 	if s == "" {
 		return ""

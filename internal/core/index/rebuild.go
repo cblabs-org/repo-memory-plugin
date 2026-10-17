@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/index/rebuild.go
+ * Description: Rebuilds the SQLite and FTS5 entry index from one or more
+ *               operation log readers within an atomic write transaction.
+ *
+ * Exported Types / Functions:
+ * - Index:
+ *   - RebuildFromOpLog():  Rebuilds the entry index from a single ops.Reader.
+ *   - RebuildFromOpLogs(): Rebuilds the entry index by merging projections from multiple ops.Readers.
+ *   - WriteTx():           Executes a callback inside a single SQLite write transaction.
+ */
+
 package index
 
 import (
@@ -12,11 +30,15 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
+// RebuildFromOpLog projects dossiers from opsReader and atomically repopulates the SQLite index.
 func (idx *Index) RebuildFromOpLog(ctx context.Context, opsReader *ops.Reader) error {
 	return idx.RebuildFromOpLogs(ctx, opsReader)
 }
 
+// RebuildFromOpLogs projects dossiers and scope aliases across one or more opsReaders
+// and atomically replaces all entry, anchor, error-pattern, alias, and history rows in the index.
 func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Reader) error {
+	// --- Step 1: Filter and validate non-nil operation log readers ---
 	var validReaders []*ops.Reader
 	for _, r := range opsReaders {
 		if r != nil {
@@ -30,6 +52,7 @@ func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Read
 	dossierMap := make(map[string]*dossiers.Dossier)
 	mergedAliases := config.NewAliasMap()
 
+	// --- Step 2: Project dossiers and alias maps from each reader in order ---
 	for _, r := range validReaders {
 		projected, err := dossiers.NewProjector(r).Project(ctx)
 		if err != nil {
@@ -111,6 +134,7 @@ func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Read
 		}
 	}
 
+	// --- Step 3: Open an atomic SQLite write transaction and clear existing tables ---
 	tx, err := idx.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin rebuild tx: %w", err)
@@ -125,6 +149,7 @@ func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Read
 	}
 	_, _ = tx.ExecContext(ctx, "INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
 
+	// --- Step 4: Insert projected active entries, anchors, error patterns, and history ---
 	insertEntryQuery := `
 		INSERT INTO entries (
 			id, type, kind, dossier_scope, text, source,
@@ -236,6 +261,7 @@ func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Read
 		}
 	}
 
+	// --- Step 5: Persist merged scope aliases and commit the transaction ---
 	if mergedAliases != nil {
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		for _, oldScope := range mergedAliases.AllAliases() {
@@ -255,7 +281,9 @@ func (idx *Index) RebuildFromOpLogs(ctx context.Context, opsReaders ...*ops.Read
 	return tx.Commit()
 }
 
+// parseErrorPatternFromEntry extracts a command prefix and symptom pattern from a failure-signature entry's text.
 func parseErrorPatternFromEntry(entry dossiers.Entry) (cmdPrefix, pattern string) {
+	// --- Step 1: Scan entry text lines for labeled command and pattern directives ---
 	lines := strings.Split(entry.Text, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -272,6 +300,8 @@ func parseErrorPatternFromEntry(entry dossiers.Entry) (cmdPrefix, pattern string
 			}
 		}
 	}
+
+	// --- Step 2: Fall back to the first line or entry ID when no explicit pattern directive is present ---
 	if pattern == "" && len(lines) > 0 {
 		pattern = strings.TrimSpace(lines[0])
 	}
@@ -281,6 +311,7 @@ func parseErrorPatternFromEntry(entry dossiers.Entry) (cmdPrefix, pattern string
 	return cmdPrefix, pattern
 }
 
+// WriteTx executes fn inside a SQLite transaction, rolling back on error and committing on success.
 func (idx *Index) WriteTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	tx, err := idx.db.BeginTx(ctx, nil)
 	if err != nil {

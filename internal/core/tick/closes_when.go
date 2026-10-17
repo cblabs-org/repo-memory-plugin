@@ -1,3 +1,24 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/closes_when.go
+ * Description: Deterministic evaluation of closes_when predicates on active open-issue
+ *              dossier entries (SPEC §6.3.4). Evaluates file/path existence, file
+ *              content patterns, git branch merges, Principal Architect workorder
+ *              completions, and passing test/build outcomes, emitting OpRetire ops
+ *              and updating projected dossiers and the SQLite search index.
+ *
+ * Exported Types / Functions:
+ * - ClosesWhenResult:                    Summary of open-issue entries evaluated and retired.
+ * - ClosedIssueRecord:                   Details of a single open-issue entry retired by closes_when.
+ * - PipelineExecutor.EvaluateClosesWhen(): Evaluates closes_when predicates across repo and branch tiers.
+ * - EvaluateClosesWhenCondition():       Evaluates a single or compound closes_when expression for an entry.
+ */
+
 package tick
 
 import (
@@ -22,27 +43,28 @@ import (
 
 // ClosesWhenResult summarizes the deterministic closes_when evaluation pass.
 type ClosesWhenResult struct {
-	Evaluated int                 `json:"evaluated"`
-	Closed    []ClosedIssueRecord `json:"closed,omitempty"`
+	Evaluated int                 `json:"evaluated"`        // Total active open-issue entries with non-empty ClosesWhen inspected.
+	Closed    []ClosedIssueRecord `json:"closed,omitempty"` // Open-issue entries whose closes_when predicate was satisfied.
 }
 
 // ClosedIssueRecord describes an open-issue entry retired because its closes_when predicate was satisfied.
 type ClosedIssueRecord struct {
-	EntryID    string `json:"entry_id"`
-	Scope      string `json:"scope"`
-	ClosesWhen string `json:"closes_when"`
-	Reason     string `json:"reason"`
+	EntryID    string `json:"entry_id"`    // Unique identifier of the retired open-issue entry.
+	Scope      string `json:"scope"`       // Dossier scope containing the entry.
+	ClosesWhen string `json:"closes_when"` // Raw closes_when expression that was evaluated.
+	Reason     string `json:"reason"`      // Human-readable explanation of why the predicate passed.
 }
 
 var (
-	monthDirNameRe    = regexp.MustCompile(`^\d{4}-\d{2}$`)
-	conditionPrefixRe = regexp.MustCompile(`^\s*[a-zA-Z_][a-zA-Z0-9_]*:`)
+	monthDirNameRe    = regexp.MustCompile(`^\d{4}-\d{2}$`)               // Matches YYYY-MM monthly op-log subdirectory names.
+	conditionPrefixRe = regexp.MustCompile(`^\s*[a-zA-Z_][a-zA-Z0-9_]*:`) // Matches a leading closes_when predicate kind prefix (e.g. "file_exists:").
 )
 
 // EvaluateClosesWhen inspects active open-issue entries (from .memory/ops/ and .memory/local/ops/)
 // with non-empty ClosesWhen, emits ops.OpRetire for each satisfied entry, re-projects dossiers,
 // and updates p.idx if non-nil.
 func (p *PipelineExecutor) EvaluateClosesWhen(ctx context.Context) (*ClosesWhenResult, error) {
+	// --- Step 0: Initialize context, episode store, and evaluation clock ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -61,7 +83,7 @@ func (p *PipelineExecutor) EvaluateClosesWhen(ctx context.Context) (*ClosesWhenR
 		now = p.Now().UTC()
 	}
 
-	// 1. Evaluate shared repository ops (.memory/ops/).
+	// --- Step 1: Evaluate shared repository ops (.memory/ops/) ---
 	repoOpsDir := filepath.Join(p.repoRoot, ".memory", "ops")
 	if info, err := os.Stat(repoOpsDir); err == nil && info.IsDir() {
 		closedRecords, retireOps, err := p.evaluateOpsDirIssues(ctx, repoOpsDir, epStore, now)
@@ -77,7 +99,7 @@ func (p *PipelineExecutor) EvaluateClosesWhen(ctx context.Context) (*ClosesWhenR
 		}
 	}
 
-	// 2. Evaluate branch-local ops (.memory/local/ops/).
+	// --- Step 2: Evaluate branch-local ops (.memory/local/ops/) ---
 	localOpsRoot := filepath.Join(p.repoRoot, ".memory", "local", "ops")
 	if entries, err := os.ReadDir(localOpsRoot); err == nil {
 		hasDirectBatches := false
@@ -126,7 +148,7 @@ func (p *PipelineExecutor) EvaluateClosesWhen(ctx context.Context) (*ClosesWhenR
 		}
 	}
 
-	// 3. Update multi-tier SQLite index if any entries were retired.
+	// --- Step 3: Update multi-tier SQLite index if any entries were retired ---
 	if len(res.Closed) > 0 && p.idx != nil {
 		for _, closed := range res.Closed {
 			_ = p.idx.DeleteEntry(ctx, closed.EntryID)
@@ -140,7 +162,10 @@ func (p *PipelineExecutor) EvaluateClosesWhen(ctx context.Context) (*ClosesWhenR
 	return res, nil
 }
 
+// evaluateOpsDirIssues projects dossiers from opsDir, evaluates active open-issue closes_when predicates,
+// and returns the evaluation summary alongside any generated OpRetire operations.
 func (p *PipelineExecutor) evaluateOpsDirIssues(ctx context.Context, opsDir string, epStore *episode.Store, now time.Time) (*ClosesWhenResult, []ops.Op, error) {
+	// --- Step 1: Project dossiers from opsDir and sort scopes deterministically ---
 	out := &ClosesWhenResult{}
 	projected, err := dossiers.NewProjector(ops.NewReader(opsDir)).Project(ctx)
 	if err != nil {
@@ -153,6 +178,7 @@ func (p *PipelineExecutor) evaluateOpsDirIssues(ctx context.Context, opsDir stri
 	}
 	sort.Strings(scopes)
 
+	// --- Step 2: Evaluate each active open-issue entry with a non-empty ClosesWhen predicate ---
 	var retireOps []ops.Op
 	for _, scope := range scopes {
 		d := projected[scope]
@@ -203,6 +229,7 @@ func (p *PipelineExecutor) evaluateOpsDirIssues(ctx context.Context, opsDir stri
 // EvaluateClosesWhenCondition evaluates deterministic closes_when expressions
 // (supporting single conditions and compound conditions joined by && / ; for AND, or || for OR).
 func EvaluateClosesWhenCondition(ctx context.Context, repoRoot, dataDir, repoID string, epStore *episode.Store, entry dossiers.Entry) (bool, string) {
+	// --- Step 1: Validate context and non-empty ClosesWhen string ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -211,6 +238,7 @@ func EvaluateClosesWhenCondition(ctx context.Context, repoRoot, dataDir, repoID 
 		return false, ""
 	}
 
+	// --- Step 2: Split by OR (||) clauses and evaluate conjunctive AND terms ---
 	orClauses := strings.Split(raw, "||")
 	for _, orClause := range orClauses {
 		orClause = strings.TrimSpace(orClause)
@@ -239,7 +267,10 @@ func EvaluateClosesWhenCondition(ctx context.Context, repoRoot, dataDir, repoID 
 	return false, ""
 }
 
+// splitAndConditions splits a conjunctive clause on "&&" and top-level ";" boundaries
+// where the following segment starts with a known condition prefix.
 func splitAndConditions(clause string) []string {
+	// --- Step 1: Split clause on explicit "&&" operators ---
 	ampParts := strings.Split(clause, "&&")
 	var out []string
 	for _, part := range ampParts {
@@ -247,6 +278,8 @@ func splitAndConditions(clause string) []string {
 		if part == "" {
 			continue
 		}
+
+		// --- Step 2: Split semicolon-delimited sub-clauses only when followed by a predicate prefix ---
 		semiParts := strings.Split(part, ";")
 		if len(semiParts) == 1 {
 			out = append(out, part)
@@ -271,7 +304,9 @@ func splitAndConditions(clause string) []string {
 	return out
 }
 
+// evaluateSingleClosesWhen parses and evaluates a single "<kind>:<arg>" predicate expression.
 func evaluateSingleClosesWhen(ctx context.Context, repoRoot, dataDir, repoID string, epStore *episode.Store, entry dossiers.Entry, expr string) (bool, string) {
+	// --- Step 1: Split predicate kind and argument around the first colon ---
 	expr = strings.TrimSpace(expr)
 	colonIdx := strings.IndexByte(expr, ':')
 	if colonIdx <= 0 {
@@ -283,6 +318,7 @@ func evaluateSingleClosesWhen(ctx context.Context, repoRoot, dataDir, repoID str
 		return false, ""
 	}
 
+	// --- Step 2: Dispatch evaluation by predicate kind ---
 	switch kind {
 	case "path_exists", "file_exists":
 		if strings.TrimSpace(repoRoot) == "" {
@@ -344,7 +380,9 @@ func evaluateSingleClosesWhen(ctx context.Context, repoRoot, dataDir, repoID str
 	}
 }
 
+// resolveSafeRepoPath normalizes rawRelPath and verifies that the resolved target stays strictly inside repoRoot.
 func resolveSafeRepoPath(repoRoot, rawRelPath string) (cleanRelSlash string, absTarget string, ok bool) {
+	// --- Step 1: Reject empty or absolute input paths ---
 	if strings.TrimSpace(repoRoot) == "" {
 		return "", "", false
 	}
@@ -352,6 +390,8 @@ func resolveSafeRepoPath(repoRoot, rawRelPath string) (cleanRelSlash string, abs
 	if rawRelPath == "" || filepath.IsAbs(rawRelPath) || strings.HasPrefix(rawRelPath, "/") || strings.HasPrefix(rawRelPath, "\\") {
 		return "", "", false
 	}
+
+	// --- Step 2: Normalize slashes, strip leading "./", and reject ".." traversal ---
 	slashed := strings.ReplaceAll(rawRelPath, "\\", "/")
 	for strings.HasPrefix(slashed, "./") {
 		slashed = strings.TrimPrefix(slashed, "./")
@@ -363,6 +403,8 @@ func resolveSafeRepoPath(repoRoot, rawRelPath string) (cleanRelSlash string, abs
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || filepath.IsAbs(cleaned) {
 		return "", "", false
 	}
+
+	// --- Step 3: Verify resolved absolute path remains within absRoot ---
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", "", false
@@ -375,7 +417,9 @@ func resolveSafeRepoPath(repoRoot, rawRelPath string) (cleanRelSlash string, abs
 	return filepath.ToSlash(cleaned), absTarget, true
 }
 
+// evaluateFileContains checks whether a repository file contains a literal or regex pattern.
 func evaluateFileContains(repoRoot, arg string) (bool, string) {
+	// --- Step 1: Split "<path>:<pattern>" and resolve safe repository path ---
 	rawPath, pattern, ok := splitPathAndPattern(arg)
 	if !ok {
 		return false, ""
@@ -384,6 +428,8 @@ func evaluateFileContains(repoRoot, arg string) (bool, string) {
 	if !ok {
 		return false, ""
 	}
+
+	// --- Step 2: Read file content and test against pattern ---
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return false, ""
@@ -394,7 +440,9 @@ func evaluateFileContains(repoRoot, arg string) (bool, string) {
 	return false, ""
 }
 
+// evaluateFileNotContains checks whether a repository file is absent or does not contain a literal or regex pattern.
 func evaluateFileNotContains(repoRoot, arg string) (bool, string) {
+	// --- Step 1: Split "<path>:<pattern>" and resolve safe repository path ---
 	rawPath, pattern, ok := splitPathAndPattern(arg)
 	if !ok {
 		return false, ""
@@ -403,6 +451,8 @@ func evaluateFileNotContains(repoRoot, arg string) (bool, string) {
 	if !ok {
 		return false, ""
 	}
+
+	// --- Step 2: Read file content (treating missing files as satisfied) and verify pattern absence ---
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -416,6 +466,7 @@ func evaluateFileNotContains(repoRoot, arg string) (bool, string) {
 	return false, ""
 }
 
+// splitPathAndPattern splits a "<path>:<pattern>" argument into its path and pattern components.
 func splitPathAndPattern(arg string) (string, string, bool) {
 	idx := strings.IndexByte(arg, ':')
 	if idx <= 0 {
@@ -429,6 +480,7 @@ func splitPathAndPattern(arg string) (string, string, bool) {
 	return rawPath, pattern, true
 }
 
+// matchFilePattern matches pattern against content using regular expressions when prefixed with "re:" or substring search otherwise.
 func matchFilePattern(content, pattern string) bool {
 	if strings.HasPrefix(pattern, "re:") {
 		rawRe := strings.TrimPrefix(pattern, "re:")
@@ -444,7 +496,10 @@ func matchFilePattern(content, pattern string) bool {
 	return strings.Contains(content, pattern)
 }
 
+// evaluateWorkorderComplete checks whether a Principal Architect workorder (referenced by path or slug)
+// is marked complete in its WORKORDER.md or parent PROJECT.md.
 func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
+	// --- Step 1: Resolve pathOrSlug safely within repoRoot ---
 	clean, directPath, ok := resolveSafeRepoPath(repoRoot, pathOrSlug)
 	if !ok {
 		return false, ""
@@ -458,6 +513,7 @@ func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
 		return rErr == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 	}
 
+	// --- Step 2: Gather candidate WORKORDER.md and PROJECT.md files from direct path and PA workspace ---
 	var candidateWOFiles []string
 	var candidateProjectFiles []string
 	slug := filepath.Base(strings.TrimSuffix(clean, "/WORKORDER.md"))
@@ -510,6 +566,7 @@ func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
 		})
 	}
 
+	// --- Step 3: Inspect candidate WORKORDER.md files for completion status or report ---
 	for _, woFile := range candidateWOFiles {
 		data, err := os.ReadFile(woFile)
 		if err != nil {
@@ -524,6 +581,7 @@ func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
 		}
 	}
 
+	// --- Step 4: Inspect candidate PROJECT.md files for completed workorder table rows ---
 	for _, projFile := range candidateProjectFiles {
 		data, err := os.ReadFile(projFile)
 		if err != nil {
@@ -541,7 +599,10 @@ func evaluateWorkorderComplete(repoRoot, pathOrSlug string) (bool, string) {
 	return false, ""
 }
 
+// isWorkorderMarkdownComplete reports whether a WORKORDER.md file has a "✅ Complete" status line
+// or a populated "## Completion Report" section without unreplaced template placeholders.
 func isWorkorderMarkdownComplete(content string) bool {
+	// --- Step 1: Scan markdown lines outside fenced code blocks ---
 	inFence := false
 	inCompletionReport := false
 	completionReportHasTemplatePlaceholder := false
@@ -557,11 +618,13 @@ func isWorkorderMarkdownComplete(content string) bool {
 			continue
 		}
 
+		// --- Step 2: Check for explicit Status: ✅ Complete metadata line ---
 		lower := strings.ToLower(trimmed)
 		if strings.Contains(lower, "status:") && strings.Contains(trimmed, "✅ Complete") {
 			return true
 		}
 
+		// --- Step 3: Track "## Completion Report" section body and template placeholders ---
 		if strings.HasPrefix(trimmed, "## Completion Report (") || trimmed == "## Completion Report" {
 			if strings.Contains(trimmed, "<YYYY-MM-DD>") {
 				inCompletionReport = false
@@ -596,11 +659,14 @@ func isWorkorderMarkdownComplete(content string) bool {
 	return false
 }
 
+// isSlugMarkedCompleteInProject reports whether a PROJECT.md line outside code fences marks slug or clean as "✅ Complete".
 func isSlugMarkedCompleteInProject(content, slug, clean string) bool {
+	// --- Step 1: Normalize target identifiers ---
 	inFence := false
 	slugLower := strings.ToLower(strings.TrimSpace(slug))
 	cleanLower := strings.ToLower(strings.TrimSpace(clean))
 
+	// --- Step 2: Scan non-fenced lines for "✅ Complete" alongside slug or clean ---
 	for _, rawLine := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(rawLine)
 		if strings.HasPrefix(trimmed, "```") {
@@ -622,7 +688,10 @@ func isSlugMarkedCompleteInProject(content, slug, clean string) bool {
 	return false
 }
 
+// evaluateCommandPasses checks whether targetCmd has succeeded at or after entry.CreatedAt
+// across outcome state, episode steps, or corroborated procedural dossier entries.
 func evaluateCommandPasses(ctx context.Context, repoRoot, dataDir, repoID string, epStore *episode.Store, entry dossiers.Entry, targetCmd string) (bool, string) {
+	// --- Step 0: Normalize targetCmd and load outcome state / episode store ---
 	targetCmd = strings.TrimSpace(targetCmd)
 	if targetCmd == "" {
 		return false, ""
@@ -637,7 +706,7 @@ func evaluateCommandPasses(ctx context.Context, repoRoot, dataDir, repoID string
 		epStore = episode.NewStore(dataDir, repoID)
 	}
 
-	// 1. Check skills.LoadOutcomeState for direct command keys or conversation outcomes recorded at/after entry.CreatedAt.
+	// --- Step 1: Check skills.LoadOutcomeState for direct command keys or conversation outcomes recorded at/after entry.CreatedAt ---
 	if outcomeState != nil && outcomeState.Entries != nil {
 		for key, eo := range outcomeState.Entries {
 			if eo == nil || len(eo.SucceededConversations) == 0 {
@@ -651,7 +720,7 @@ func evaluateCommandPasses(ctx context.Context, repoRoot, dataDir, repoID string
 		}
 	}
 
-	// 2. Check episodes in epStore recorded at/after entry.CreatedAt.
+	// --- Step 2: Check episodes in epStore recorded at/after entry.CreatedAt ---
 	if epStore != nil {
 		episodes, err := epStore.ListEpisodes()
 		if err == nil {
@@ -678,7 +747,7 @@ func evaluateCommandPasses(ctx context.Context, repoRoot, dataDir, repoID string
 		}
 	}
 
-	// 3. Check corroborated procedural entries in projected dossiers with LastSucceededAt >= entry.CreatedAt.
+	// --- Step 3: Check corroborated procedural entries in projected dossiers with LastSucceededAt >= entry.CreatedAt ---
 	if strings.TrimSpace(repoRoot) != "" {
 		opsDir := filepath.Join(repoRoot, ".memory", "ops")
 		if info, err := os.Stat(opsDir); err == nil && info.IsDir() {
@@ -724,13 +793,17 @@ func evaluateCommandPasses(ctx context.Context, repoRoot, dataDir, repoID string
 	return false, ""
 }
 
+// anyConversationAfterEntry reports whether at least one conversation in convIDs occurred at or after createdAt.
 func anyConversationAfterEntry(epStore *episode.Store, convIDs []string, createdAt time.Time) bool {
+	// --- Step 1: Handle zero createdAt or nil episode store ---
 	if createdAt.IsZero() {
 		return len(convIDs) > 0
 	}
 	if epStore == nil {
 		return true
 	}
+
+	// --- Step 2: Check each conversation's episode timestamp against createdAt ---
 	checkedAny := false
 	for _, cid := range convIDs {
 		ep, err := epStore.Read(cid)
@@ -745,6 +818,7 @@ func anyConversationAfterEntry(epStore *episode.Store, convIDs []string, created
 	return !checkedAny
 }
 
+// parseRFC3339 parses an RFC3339 or RFC3339Nano timestamp string into UTC time.Time, returning zero time on failure.
 func parseRFC3339(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -758,7 +832,9 @@ func parseRFC3339(s string) time.Time {
 	return time.Time{}
 }
 
+// evaluateAnyBuildOrTestPass checks whether any build or test step passed in an episode at or after entry.CreatedAt.
 func evaluateAnyBuildOrTestPass(epStore *episode.Store, dataDir, repoID string, entry dossiers.Entry) (bool, string) {
+	// --- Step 1: Ensure episode store is available and list episodes ---
 	if epStore == nil && strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
 		epStore = episode.NewStore(dataDir, repoID)
 	}
@@ -769,6 +845,8 @@ func evaluateAnyBuildOrTestPass(epStore *episode.Store, dataDir, repoID string, 
 	if err != nil {
 		return false, ""
 	}
+
+	// --- Step 2: Scan episodes after entry.CreatedAt for a passing test or build step ---
 	for _, ep := range episodes {
 		if ep == nil || !isEpisodeAfterEntry(ep, entry.CreatedAt) {
 			continue
@@ -789,6 +867,7 @@ func evaluateAnyBuildOrTestPass(epStore *episode.Store, dataDir, repoID string, 
 	return false, ""
 }
 
+// isEpisodeAfterEntry reports whether episode ep occurred at or after createdAt.
 func isEpisodeAfterEntry(ep *episode.Episode, createdAt time.Time) bool {
 	if createdAt.IsZero() {
 		return true
@@ -803,7 +882,9 @@ func isEpisodeAfterEntry(ep *episode.Episode, createdAt time.Time) bool {
 	return !epTime.Before(createdAt)
 }
 
+// extractStepCommand extracts the command string from step.Command, step.Suite, or step.RawData.
 func extractStepCommand(step harness.Step) string {
+	// --- Step 1: Check primary Command and test Suite fields ---
 	cmd := strings.TrimSpace(step.Command)
 	if cmd != "" {
 		return cmd
@@ -813,6 +894,8 @@ func extractStepCommand(step harness.Step) string {
 			return suite
 		}
 	}
+
+	// --- Step 2: Fall back to RawData command keys ---
 	if step.RawData != nil {
 		for _, k := range []string{"cmd", "command", "command_line"} {
 			if v, ok := step.RawData[k].(string); ok && strings.TrimSpace(v) != "" {
@@ -823,7 +906,9 @@ func extractStepCommand(step harness.Step) string {
 	return ""
 }
 
+// isStepPassing reports whether step succeeded according to failure counts, outcome string, exit code, or headerStatus.
 func isStepPassing(step harness.Step, headerStatus string) bool {
+	// --- Step 1: Check explicit failure indicators and exit code ---
 	if step.Failed > 0 {
 		return false
 	}
@@ -834,6 +919,8 @@ func isStepPassing(step harness.Step, headerStatus string) bool {
 	if step.ExitCode != nil {
 		return *step.ExitCode == 0
 	}
+
+	// --- Step 2: Check positive outcome labels, test pass counts, RawData status, and header status ---
 	if outcome == "0" || outcome == "pass" || outcome == "passed" || outcome == "ok" || outcome == "success" || outcome == "succeeded" {
 		return true
 	}
@@ -858,7 +945,9 @@ func isStepPassing(step harness.Step, headerStatus string) bool {
 	return false
 }
 
+// commandMatchesTarget reports whether executedCmd matches targetCmd via recipe matching or normalized prefix/equality.
 func commandMatchesTarget(executedCmd, targetCmd string) bool {
+	// --- Step 1: Trim and check recipe matcher ---
 	executedCmd = strings.TrimSpace(executedCmd)
 	targetCmd = strings.TrimSpace(targetCmd)
 	if executedCmd == "" || targetCmd == "" {
@@ -867,6 +956,8 @@ func commandMatchesTarget(executedCmd, targetCmd string) bool {
 	if skills.CommandMatchesRecipe(executedCmd, []string{targetCmd}) {
 		return true
 	}
+
+	// --- Step 2: Compare whitespace-normalized command tokens ---
 	execFields := strings.Join(strings.Fields(executedCmd), " ")
 	targetFields := strings.Join(strings.Fields(targetCmd), " ")
 	if execFields == targetFields {

@@ -1,3 +1,38 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/episode/commit_linkage.go
+ * Description: Correlates git commits from branch log and reflog against
+ *              transcript commit commands to attribute commits and file edits
+ *              to session episodes.
+ *
+ * Exported Types / Functions:
+ * - ErrNotGitRepository: Sentinel error returned when the target path is not a git repository.
+ * - GitRunner:           Interface abstracting git CLI execution for commit linkage.
+ *   - RunGit():          Executes a git command in a repository root and returns trimmed output.
+ * - ExecGitRunner:       Production GitRunner backed by os/exec.
+ *
+ *   GitRunner:
+ *   - RunGit():          Executes a real git subprocess in repoRoot. [GitRunner]
+ *
+ * - CommitLinker:        Correlates git log/reflog commits with transcript commit steps.
+ *   - NewCommitLinker(): Constructs a CommitLinker with optional functional options.
+ *   - Link():            Confirms candidate commits against transcript steps and records them on Header.
+ *   - LinkEpisode():     Links commits for a full Episode and attributes file edit steps.
+ * - LinkerOption:        Functional option configuring a CommitLinker.
+ *   - WithGitRunner():   Overrides the GitRunner implementation on a CommitLinker.
+ *   - WithTimeMargin():  Sets the timestamp grace window around session start and end.
+ * - CandidateCommit:     Commit discovered in git log or reflog within the session time window.
+ * - TranscriptCommit:    Git commit command and outcome extracted from transcript steps.
+ * - ExtractTranscriptCommits(): Scans transcript steps for git commit invocations and SHA outputs.
+ * - LinkCommits():       Package-level helper that links commits for an Episode using default settings.
+ * - LinkHeaderCommits(): Package-level helper that links commits for a Header and step slice.
+ */
+
 package episode
 
 import (
@@ -17,6 +52,7 @@ var ErrNotGitRepository = errors.New("not a git repository")
 
 // GitRunner abstracts git command execution for commit linkage and testing.
 type GitRunner interface {
+	// RunGit executes a git command in repoRoot with the provided arguments.
 	RunGit(repoRoot string, args ...string) (string, error)
 }
 
@@ -36,8 +72,8 @@ func (e *ExecGitRunner) RunGit(repoRoot string, args ...string) (string, error) 
 
 // CommitLinker links commits from git log and reflog to session episodes (§6.2).
 type CommitLinker struct {
-	git        GitRunner
-	timeMargin time.Duration
+	git        GitRunner     // Runner used to invoke git log, reflog, and diff-tree commands.
+	timeMargin time.Duration // Clock-skew grace window added before session start and after session end.
 }
 
 // LinkerOption configures a CommitLinker.
@@ -73,34 +109,40 @@ func NewCommitLinker(opts ...LinkerOption) *CommitLinker {
 
 // CandidateCommit represents a commit found in git log or reflog within the session window.
 type CandidateCommit struct {
-	Hash      string    `json:"hash"`
-	ShortHash string    `json:"short_hash"`
-	Timestamp time.Time `json:"timestamp"`
-	Subject   string    `json:"subject"`
-	Source    string    `json:"source"` // "log" or "reflog"
-	Order     int       `json:"order"`
+	Hash      string    `json:"hash"`       // Full 40-character commit SHA.
+	ShortHash string    `json:"short_hash"` // 7-to-12 character abbreviated git commit SHA used for bracket matching.
+	Timestamp time.Time `json:"timestamp"`  // Committer timestamp parsed from git output.
+	Subject   string    `json:"subject"`    // First line of the commit message.
+	Source    string    `json:"source"`     // Discovery source ("log" or "reflog").
+	Order     int       `json:"order"`      // Zero-based chronological position within the source query.
 }
 
 // TranscriptCommit represents a commit command detected in transcript steps.
 type TranscriptCommit struct {
-	StepIndex int
-	Command   string
-	ExitCode  *int
-	Excerpt   string
-	Message   string   // Extracted commit message from -m / --message
-	Hashes    []string // Explicit hashes found in command output
+	StepIndex int      // Index of the transcript step where the commit occurred.
+	Command   string   // Raw shell command line invoking git commit.
+	ExitCode  *int     // Process exit code if reported by the harness.
+	Excerpt   string   // Captured stdout/stderr excerpt from the command step.
+	Message   string   // Extracted commit message from -m or --message flags.
+	Hashes    []string // Explicit commit hashes extracted from command output.
 }
 
 var (
-	gitCommitCmdRegex     = regexp.MustCompile(`(?i)(?:^|[\s;&|` + "`" + `])git(?:\.exe)?(?:\s+-[^\s]+|\s+--[^\s]+)*\s+commit\b`)
-	msgQuotedRegex        = regexp.MustCompile(`(?s)(?:-m|-am|--message(?:=|\s+))\s*["']([^"']+)["']`)
-	msgUnquotedRegex      = regexp.MustCompile(`--message=([^\s]+)`)
+	// gitCommitCmdRegex matches shell command lines that invoke `git commit`.
+	gitCommitCmdRegex = regexp.MustCompile(`(?i)(?:^|[\s;&|` + "`" + `])git(?:\.exe)?(?:\s+-[^\s]+|\s+--[^\s]+)*\s+commit\b`)
+	// msgQuotedRegex extracts quoted commit messages passed via -m, -am, or --message.
+	msgQuotedRegex = regexp.MustCompile(`(?s)(?:-m|-am|--message(?:=|\s+))\s*["']([^"']+)["']`)
+	// msgUnquotedRegex extracts unquoted commit messages passed via --message=<msg>.
+	msgUnquotedRegex = regexp.MustCompile(`--message=([^\s]+)`)
+	// gitCommitBracketRegex extracts short or full commit hashes from git commit's `[branch hash]` summary line.
 	gitCommitBracketRegex = regexp.MustCompile(`\[[^\]]*\b([0-9a-fA-F]{7,40})\b\]`)
-	fullShaRegex          = regexp.MustCompile(`\b([0-9a-fA-F]{40})\b`)
+	// fullSHARegex matches standalone 40-character hexadecimal git commit SHAs.
+	fullSHARegex = regexp.MustCompile(`\b([0-9a-fA-F]{40})\b`)
 )
 
 // ExtractTranscriptCommits scans steps for git commit commands and outcomes.
 func ExtractTranscriptCommits(steps []harness.Step) []TranscriptCommit {
+	// --- Step 1: Scan steps for explicit commit fields and git commit commands ---
 	var results []TranscriptCommit
 	for _, s := range steps {
 		if s.Commit != "" {
@@ -115,6 +157,7 @@ func ExtractTranscriptCommits(steps []harness.Step) []TranscriptCommit {
 			cmdText = s.Text
 		}
 
+		// --- Step 2: Parse commit message and SHA hashes from matching command steps ---
 		if isGitCommitCommand(cmdText) {
 			tc := TranscriptCommit{
 				StepIndex: s.Index,
@@ -134,6 +177,7 @@ func ExtractTranscriptCommits(steps []harness.Step) []TranscriptCommit {
 	return results
 }
 
+// isGitCommitCommand reports whether cmd contains a git commit invocation.
 func isGitCommitCommand(cmd string) bool {
 	if cmd == "" {
 		return false
@@ -141,6 +185,7 @@ func isGitCommitCommand(cmd string) bool {
 	return gitCommitCmdRegex.MatchString(cmd)
 }
 
+// extractCommitMessage extracts the commit message argument from a git commit command string.
 func extractCommitMessage(cmd string) string {
 	if m := msgQuotedRegex.FindStringSubmatch(cmd); len(m) > 1 {
 		return strings.TrimSpace(m[1])
@@ -151,7 +196,9 @@ func extractCommitMessage(cmd string) string {
 	return ""
 }
 
+// extractHashesFromOutput extracts deduplicated lowercase commit hashes from git command output.
 func extractHashesFromOutput(text string) []string {
+	// --- Step 1: Initialize deduplication state ---
 	if text == "" {
 		return nil
 	}
@@ -166,12 +213,13 @@ func extractHashesFromOutput(text string) []string {
 		}
 	}
 
+	// --- Step 2: Match bracketed short hashes and full 40-character SHAs ---
 	for _, m := range gitCommitBracketRegex.FindAllStringSubmatch(text, -1) {
 		if len(m) > 1 {
 			add(m[1])
 		}
 	}
-	for _, m := range fullShaRegex.FindAllStringSubmatch(text, -1) {
+	for _, m := range fullSHARegex.FindAllStringSubmatch(text, -1) {
 		if len(m) > 1 {
 			add(m[1])
 		}
@@ -187,7 +235,7 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 		return nil, ErrNilEpisode
 	}
 
-	// 1. Identify branch
+	// --- Step 1: Identify target git branch ---
 	branch := strings.TrimSpace(header.Branch)
 	if branch == "" || branch == "HEAD" {
 		if currentBranch, err := l.git.RunGit(repoRoot, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && currentBranch != "" {
@@ -199,14 +247,14 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 	}
 	branch = strings.TrimPrefix(branch, "refs/heads/")
 
-	// 2. Determine time window
+	// --- Step 2: Determine session time window ---
 	since := header.Started
 	until := header.Ended
 	if until.IsZero() {
 		until = time.Now().UTC()
 	}
 
-	// 3. Query git log
+	// --- Step 3: Query git log and reflog for candidate commits ---
 	logCommits, err := l.queryGitLog(repoRoot, branch, since, until)
 	if err != nil {
 		if isNoCommitsError(err) {
@@ -218,10 +266,9 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 		return nil, fmt.Errorf("querying git log for branch %s: %w", branch, err)
 	}
 
-	// 4. Query git reflog
 	reflogCommits, _ := l.queryGitReflog(repoRoot, branch, since, until)
 
-	// Combine and deduplicate candidates by Hash
+	// --- Step 4: Combine and deduplicate candidate commits by hash ---
 	var candidates []CandidateCommit
 	seen := make(map[string]bool)
 	for _, c := range logCommits {
@@ -241,20 +288,19 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 		return nil, nil
 	}
 
-	// 5. Extract commit commands from transcript
+	// --- Step 5: Extract commit commands from transcript and confirm candidates ---
 	transcriptCommits := ExtractTranscriptCommits(steps)
 	if len(transcriptCommits) == 0 {
-		// Commits were made on branch but NOT by any commit command in the transcript
+		// Commits were made on branch but NOT by any commit command in the transcript.
 		return nil, nil
 	}
 
-	// 6. Confirm candidates against transcript commit commands
 	confirmed := l.confirmCommits(candidates, transcriptCommits)
 	if len(confirmed) == 0 {
 		return nil, nil
 	}
 
-	// 7. Sort confirmed commits chronologically by timestamp (oldest first).
+	// --- Step 6: Sort confirmed commits chronologically and record on header ---
 	// If timestamps match (e.g. commits made within the same second), preserve chronological git order.
 	sort.SliceStable(confirmed, func(i, j int) bool {
 		if !confirmed[i].Timestamp.Equal(confirmed[j].Timestamp) {
@@ -268,7 +314,6 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 		confirmedHashes = append(confirmedHashes, c.Hash)
 	}
 
-	// 8. Record in episode header
 	header.RecordCommits(confirmedHashes)
 
 	if header.HeadEnd == "" && len(confirmedHashes) > 0 {
@@ -281,6 +326,7 @@ func (l *CommitLinker) Link(repoRoot string, header *Header, steps []harness.Ste
 // LinkEpisode links commits for an episode, records them in header.Commits,
 // and resolves edit steps to the matching commit where possible.
 func (l *CommitLinker) LinkEpisode(repoRoot string, ep *Episode) error {
+	// --- Step 1: Validate episode and link header commits ---
 	if ep == nil {
 		return ErrNilEpisode
 	}
@@ -294,13 +340,15 @@ func (l *CommitLinker) LinkEpisode(repoRoot string, ep *Episode) error {
 		return nil
 	}
 
-	// Resolve edit steps to commits (§5.1, §6.2)
+	// --- Step 2: Attribute file edit steps to confirmed commits (§5.1, §6.2) ---
 	l.resolveEditSteps(repoRoot, ep, confirmedHashes)
 	return nil
 }
 
+// resolveEditSteps associates unattributed file edit steps in ep with the first
+// confirmed commit that modified the same file path.
 func (l *CommitLinker) resolveEditSteps(repoRoot string, ep *Episode, commitHashes []string) {
-	// Build map of commit -> touched files
+	// --- Step 1: Build lookup map of commit SHA to touched file set ---
 	commitFiles := make(map[string]map[string]bool)
 	for _, hash := range commitHashes {
 		files, err := l.getFilesForCommit(repoRoot, hash)
@@ -313,6 +361,7 @@ func (l *CommitLinker) resolveEditSteps(repoRoot string, ep *Episode, commitHash
 		}
 	}
 
+	// --- Step 2: Assign matching commit hash to each unlinked edit step ---
 	for i := range ep.Steps {
 		step := &ep.Steps[i]
 		if step.Kind == harness.StepKindEdit && step.Commit == "" && step.File != "" {
@@ -326,6 +375,7 @@ func (l *CommitLinker) resolveEditSteps(repoRoot string, ep *Episode, commitHash
 	}
 }
 
+// getFilesForCommit returns the list of repository-relative file paths modified by hash.
 func (l *CommitLinker) getFilesForCommit(repoRoot, hash string) ([]string, error) {
 	output, err := l.git.RunGit(repoRoot, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", hash)
 	if err != nil {
@@ -342,7 +392,9 @@ func (l *CommitLinker) getFilesForCommit(repoRoot, hash string) ([]string, error
 	return files, nil
 }
 
+// queryGitLog queries git log on branch within the [since-timeMargin, until+timeMargin] window.
 func (l *CommitLinker) queryGitLog(repoRoot, branch string, since, until time.Time) ([]CandidateCommit, error) {
+	// --- Step 1: Build git log arguments with unit-separator formatting ---
 	args := []string{"log"}
 	if branch != "" && branch != "HEAD" {
 		args = append(args, branch)
@@ -359,6 +411,7 @@ func (l *CommitLinker) queryGitLog(repoRoot, branch string, since, until time.Ti
 		args = append(args, "--until="+until.Add(l.timeMargin).Format(time.RFC3339))
 	}
 
+	// --- Step 2: Execute git log and parse output lines ---
 	output, err := l.git.RunGit(repoRoot, args...)
 	if err != nil {
 		return nil, err
@@ -367,7 +420,9 @@ func (l *CommitLinker) queryGitLog(repoRoot, branch string, since, until time.Ti
 	return parseGitLogOutput(output, "log", since, until, l.timeMargin), nil
 }
 
+// queryGitReflog queries git reflog for branch and HEAD within the session time window.
 func (l *CommitLinker) queryGitReflog(repoRoot, branch string, since, until time.Time) ([]CandidateCommit, error) {
+	// --- Step 1: Build ordered list of reflog targets ---
 	targets := []string{}
 	if branch != "" && branch != "HEAD" {
 		targets = append(targets, branch)
@@ -377,6 +432,7 @@ func (l *CommitLinker) queryGitReflog(repoRoot, branch string, since, until time
 	var all []CandidateCommit
 	seen := make(map[string]bool)
 
+	// --- Step 2: Query each target until candidate reflog commits are found ---
 	for _, target := range targets {
 		args := []string{"log", "-g", target, "--format=%H\x1f%h\x1f%cI\x1f%gs"}
 		if !since.IsZero() {
@@ -406,7 +462,9 @@ func (l *CommitLinker) queryGitReflog(repoRoot, branch string, since, until time
 	return all, nil
 }
 
+// parseGitLogOutput parses unit-separated git log lines into chronological CandidateCommits.
 func parseGitLogOutput(output, source string, since, until time.Time, margin time.Duration) []CandidateCommit {
+	// --- Step 1: Parse unit-separated fields and filter by time window ---
 	var candidates []CandidateCommit
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -444,7 +502,7 @@ func parseGitLogOutput(output, source string, since, until time.Time, margin tim
 		})
 	}
 
-	// git log returns newest first; reverse so candidates are chronological (oldest first)
+	// --- Step 2: Reverse git log output to chronological order (oldest first) ---
 	for i, j := 0, len(candidates)-1; i < j; i, j = i+1, j-1 {
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	}
@@ -455,7 +513,9 @@ func parseGitLogOutput(output, source string, since, until time.Time, margin tim
 	return candidates
 }
 
+// parseGitReflogOutput parses unit-separated git reflog lines into chronological CandidateCommits.
 func parseGitReflogOutput(output string, since, until time.Time, margin time.Duration) []CandidateCommit {
+	// --- Step 1: Parse unit-separated reflog entries and filter to commit actions ---
 	var candidates []CandidateCommit
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -502,7 +562,7 @@ func parseGitReflogOutput(output string, since, until time.Time, margin time.Dur
 		})
 	}
 
-	// git reflog returns newest first; reverse so candidates are chronological (oldest first)
+	// --- Step 2: Reverse reflog output in Go so candidates are chronological (oldest first) ---
 	for i, j := 0, len(candidates)-1; i < j; i, j = i+1, j-1 {
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	}
@@ -513,11 +573,13 @@ func parseGitReflogOutput(output string, since, until time.Time, margin time.Dur
 	return candidates
 }
 
+// confirmCommits matches candidate git commits against successful transcript commit commands
+// by hash prefix, commit subject, or unclaimed command correlation.
 func (l *CommitLinker) confirmCommits(candidates []CandidateCommit, transcriptCommits []TranscriptCommit) []CandidateCommit {
 	var confirmed []CandidateCommit
 	claimedCmds := make(map[int]bool)
 
-	// Filter successful transcript commits
+	// --- Step 1: Filter transcript commits to successful executions ---
 	var successfulCmds []TranscriptCommit
 	for _, tc := range transcriptCommits {
 		if tc.ExitCode != nil && *tc.ExitCode != 0 {
@@ -534,10 +596,11 @@ func (l *CommitLinker) confirmCommits(candidates []CandidateCommit, transcriptCo
 		return nil
 	}
 
+	// --- Step 2: Match each candidate by explicit hash, subject text, or unclaimed command ---
 	for _, cand := range candidates {
 		isConfirmed := false
 
-		// 1. Direct hash match in excerpt / text / explicit commit
+		// 1. Direct hash match in excerpt, text, or explicit step commit field.
 		for i, tc := range successfulCmds {
 			for _, h := range tc.Hashes {
 				if strings.EqualFold(h, cand.Hash) ||
@@ -553,7 +616,7 @@ func (l *CommitLinker) confirmCommits(candidates []CandidateCommit, transcriptCo
 			}
 		}
 
-		// 2. Commit message / subject match
+		// 2. Commit message / subject match.
 		if !isConfirmed && cand.Subject != "" {
 			candSubLower := strings.ToLower(cand.Subject)
 			for i, tc := range successfulCmds {
@@ -578,7 +641,7 @@ func (l *CommitLinker) confirmCommits(candidates []CandidateCommit, transcriptCo
 			}
 		}
 
-		// 3. Correlation with unclaimed successful commit command
+		// 3. Correlation with an unclaimed successful commit command.
 		if !isConfirmed {
 			for i, tc := range successfulCmds {
 				if !claimedCmds[i] {
@@ -598,6 +661,7 @@ func (l *CommitLinker) confirmCommits(candidates []CandidateCommit, transcriptCo
 	return confirmed
 }
 
+// isNoCommitsError reports whether err indicates an empty repository with no commits on HEAD.
 func isNoCommitsError(err error) bool {
 	if err == nil {
 		return false
@@ -608,6 +672,7 @@ func isNoCommitsError(err error) bool {
 		strings.Contains(s, "unknown revision or path")
 }
 
+// isNotGitRepoError reports whether err indicates that the target directory is not a git repository.
 func isNotGitRepoError(err error) bool {
 	if err == nil {
 		return false

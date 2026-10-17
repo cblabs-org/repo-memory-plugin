@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/evidence/artifacts.go
+ * Description: Copies conversation Markdown artifacts and metadata JSON files
+ *              from harness brain directories into the repository's evidence
+ *              artifact store with size bounds and atomic file writes.
+ *
+ * Exported Types / Functions:
+ * - MaxArtifactSize: Maximum byte size (1 MB) for an individual artifact copy.
+ * - ArtifactDir():   Returns the canonical destination directory for a conversation's artifacts.
+ * - CopyArtifacts(): Recursively copies eligible artifact files from srcDir to dstDir.
+ */
+
 package evidence
 
 import (
@@ -13,7 +31,7 @@ import (
 )
 
 // MaxArtifactSize is the maximum size (1 MB) for artifacts to be copied.
-const MaxArtifactSize = 1024 * 1024 // 1 MB
+const MaxArtifactSize = 1024 * 1024 // 1 MB upper bound per artifact file.
 
 // ArtifactDir returns the destination directory path for conversation artifacts:
 // <data-dir>/<repo-id>/evidence/artifacts/<conversation-id>/
@@ -24,11 +42,11 @@ func ArtifactDir(dataDir, repoID, conversationID string) string {
 	return filepath.Join(dataDir, repoID, "evidence", "artifacts", conversationID)
 }
 
-// CopyArtifacts copies .md files and .metadata.json from srcDir to dstDir,
-// skipping .system_generated/ and files > 1 MB.
-// Returns the count of files copied.
-// Idempotent: if destination file exists with the same size, it is skipped.
+// CopyArtifacts copies .md, .md.resolved, and .metadata.json files from srcDir to dstDir,
+// skipping .system_generated/ and files larger than MaxArtifactSize.
+// It returns the count of files copied and is idempotent when size and modtime match.
 func CopyArtifacts(srcDir, dstDir string) (int, error) {
+	// --- Step 1: Validate source and destination directory paths ---
 	if srcDir == "" {
 		return 0, errors.New("srcDir cannot be empty")
 	}
@@ -48,6 +66,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 		return 0, fmt.Errorf("creating destination directory %s: %w", dstDir, err)
 	}
 
+	// --- Step 2: Walk source tree, filter eligible artifacts, and copy changed files ---
 	copiedCount := 0
 	err = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -86,6 +105,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 
 		targetPath := filepath.Join(dstDir, rel)
 
+		// Skip copy if target already exists with identical size and modification time.
 		if dstInfo, err := os.Stat(targetPath); err == nil {
 			if dstInfo.Size() == info.Size() && dstInfo.ModTime().Equal(info.ModTime()) {
 				return nil
@@ -95,7 +115,7 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 		if err := copyFile(path, targetPath); err != nil {
 			return fmt.Errorf("copying artifact %s to %s: %w", path, targetPath, err)
 		}
-		os.Chtimes(targetPath, info.ModTime(), info.ModTime())
+		_ = os.Chtimes(targetPath, info.ModTime(), info.ModTime())
 
 		copiedCount++
 		return nil
@@ -108,7 +128,9 @@ func CopyArtifacts(srcDir, dstDir string) (int, error) {
 	return copiedCount, nil
 }
 
+// copyFile atomically copies src to dst via a temporary file in dst's parent directory.
 func copyFile(src, dst string) error {
+	// --- Step 1: Open source file and ensure destination parent directory exists ---
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -120,6 +142,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
+	// --- Step 2: Stream contents into a sibling temporary file and flush to disk ---
 	tmpFile, err := os.CreateTemp(dir, ".artifact_tmp_*")
 	if err != nil {
 		return err
@@ -143,6 +166,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
+	// --- Step 3: Commit temporary file to destination path ---
 	if runtime.GOOS == "windows" {
 		_ = os.Remove(dst)
 	}

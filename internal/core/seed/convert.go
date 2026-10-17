@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -36,6 +36,7 @@ func generateDeterministicID(relPath string, section string, bulletText string) 
 // IsJunkText returns true for placeholder entries that PA agents produce
 // when they haven't filled in a section. These waste injection budget.
 func IsJunkText(text string) bool {
+	// --- Step 1: Normalize and check exact placeholder matches ---
 	t := strings.TrimSpace(text)
 	if t == "" {
 		return true
@@ -46,6 +47,8 @@ func IsJunkText(text string) bool {
 		"n/a", "(n/a)", "pending", "tbd", "(tbd)", "todo", "(todo)", "-":
 		return true
 	}
+
+	// --- Step 2: Check punctuation-stripped tokens and common placeholder prefixes ---
 	stripped := strings.Trim(lower, "(). \t-")
 	switch stripped {
 	case "", "none", "n/a", "pending", "tbd", "todo":
@@ -58,6 +61,7 @@ func IsJunkText(text string) bool {
 	return false
 }
 
+// isJunkText wraps IsJunkText for internal callers in package seed.
 func isJunkText(text string) bool {
 	return IsJunkText(text)
 }

@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_ops_gc.go
+ * Description: CLI subcommands (`repo-memory ops` and `repo-memory ops gc`) for
+ *              pruning junk or stale operation log entries, sanitizing anchors,
+ *              repairing scopes, and optionally re-rendering dossiers.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -13,23 +29,26 @@ import (
 )
 
 var (
-	opsGCRepoDir     string
-	opsGCOpsDir      string
-	opsGCDossiersDir string
-	opsGCConfigPath  string
-	opsGCPruneIDs    []string
-	opsGCDryRun      bool
+	opsGCRepoDir     string   // Target repository root directory (--repo).
+	opsGCOpsDir      string   // Path to the .memory/ops directory (--ops-dir).
+	opsGCDossiersDir string   // Optional directory in which to re-render dossiers and ATLAS.md (--dossiers-dir).
+	opsGCConfigPath  string   // Path to .memory/config.yaml (--config).
+	opsGCPruneIDs    []string // Additional entry IDs to prune explicitly (--prune-id).
+	opsGCDryRun      bool     // Whether to report GC changes without modifying files (--dry-run).
 )
 
+// opsCmd defines the parent `repo-memory ops` command group.
 var opsCmd = &cobra.Command{
 	Use:   "ops",
 	Short: "Manage repository memory operation logs",
 }
 
+// opsGCCmd defines the `repo-memory ops gc` subcommand.
 var opsGCCmd = &cobra.Command{
 	Use:   "gc",
 	Short: "Prune junk/stale ops, sanitize anchors, repair scopes, and optionally re-render dossiers",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve repository root and relative path helper ---
 		repoRoot, _ := gitops.FindRepoRoot(opsGCRepoDir)
 		resolvePath := func(p string, flagChanged bool) string {
 			if p == "" || filepath.IsAbs(p) {
@@ -62,6 +81,7 @@ var opsGCCmd = &cobra.Command{
 			return p
 		}
 
+		// --- Step 2: Build GC options and execute operation log garbage collection ---
 		opts := seed.GCOptions{
 			OpsDir:      resolvePath(opsGCOpsDir, cmd.Flags().Changed("ops-dir")),
 			DossiersDir: resolvePath(opsGCDossiersDir, cmd.Flags().Changed("dossiers-dir")),
@@ -75,6 +95,7 @@ var opsGCCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 3: Format and print GC statistics ---
 		prefix := ""
 		if opts.DryRun {
 			prefix = "[DRY RUN] "

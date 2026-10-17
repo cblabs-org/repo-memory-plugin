@@ -1,3 +1,25 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/spool/copy.go
+ * Description: Implements incremental, prefix-verified transcript copying into
+ *              the spool queue directory with persistent cursor state.
+ *
+ * Exported Types / Functions:
+ * - CopyState:                   Progress and MD5 prefix cursor persisted in state/.
+ * - CopyResult:                  Summary metrics of an incremental or full transcript copy.
+ * - LoadCopyState():             Reads a persisted CopyState cursor from disk.
+ * - SaveCopyState():             Atomically persists a CopyState cursor to disk.
+ * - ResolvePrimaryTranscript():  Resolves ordered source files for a transcript path or directory.
+ * - CopyFileIncremental():       Incrementally copies a single source file into dstPath.
+ * - CopyTranscriptIncremental(): Resolves and incrementally copies a conversation transcript into queueDir.
+ * - CopyFilesIncremental():      Incrementally copies one or more ordered source files with prefix MD5 verification.
+ */
+
 package spool
 
 import (
@@ -16,26 +38,26 @@ import (
 
 // CopyState stores the progress and integrity cursor for a transcript copy in state/.
 type CopyState struct {
-	ConversationID string    `json:"conversation_id"`
-	SourcePath     string    `json:"source_path"`
-	ByteOffset     int64     `json:"byte_offset"`
-	PrefixHash     string    `json:"prefix_hash"` // MD5 hex string of bytes [0:ByteOffset]
-	CopiedAt       time.Time `json:"copied_at"`
+	ConversationID string    `json:"conversation_id"` // Identifier of the conversation being copied.
+	SourcePath     string    `json:"source_path"`     // Comma-joined list of resolved source file paths.
+	ByteOffset     int64     `json:"byte_offset"`     // Number of bytes copied so far.
+	PrefixHash     string    `json:"prefix_hash"`     // MD5 hex digest of bytes [0:ByteOffset].
+	CopiedAt       time.Time `json:"copied_at"`       // UTC timestamp when the cursor was last updated.
 }
 
 // CopyResult holds the outcome of an incremental or full transcript copy.
 type CopyResult struct {
-	ConversationID string `json:"conversation_id"`
-	SourcePath     string `json:"source_path"`
-	DestPath       string `json:"dest_path"`
-	BytesCopied    int64  `json:"bytes_copied"`
-	TotalBytes     int64  `json:"total_bytes"`
-	FullCopy       bool   `json:"full_copy"`
-	PrefixHash     string `json:"prefix_hash"`
+	ConversationID string `json:"conversation_id"` // Identifier of the copied conversation.
+	SourcePath     string `json:"source_path"`     // Comma-joined list of source file paths read.
+	DestPath       string `json:"dest_path"`       // Destination file path in the queue directory.
+	BytesCopied    int64  `json:"bytes_copied"`    // Number of bytes written during this copy pass.
+	TotalBytes     int64  `json:"total_bytes"`     // Total byte size of the destination file after copy.
+	FullCopy       bool   `json:"full_copy"`       // True if a full copy was performed instead of an incremental append.
+	PrefixHash     string `json:"prefix_hash"`     // Updated MD5 hex digest of the full destination file.
 }
 
 // LoadCopyState reads the copy state cursor from disk.
-// Returns nil, nil if the state file does not exist.
+// It returns nil, nil if the state file does not exist.
 func LoadCopyState(stateFilePath string) (*CopyState, error) {
 	data, err := os.ReadFile(stateFilePath)
 	if err != nil {
@@ -55,6 +77,7 @@ func LoadCopyState(stateFilePath string) (*CopyState, error) {
 
 // SaveCopyState atomically writes the copy state cursor to disk.
 func SaveCopyState(stateFilePath string, state *CopyState) error {
+	// --- Step 1: Ensure state directory exists and marshal state JSON ---
 	dir := filepath.Dir(stateFilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
@@ -65,6 +88,7 @@ func SaveCopyState(stateFilePath string, state *CopyState) error {
 		return fmt.Errorf("marshaling copy state: %w", err)
 	}
 
+	// --- Step 2: Write and flush state payload to a sibling temporary file ---
 	tmpFile, err := os.CreateTemp(dir, ".state_tmp_*")
 	if err != nil {
 		return fmt.Errorf("creating temp state file: %w", err)
@@ -86,6 +110,7 @@ func SaveCopyState(stateFilePath string, state *CopyState) error {
 		return fmt.Errorf("closing state file: %w", err)
 	}
 
+	// --- Step 3: Atomically rename temporary state file into place ---
 	if err := atomicRename(tmpPath, stateFilePath); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp state file to %s: %w", stateFilePath, err)
@@ -96,15 +121,15 @@ func SaveCopyState(stateFilePath string, state *CopyState) error {
 
 // ResolvePrimaryTranscript inspects a transcript file or conversation directory and returns
 // the slice of files representing the primary transcript source.
-// Prioritizes transcript_full.jsonl, then chunks, then transcript.jsonl.
+// It prioritizes transcript_full.jsonl, then chunks, then transcript.jsonl.
 func ResolvePrimaryTranscript(srcDirOrFile string) ([]string, error) {
+	// --- Step 1: Stat input path and upgrade compact file path to full transcript if sibling exists ---
 	fi, err := os.Stat(srcDirOrFile)
 	if err != nil {
 		return nil, fmt.Errorf("stat transcript path %s: %w", srcDirOrFile, err)
 	}
 
 	if !fi.IsDir() {
-		// If a compact transcript.jsonl was passed, check if transcript_full.jsonl exists in the same dir
 		dir := filepath.Dir(srcDirOrFile)
 		base := filepath.Base(srcDirOrFile)
 		if base == "transcript.jsonl" {
@@ -116,19 +141,19 @@ func ResolvePrimaryTranscript(srcDirOrFile string) ([]string, error) {
 		return []string{srcDirOrFile}, nil
 	}
 
-	// If directory has .system_generated/logs subpath (standard Antigravity brain layout)
+	// --- Step 2: Descend into .system_generated/logs if present ---
 	sysLogs := filepath.Join(srcDirOrFile, ".system_generated", "logs")
 	if sysStat, err := os.Stat(sysLogs); err == nil && sysStat.IsDir() {
 		return ResolvePrimaryTranscript(sysLogs)
 	}
 
-	// 1. Monolithic transcript_full.jsonl
+	// --- Step 3: Check for monolithic transcript_full.jsonl ---
 	fullPath := filepath.Join(srcDirOrFile, "transcript_full.jsonl")
 	if _, err := os.Stat(fullPath); err == nil {
 		return []string{fullPath}, nil
 	}
 
-	// 2. Chunks under chunks/transcript_full/
+	// --- Step 4: Check for ordered chunk files under chunks/transcript_full/ ---
 	chunksDir := filepath.Join(srcDirOrFile, "chunks", "transcript_full")
 	if entries, err := os.ReadDir(chunksDir); err == nil {
 		var chunks []string
@@ -143,7 +168,7 @@ func ResolvePrimaryTranscript(srcDirOrFile string) ([]string, error) {
 		}
 	}
 
-	// 3. Compact transcript.jsonl fallback
+	// --- Step 5: Fall back to compact transcript.jsonl ---
 	compactPath := filepath.Join(srcDirOrFile, "transcript.jsonl")
 	if _, err := os.Stat(compactPath); err == nil {
 		return []string{compactPath}, nil
@@ -179,6 +204,7 @@ func CopyTranscriptIncremental(conversationID, srcDirOrFile, queueDir, stateDir 
 //   - If the prefix hash matches, only newly appended bytes are appended to dstPath.
 //   - If the prefix hash mismatches, or the destination file is missing/corrupt, a full re-copy is performed.
 func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversationID string) (*CopyResult, error) {
+	// --- Step 1: Compute total source size and load existing copy cursor ---
 	if len(srcFiles) == 0 {
 		return nil, errors.New("no source files provided")
 	}
@@ -199,6 +225,7 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 
 	dstFi, dstErr := os.Stat(dstPath)
 
+	// --- Step 2: Determine whether a full copy is required or prefix hash can be verified ---
 	needsFullCopy := false
 	if existingState == nil {
 		needsFullCopy = true
@@ -212,7 +239,6 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 
 	sourceIdentifier := strings.Join(srcFiles, ",")
 
-	// If candidate for incremental copy, verify prefix MD5 hash
 	var closers []io.ReadCloser
 	var reader io.Reader
 	hasher := md5.New()
@@ -238,6 +264,7 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 		}
 	}
 
+	// --- Step 3: Execute full copy if cursor is absent, truncated, or prefix-mismatched ---
 	if needsFullCopy {
 		closers, reader, err = openReaders(srcFiles)
 		if err != nil {
@@ -294,7 +321,7 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 		}, nil
 	}
 
-	// Prefix matched! Perform incremental copy
+	// --- Step 4: Append only newly written suffix bytes and update cursor ---
 	defer closeAll(closers)
 
 	bytesToCopy := totalSize - existingState.ByteOffset
@@ -316,7 +343,7 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 	}
 
 	// hasher already holds prefix bytes [0:existingState.ByteOffset].
-	// tee will feed [existingState.ByteOffset:totalSize] into the same hasher,
+	// tee feeds [existingState.ByteOffset:totalSize] into the same hasher,
 	// resulting in hasher.Sum(nil) being the MD5 of the entire file.
 	tee := io.TeeReader(reader, hasher)
 	copied, err := io.CopyN(dstFile, tee, bytesToCopy)
@@ -359,9 +386,13 @@ func CopyFilesIncremental(srcFiles []string, dstPath, stateFilePath, conversatio
 	}, nil
 }
 
+// openReaders opens all files in order and returns their closers and a combined io.MultiReader.
 func openReaders(files []string) ([]io.ReadCloser, io.Reader, error) {
+	// --- Step 1: Allocate closer and reader slices ---
 	closers := make([]io.ReadCloser, len(files))
 	readers := make([]io.Reader, len(files))
+
+	// --- Step 2: Open each file sequentially, cleaning up prior handles on error ---
 	for i, file := range files {
 		f, err := os.Open(file)
 		if err != nil {
@@ -376,6 +407,7 @@ func openReaders(files []string) ([]io.ReadCloser, io.Reader, error) {
 	return closers, io.MultiReader(readers...), nil
 }
 
+// closeAll closes all non-nil io.ReadCloser handles in closers.
 func closeAll(closers []io.ReadCloser) {
 	for _, c := range closers {
 		if c != nil {

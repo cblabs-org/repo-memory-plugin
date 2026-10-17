@@ -1,3 +1,40 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/scopes.go
+ * Description: Scope configuration loading, anchor-to-module scope derivation,
+ *              split-operation alias resolution, and multi-signal scope matching.
+ *
+ * Exported Types / Functions:
+ * - DeclaredScope:          Hand-declared scope (topic, external system, or procedure area).
+ *
+ *   yaml.Unmarshaler:
+ *   - UnmarshalYAML():      Decodes DeclaredScope supporting both tool_names and toolNames keys.
+ *
+ * - ScopeConfig:            Collection of declared topics, external systems, and procedures.
+ * - LoadScopeConfig():      Reads declared scopes from the `scopes:` section of config.yaml.
+ * - ModuleScope:            Derived module scope rolled up from file path anchors and symbols.
+ * - DeriveModuleScopes():   Rolls up file path and symbol anchors into sorted ModuleScope entries.
+ * - AliasMap:               Maps split or renamed scope names to their current target scopes.
+ *   - NewAliasMap():        Creates an empty AliasMap.
+ *   - Add():                Registers an old scope mapping to one or more replacement scopes.
+ *   - SetAlias():           Sets a direct single oldScope -> newScope alias.
+ *   - HasAlias():           Reports whether the given scope has a registered alias.
+ *   - Targets():            Returns all replacement dossier scopes for an old scope.
+ *   - Resolve():            Follows the alias chain with cycle and depth protection.
+ *   - AllAliases():         Returns all old and new scope names known to the alias map, sorted.
+ * - BuildAliasMap():        Replays OpSplit operations from an ops.Reader to construct an AliasMap.
+ * - ScopeResolver:          Resolves anchors and keywords across aliases, modules, and declared scopes.
+ *   - NewScopeResolver():   Creates a ScopeResolver from declared scopes, derived modules, and aliases.
+ *   - ResolveScope():       Resolves anchors and keywords to the highest-scoring scope name.
+ *   - AllScopes():          Returns all known scope names deduplicated and sorted.
+ *   - ScopeKind():          Returns the DossierKind for a scope name after alias resolution.
+ */
+
 package config
 
 import (
@@ -15,29 +52,32 @@ import (
 
 // DeclaredScope represents a hand-declared scope (topic, external system, or procedure area).
 type DeclaredScope struct {
-	Name        string               `json:"name" yaml:"name"`
-	Kind        dossiers.DossierKind `json:"kind,omitempty" yaml:"kind,omitempty"`
-	Keywords    []string             `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	ToolNames   []string             `json:"tool_names,omitempty" yaml:"tool_names,omitempty"`
-	Commands    []string             `json:"commands,omitempty" yaml:"commands,omitempty"`
-	Description string               `json:"description,omitempty" yaml:"description,omitempty"`
+	Name        string               `json:"name" yaml:"name"`                                   // Unique scope slug rendered into .memory/dossiers/<name>.md.
+	Kind        dossiers.DossierKind `json:"kind,omitempty" yaml:"kind,omitempty"`               // Dossier kind (topic, external, or procedure).
+	Keywords    []string             `json:"keywords,omitempty" yaml:"keywords,omitempty"`       // Keywords associated with this scope for matching.
+	ToolNames   []string             `json:"tool_names,omitempty" yaml:"tool_names,omitempty"`   // MCP or harness tool names associated with this scope.
+	Commands    []string             `json:"commands,omitempty" yaml:"commands,omitempty"`       // CLI commands associated with this scope.
+	Description string               `json:"description,omitempty" yaml:"description,omitempty"` // Human-readable summary of the scope.
 }
 
 // UnmarshalYAML supports both tool_names and toolNames in YAML.
 func (d *DeclaredScope) UnmarshalYAML(value *yaml.Node) error {
+	// --- Step 1: Decode YAML node into an auxiliary struct accepting both snake_case and camelCase ---
 	type rawDeclaredScope struct {
-		Name         string               `yaml:"name"`
-		Kind         dossiers.DossierKind `yaml:"kind"`
-		Keywords     []string             `yaml:"keywords"`
-		ToolNames    []string             `yaml:"tool_names"`
-		ToolNamesAlt []string             `yaml:"toolNames"`
-		Commands     []string             `yaml:"commands"`
-		Description  string               `yaml:"description"`
+		Name         string               `yaml:"name"`        // Scope name.
+		Kind         dossiers.DossierKind `yaml:"kind"`        // Explicit dossier kind.
+		Keywords     []string             `yaml:"keywords"`    // Associated keywords.
+		ToolNames    []string             `yaml:"tool_names"`  // Snake-case tool names list.
+		ToolNamesAlt []string             `yaml:"toolNames"`   // Camel-case toolNames fallback list.
+		Commands     []string             `yaml:"commands"`    // Associated CLI commands.
+		Description  string               `yaml:"description"` // Scope description.
 	}
 	var raw rawDeclaredScope
 	if err := value.Decode(&raw); err != nil {
 		return err
 	}
+
+	// --- Step 2: Populate DeclaredScope fields and reconcile toolNames fallback ---
 	d.Name = raw.Name
 	d.Kind = raw.Kind
 	d.Keywords = raw.Keywords
@@ -52,14 +92,15 @@ func (d *DeclaredScope) UnmarshalYAML(value *yaml.Node) error {
 
 // ScopeConfig holds declared architectural topics, external systems, and procedure areas.
 type ScopeConfig struct {
-	Topics     []DeclaredScope `json:"topics,omitempty" yaml:"topics,omitempty"`
-	Externals  []DeclaredScope `json:"externals,omitempty" yaml:"externals,omitempty"`
-	Procedures []DeclaredScope `json:"procedures,omitempty" yaml:"procedures,omitempty"`
+	Topics     []DeclaredScope `json:"topics,omitempty" yaml:"topics,omitempty"`         // Declared cross-cutting architectural topics.
+	Externals  []DeclaredScope `json:"externals,omitempty" yaml:"externals,omitempty"`   // Declared external systems and dependencies.
+	Procedures []DeclaredScope `json:"procedures,omitempty" yaml:"procedures,omitempty"` // Declared operational procedures and workflows.
 }
 
 // LoadScopeConfig reads declared scopes from config.yaml under the `scopes:` key.
 // If configPath does not exist, or the `scopes:` key is missing, it returns an empty config without error.
 func LoadScopeConfig(configPath string) (*ScopeConfig, error) {
+	// --- Step 1: Read config file bytes or return empty ScopeConfig when absent ---
 	if configPath == "" {
 		return &ScopeConfig{}, nil
 	}
@@ -76,8 +117,9 @@ func LoadScopeConfig(configPath string) (*ScopeConfig, error) {
 		return &ScopeConfig{}, nil
 	}
 
+	// --- Step 2: Unmarshal the top-level `scopes:` section ---
 	var root struct {
-		Scopes *ScopeConfig `yaml:"scopes"`
+		Scopes *ScopeConfig `yaml:"scopes"` // Nested scopes configuration block.
 	}
 	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("parsing scope config %s: %w", configPath, err)
@@ -87,6 +129,7 @@ func LoadScopeConfig(configPath string) (*ScopeConfig, error) {
 		return &ScopeConfig{}, nil
 	}
 
+	// --- Step 3: Default missing Kind fields based on section membership ---
 	cfg := root.Scopes
 	for i := range cfg.Topics {
 		if cfg.Topics[i].Kind == "" {
@@ -109,18 +152,22 @@ func LoadScopeConfig(configPath string) (*ScopeConfig, error) {
 
 // ModuleScope represents a derived module scope rolled up from file path anchors and symbols.
 type ModuleScope struct {
-	Name      string               `json:"name" yaml:"name"`
-	Kind      dossiers.DossierKind `json:"kind,omitempty" yaml:"kind,omitempty"`
-	PathGlobs []string             `json:"path_globs,omitempty" yaml:"path_globs,omitempty"`
-	Symbols   []string             `json:"symbols,omitempty" yaml:"symbols,omitempty"`
+	Name      string               `json:"name" yaml:"name"`                             // Derived module scope name (e.g. "core/config").
+	Kind      dossiers.DossierKind `json:"kind,omitempty" yaml:"kind,omitempty"`         // Dossier kind (always DossierKindModule).
+	PathGlobs []string             `json:"path_globs,omitempty" yaml:"path_globs,omitempty"` // Sorted file path globs anchored to this module.
+	Symbols   []string             `json:"symbols,omitempty" yaml:"symbols,omitempty"`   // Sorted code symbols anchored to this module.
 }
 
+// parsedAnchor holds a decomposed file path and/or symbol name extracted from a raw anchor string.
 type parsedAnchor struct {
-	filePath string
-	symbol   string
+	filePath string // Extracted repository-relative file path, if any.
+	symbol   string // Extracted code symbol name, if any.
 }
 
+// parseAnchor decomposes a raw anchor string (such as "file:path.go", "symbol:Foo",
+// "path.go#Foo", or "path.go:Foo") into its file path and symbol components.
 func parseAnchor(raw string) parsedAnchor {
+	// --- Step 1: Trim whitespace and check explicit file: or symbol: prefixes ---
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return parsedAnchor{}
@@ -134,6 +181,7 @@ func parseAnchor(raw string) parsedAnchor {
 		return parsedAnchor{symbol: strings.TrimPrefix(trimmed, "symbol:")}
 	}
 
+	// --- Step 2: Split compound path#symbol or path:symbol anchors ---
 	// Check if path#symbol
 	if strings.Contains(trimmed, "#") {
 		parts := strings.SplitN(trimmed, "#", 2)
@@ -158,7 +206,9 @@ func parseAnchor(raw string) parsedAnchor {
 	return parsedAnchor{filePath: trimmed}
 }
 
+// getAnchorDir extracts the normalized directory path from a file path or glob pattern.
 func getAnchorDir(filePath string) string {
+	// --- Step 1: Normalize path separators and strip leading prefixes or trailing wildcards ---
 	clean := filepath.ToSlash(filepath.Clean(filePath))
 	clean = strings.TrimPrefix(clean, "./")
 	clean = strings.TrimPrefix(clean, "/")
@@ -167,7 +217,7 @@ func getAnchorDir(filePath string) string {
 	clean = strings.TrimSuffix(clean, "/**")
 	clean = strings.TrimSuffix(clean, "/*")
 
-	// If it has a file extension or is a file name
+	// --- Step 2: Strip filename when an extension is present ---
 	if filepath.Ext(clean) != "" {
 		dir := filepath.ToSlash(filepath.Dir(clean))
 		if dir == "." || dir == "/" {
@@ -182,7 +232,10 @@ func getAnchorDir(filePath string) string {
 	return clean
 }
 
+// getParentMeaningfulDir rolls a sparse directory up to its parent directory without
+// collapsing past top-level packages under internal/, cmd/, or the repository root.
 func getParentMeaningfulDir(dir string) string {
+	// --- Step 1: Compute immediate parent directory ---
 	if dir == "" || dir == "." || dir == "/" {
 		return ""
 	}
@@ -191,7 +244,7 @@ func getParentMeaningfulDir(dir string) string {
 		parent = ""
 	}
 
-	// Do not roll up past top-level directory under internal/ or cmd/ or repo root
+	// --- Step 2: Enforce boundary stops at internal/, cmd/, and repo root ---
 	if strings.HasPrefix(dir, "internal/") {
 		if parent == "internal" || parent == "" {
 			return dir
@@ -212,7 +265,9 @@ func getParentMeaningfulDir(dir string) string {
 	return parent
 }
 
+// deriveScopeName converts a repository directory path into a canonical hyphenated scope name.
 func deriveScopeName(dir string) string {
+	// --- Step 1: Strip leading internal/ prefix and normalize root ---
 	clean := filepath.ToSlash(filepath.Clean(dir))
 	clean = strings.TrimPrefix(clean, "./")
 	clean = strings.TrimPrefix(clean, "/")
@@ -230,6 +285,7 @@ func deriveScopeName(dir string) string {
 		rel = "root"
 	}
 
+	// --- Step 2: Replace underscores with hyphens in each path segment ---
 	parts := strings.Split(rel, "/")
 	for i, p := range parts {
 		parts[i] = strings.ReplaceAll(p, "_", "-")
@@ -244,6 +300,7 @@ func deriveScopeName(dir string) string {
 // - Convert path separators to / and prefix with the top-level dir (e.g. core/transcript-parser)
 // Returns deduplicated, sorted module scopes.
 func DeriveModuleScopes(anchors []string) []ModuleScope {
+	// --- Step 1: Parse anchors and count distinct files per directory ---
 	if len(anchors) == 0 {
 		return nil
 	}
@@ -271,10 +328,11 @@ func DeriveModuleScopes(anchors []string) []ModuleScope {
 		return nil
 	}
 
+	// --- Step 2: Roll up sparse directories (<= 2 files) and accumulate globs and symbols per scope ---
 	type modAccum struct {
-		name       string
-		pathGlobs  map[string]bool
-		symbols    map[string]bool
+		name      string          // Canonical module scope name.
+		pathGlobs map[string]bool // Set of normalized file paths/globs.
+		symbols   map[string]bool // Set of anchored symbol names.
 	}
 	accumMap := make(map[string]*modAccum)
 
@@ -312,6 +370,7 @@ func DeriveModuleScopes(anchors []string) []ModuleScope {
 		}
 	}
 
+	// --- Step 3: Build and sort the resulting ModuleScope slice ---
 	result := make([]ModuleScope, 0, len(accumMap))
 	for _, acc := range accumMap {
 		globs := make([]string, 0, len(acc.pathGlobs))
@@ -343,8 +402,8 @@ func DeriveModuleScopes(anchors []string) []ModuleScope {
 
 // AliasMap maps old scope names to new ones (from split ops).
 type AliasMap struct {
-	aliases map[string]string
-	targets map[string][]string
+	aliases map[string]string   // Primary 1:1 alias target (first replacement scope) keyed by old scope.
+	targets map[string][]string // Full list of replacement dossier scopes keyed by old scope.
 }
 
 // NewAliasMap creates an empty AliasMap.
@@ -357,6 +416,7 @@ func NewAliasMap() *AliasMap {
 
 // Add registers an old scope mapping to its replacement dossiers.
 func (a *AliasMap) Add(oldScope string, newDossiers []string) {
+	// --- Step 1: Guard against nil receiver and lazily initialize internal maps ---
 	if a == nil {
 		return
 	}
@@ -367,6 +427,7 @@ func (a *AliasMap) Add(oldScope string, newDossiers []string) {
 		a.targets = make(map[string][]string)
 	}
 
+	// --- Step 2: Validate inputs and record 1:N target list plus primary 1:1 alias ---
 	oldScope = strings.TrimSpace(oldScope)
 	if oldScope == "" || len(newDossiers) == 0 {
 		return
@@ -380,6 +441,7 @@ func (a *AliasMap) Add(oldScope string, newDossiers []string) {
 
 // SetAlias sets a direct single oldScope -> newScope alias.
 func (a *AliasMap) SetAlias(oldScope, newScope string) {
+	// --- Step 1: Guard against nil receiver and lazily initialize internal maps ---
 	if a == nil {
 		return
 	}
@@ -389,6 +451,8 @@ func (a *AliasMap) SetAlias(oldScope, newScope string) {
 	if a.targets == nil {
 		a.targets = make(map[string][]string)
 	}
+
+	// --- Step 2: Normalize non-empty scope names and bind 1:1 replacement ---
 	oldScope = strings.TrimSpace(oldScope)
 	newScope = strings.TrimSpace(newScope)
 	if oldScope == "" || newScope == "" {
@@ -418,6 +482,7 @@ func (a *AliasMap) Targets(scope string) []string {
 // Resolve follows the alias chain to the current scope name.
 // Prevents infinite loops (max depth 10 and cycle detection).
 func (a *AliasMap) Resolve(scope string) string {
+	// --- Step 1: Validate receiver and normalize starting scope ---
 	if a == nil || a.aliases == nil {
 		return scope
 	}
@@ -426,6 +491,7 @@ func (a *AliasMap) Resolve(scope string) string {
 		return ""
 	}
 
+	// --- Step 2: Traverse alias hops up to maxDepth while detecting cycles ---
 	maxDepth := 10
 	visited := make(map[string]bool)
 
@@ -445,6 +511,7 @@ func (a *AliasMap) Resolve(scope string) string {
 
 // AllAliases returns all old and new scope names known to the alias map, sorted.
 func (a *AliasMap) AllAliases() []string {
+	// --- Step 1: Collect unique scope names across keys and target slices ---
 	if a == nil {
 		return nil
 	}
@@ -462,6 +529,7 @@ func (a *AliasMap) AllAliases() []string {
 		}
 	}
 
+	// --- Step 2: Sort and return deduplicated scope names ---
 	res := make([]string, 0, len(seen))
 	for s := range seen {
 		res = append(res, s)
@@ -472,6 +540,7 @@ func (a *AliasMap) AllAliases() []string {
 
 // BuildAliasMap iterates all ops from the reader, collecting split ops to build the AliasMap.
 func BuildAliasMap(opsReader *ops.Reader, ctx context.Context) (*AliasMap, error) {
+	// --- Step 1: Initialize empty AliasMap and guard nil reader/context ---
 	aliasMap := NewAliasMap()
 	if opsReader == nil {
 		return aliasMap, nil
@@ -480,6 +549,7 @@ func BuildAliasMap(opsReader *ops.Reader, ctx context.Context) (*AliasMap, error
 		ctx = context.Background()
 	}
 
+	// --- Step 2: Stream operation batches and record all OpSplit mappings ---
 	for batch, err := range opsReader.Iterate(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("reading ops for alias map: %w", err)
@@ -518,9 +588,9 @@ func BuildAliasMap(opsReader *ops.Reader, ctx context.Context) (*AliasMap, error
 
 // ScopeResolver combines declared scopes, derived module scopes, and aliases.
 type ScopeResolver struct {
-	config  *ScopeConfig
-	modules []ModuleScope
-	aliases *AliasMap
+	config  *ScopeConfig  // Declared topics, external systems, and procedures.
+	modules []ModuleScope // Derived module scopes from file and symbol anchors.
+	aliases *AliasMap     // Split/rename alias table.
 }
 
 // NewScopeResolver creates a ScopeResolver.
@@ -548,7 +618,7 @@ func (r *ScopeResolver) ResolveScope(anchors []string, keywords []string) string
 		return ""
 	}
 
-	// 1. First check aliases
+	// --- Step 1: Check direct alias matches across anchors and keywords ---
 	if r.aliases != nil {
 		for _, a := range anchors {
 			trimmed := strings.TrimSpace(a)
@@ -564,7 +634,7 @@ func (r *ScopeResolver) ResolveScope(anchors []string, keywords []string) string
 		}
 	}
 
-	// 2. Then try to match anchors against module scopes (path prefix match)
+	// --- Step 2: Score and match anchors against derived module scopes ---
 	if len(anchors) > 0 && len(r.modules) > 0 {
 		var bestMod *ModuleScope
 		bestScore := 0
@@ -640,7 +710,7 @@ func (r *ScopeResolver) ResolveScope(anchors []string, keywords []string) string
 		}
 	}
 
-	// 3. Then try to match keywords against declared topics, externals, procedures
+	// --- Step 3: Score and match keywords against declared topics, externals, and procedures ---
 	if len(keywords) > 0 && r.config != nil {
 		allDeclared := make([]DeclaredScope, 0, len(r.config.Topics)+len(r.config.Externals)+len(r.config.Procedures))
 		allDeclared = append(allDeclared, r.config.Topics...)
@@ -719,6 +789,7 @@ func (r *ScopeResolver) ResolveScope(anchors []string, keywords []string) string
 
 // AllScopes returns all known scope names (declared + derived + from aliases), deduplicated and sorted.
 func (r *ScopeResolver) AllScopes() []string {
+	// --- Step 1: Collect unique scope names across declared scopes, derived modules, and aliases ---
 	if r == nil {
 		return nil
 	}
@@ -756,6 +827,7 @@ func (r *ScopeResolver) AllScopes() []string {
 		}
 	}
 
+	// --- Step 2: Sort and return deduplicated scope list ---
 	res := make([]string, 0, len(seen))
 	for s := range seen {
 		res = append(res, s)
@@ -766,12 +838,15 @@ func (r *ScopeResolver) AllScopes() []string {
 
 // ScopeKind returns the DossierKind for the given scope, taking aliases into account.
 func (r *ScopeResolver) ScopeKind(scope string) dossiers.DossierKind {
+	// --- Step 1: Resolve aliases for the input scope ---
 	if r == nil {
 		return ""
 	}
 	if r.aliases != nil {
 		scope = r.aliases.Resolve(scope)
 	}
+
+	// --- Step 2: Lookup matching kind in derived modules and declared scope lists ---
 	for _, m := range r.modules {
 		if m.Name == scope {
 			return dossiers.DossierKindModule

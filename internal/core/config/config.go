@@ -1,3 +1,49 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/config.go
+ * Description: Machine-level (<data-dir>/config.yaml) and repository-level
+ *              (<repoRoot>/.memory/config.yaml) configuration schemas, default
+ *              builders, atomic persistence helpers, and doc-seed glob expansion.
+ *
+ * Exported Types / Functions:
+ * - BudgetsConfig:              Operational and token budgets for memory operations.
+ * - JobSpendConfig:             Rate limits and item caps for a single background LLM job kind.
+ * - SpendConfig:                Quota floor and per-job rate-limiting configuration.
+ *   - DefaultSpendConfig():     Returns the default spend guard configuration.
+ *   - MergeSpendConfig():       Overlays non-zero spend overrides onto a base configuration.
+ * - GapsConfig:                 Coverage gap detection and push delivery thresholds.
+ *   - DefaultGapsConfig():      Returns the default coverage gap configuration.
+ * - MachineConfig:              Machine-wide configuration (<data-dir>/config.yaml).
+ *
+ *   Own Public API:
+ *   - DefaultMachineConfig():   Returns a MachineConfig populated with recommended defaults.
+ *
+ *   yaml.Unmarshaler:
+ *   - UnmarshalYAML():          Decodes flat, dotted, or nested YAML into MachineConfig.
+ *
+ *   json.Unmarshaler:
+ *   - UnmarshalJSON():          Decodes flat or nested JSON into MachineConfig.
+ *
+ * - SubsystemConfig:            Subsystem title, description, and path globs in .memory/config.yaml.
+ * - RepoConfig:                 Repository-level configuration (<repoRoot>/.memory/config.yaml).
+ *   - DefaultRepoConfig():      Returns a RepoConfig populated with default maps and thresholds.
+ *   - TurnNotesMode():          Returns the normalized turn_notes mode ("on", "fallback-only", or "off").
+ *   - IsEnabled():              Reports whether memory is enabled for the repository.
+ * - LoadMachineConfig():        Loads MachineConfig from <dataDir>/config.yaml or returns defaults.
+ * - LoadRepoConfig():           Loads RepoConfig from <repoRoot>/.memory/config.yaml or returns defaults.
+ * - SaveMachineConfig():        Atomically writes MachineConfig to <dataDir>/config.yaml.
+ * - SaveRepoConfig():           Atomically writes RepoConfig to <repoRoot>/.memory/config.yaml.
+ * - SetMachineEnabled():        Updates the enabled flag in <dataDir>/config.yaml while preserving other keys.
+ * - SetRepoEnabled():           Updates the enabled flag in <repoRoot>/.memory/config.yaml while preserving other keys.
+ * - DefaultDocSeedGlobs():      Returns the default repository doc seed globs when DocSeeds is unset.
+ * - ResolveDocSeedGlobs():      Expands doc seed globs across a repository while applying safety exclusions.
+ */
+
 package config
 
 import (
@@ -14,24 +60,24 @@ import (
 
 // BudgetsConfig defines operational and resource budgets for memory operations.
 type BudgetsConfig struct {
-	MaxDeliveryTokens int            `json:"max_delivery_tokens,omitempty" yaml:"max_delivery_tokens,omitempty"`
-	MaxHookLatencyMs  int            `json:"max_hook_latency_ms,omitempty" yaml:"max_hook_latency_ms,omitempty"`
-	DailyHousekeeping int            `json:"daily_housekeeping,omitempty" yaml:"daily_housekeeping,omitempty"`
-	DailyTokens       int            `json:"daily_tokens,omitempty" yaml:"daily_tokens,omitempty"`
-	DossierCapTokens  int            `json:"dossier_cap_tokens,omitempty" yaml:"dossier_cap_tokens,omitempty"`
-	Extra             map[string]any `json:"extra,omitempty" yaml:",inline"`
+	MaxDeliveryTokens int            `json:"max_delivery_tokens,omitempty" yaml:"max_delivery_tokens,omitempty"` // Maximum tokens injected per hook delivery.
+	MaxHookLatencyMs  int            `json:"max_hook_latency_ms,omitempty" yaml:"max_hook_latency_ms,omitempty"` // Target latency ceiling in milliseconds for hook execution.
+	DailyHousekeeping int            `json:"daily_housekeeping,omitempty" yaml:"daily_housekeeping,omitempty"`   // Maximum housekeeping runs permitted per UTC day.
+	DailyTokens       int            `json:"daily_tokens,omitempty" yaml:"daily_tokens,omitempty"`               // Maximum background LLM tokens permitted per UTC day.
+	DossierCapTokens  int            `json:"dossier_cap_tokens,omitempty" yaml:"dossier_cap_tokens,omitempty"`   // Soft token ceiling for an individual rendered dossier.
+	Extra             map[string]any `json:"extra,omitempty" yaml:",inline"`                                     // Unrecognized configuration keys preserved on round-trip.
 }
 
 // JobSpendConfig defines rate limits and per-run item caps for a single LLM job kind (Addendum A §6.2).
 type JobSpendConfig struct {
-	MinInterval string `json:"min_interval,omitempty" yaml:"min_interval,omitempty"`
-	MaxItems    int    `json:"max_items,omitempty" yaml:"max_items,omitempty"`
+	MinInterval string `json:"min_interval,omitempty" yaml:"min_interval,omitempty"` // Minimum duration string (e.g. "1h", "24h") between consecutive job runs.
+	MaxItems    int    `json:"max_items,omitempty" yaml:"max_items,omitempty"`       // Maximum items processed in a single job execution.
 }
 
 // SpendConfig defines rate-limiting and quota guards for background LLM jobs (Addendum A §6.2).
 type SpendConfig struct {
-	QuotaFloor float64                   `json:"quota_floor,omitempty" yaml:"quota_floor,omitempty"`
-	Jobs       map[string]JobSpendConfig `json:"jobs,omitempty" yaml:"jobs,omitempty"`
+	QuotaFloor float64                   `json:"quota_floor,omitempty" yaml:"quota_floor,omitempty"` // Minimum remaining quota fraction in [0.0, 1.0] required to run background jobs.
+	Jobs       map[string]JobSpendConfig `json:"jobs,omitempty" yaml:"jobs,omitempty"`               // Per-job-kind rate limits and item caps keyed by job name.
 }
 
 // DefaultSpendConfig returns the Addendum A §6.2 default spend guard configuration.
@@ -49,6 +95,7 @@ func DefaultSpendConfig() SpendConfig {
 
 // MergeSpendConfig overlays non-zero fields from override onto base, returning a new SpendConfig.
 func MergeSpendConfig(base, override SpendConfig) SpendConfig {
+	// --- Step 1: Clone the base spend configuration ---
 	out := SpendConfig{
 		QuotaFloor: base.QuotaFloor,
 		Jobs:       make(map[string]JobSpendConfig, len(base.Jobs)),
@@ -56,6 +103,8 @@ func MergeSpendConfig(base, override SpendConfig) SpendConfig {
 	for k, v := range base.Jobs {
 		out.Jobs[k] = v
 	}
+
+	// --- Step 2: Overlay non-zero quota floor and per-job overrides ---
 	if override.QuotaFloor > 0 {
 		out.QuotaFloor = override.QuotaFloor
 	}
@@ -74,8 +123,8 @@ func MergeSpendConfig(base, override SpendConfig) SpendConfig {
 
 // GapsConfig defines coverage gap detection and push delivery thresholds (SPEC.md §5.2 & §9.2).
 type GapsConfig struct {
-	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
-	Push      bool    `json:"push,omitempty" yaml:"push,omitempty"`
+	Threshold float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"` // Minimum gap score threshold in [0.0, 1.0] for flagging under-documented scopes.
+	Push      bool    `json:"push,omitempty" yaml:"push,omitempty"`           // Whether coverage gap notices may be surfaced in pushed hook context.
 }
 
 // DefaultGapsConfig returns the default repository coverage gap configuration.
@@ -88,12 +137,12 @@ func DefaultGapsConfig() GapsConfig {
 
 // MachineConfig represents the machine-level configuration (<data-dir>/config.yaml).
 type MachineConfig struct {
-	Enabled              bool          `json:"enabled" yaml:"enabled"`
-	HousekeepingExecutor string        `json:"housekeeping_executor,omitempty" yaml:"housekeeping_executor,omitempty"`
-	ReportsSurface       string        `json:"reports_surface,omitempty" yaml:"reports_surface,omitempty"`
-	TickTrigger          string        `json:"tick_trigger,omitempty" yaml:"tick_trigger,omitempty"`
-	Budgets              BudgetsConfig `json:"budgets,omitempty" yaml:"budgets,omitempty"`
-	Spend                SpendConfig   `json:"spend,omitempty" yaml:"spend,omitempty"`
+	Enabled              bool          `json:"enabled" yaml:"enabled"`                                             // Global kill-switch controlling whether repo-memory is active on this machine.
+	HousekeepingExecutor string        `json:"housekeeping_executor,omitempty" yaml:"housekeeping_executor,omitempty"` // Executor backend for background LLM jobs (e.g. "agy").
+	ReportsSurface       string        `json:"reports_surface,omitempty" yaml:"reports_surface,omitempty"`         // Surface used for operator reports (e.g. "agentapi").
+	TickTrigger          string        `json:"tick_trigger,omitempty" yaml:"tick_trigger,omitempty"`               // Mechanism that triggers background housekeeping ticks (e.g. "sidecar").
+	Budgets              BudgetsConfig `json:"budgets,omitempty" yaml:"budgets,omitempty"`                         // Machine-level operational and token budgets.
+	Spend                SpendConfig   `json:"spend,omitempty" yaml:"spend,omitempty"`                             // Machine-level quota floor and per-job spend limits.
 }
 
 // DefaultMachineConfig returns a MachineConfig with recommended defaults.
@@ -110,27 +159,28 @@ func DefaultMachineConfig() MachineConfig {
 
 // UnmarshalYAML supports flat, dotted, and nested forms of MachineConfig in YAML.
 func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
+	// --- Step 1: Decode into an auxiliary struct capturing flat, dotted, and nested keys ---
 	type rawMachineConfig struct {
-		Enabled              *bool         `yaml:"enabled"`
-		HousekeepingExecutor string        `yaml:"housekeeping_executor"`
-		ReportsSurface       string        `yaml:"reports_surface"`
-		TickTrigger          string        `yaml:"tick_trigger"`
-		Budgets              BudgetsConfig `yaml:"budgets"`
-		Spend                SpendConfig   `yaml:"spend"`
+		Enabled              *bool         `yaml:"enabled"`               // Optional explicit enabled state.
+		HousekeepingExecutor string        `yaml:"housekeeping_executor"` // Flat housekeeping executor key.
+		ReportsSurface       string        `yaml:"reports_surface"`       // Flat reports surface key.
+		TickTrigger          string        `yaml:"tick_trigger"`          // Flat tick trigger key.
+		Budgets              BudgetsConfig `yaml:"budgets"`               // Nested budgets section.
+		Spend                SpendConfig   `yaml:"spend"`                 // Nested spend section.
 
-		HousekeepingExecutorDot string `yaml:"housekeeping.executor"`
-		ReportsSurfaceDot       string `yaml:"reports.surface"`
-		TickTriggerDot          string `yaml:"tick.trigger"`
+		HousekeepingExecutorDot string `yaml:"housekeeping.executor"` // Dotted housekeeping executor key.
+		ReportsSurfaceDot       string `yaml:"reports.surface"`       // Dotted reports surface key.
+		TickTriggerDot          string `yaml:"tick.trigger"`          // Dotted tick trigger key.
 
 		Housekeeping struct {
-			Executor string `yaml:"executor"`
-		} `yaml:"housekeeping"`
+			Executor string `yaml:"executor"` // Nested housekeeping.executor value.
+		} `yaml:"housekeeping"` // Nested housekeeping block.
 		Reports struct {
-			Surface string `yaml:"surface"`
-		} `yaml:"reports"`
+			Surface string `yaml:"surface"` // Nested reports.surface value.
+		} `yaml:"reports"` // Nested reports block.
 		Tick struct {
-			Trigger string `yaml:"trigger"`
-		} `yaml:"tick"`
+			Trigger string `yaml:"trigger"` // Nested tick.trigger value.
+		} `yaml:"tick"` // Nested tick block.
 	}
 
 	var raw rawMachineConfig
@@ -138,6 +188,7 @@ func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
+	// --- Step 2: Reconcile flat, dotted, and nested string settings by precedence ---
 	if raw.Enabled != nil {
 		c.Enabled = *raw.Enabled
 	}
@@ -166,6 +217,7 @@ func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
 		c.TickTrigger = raw.Tick.Trigger
 	}
 
+	// --- Step 3: Apply budgets and merge spend configuration over defaults ---
 	c.Budgets = raw.Budgets
 	if c.Spend.QuotaFloor == 0 && len(c.Spend.Jobs) == 0 {
 		c.Spend = DefaultSpendConfig()
@@ -177,23 +229,24 @@ func (c *MachineConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // UnmarshalJSON supports flat and nested forms of MachineConfig in JSON.
 func (c *MachineConfig) UnmarshalJSON(b []byte) error {
+	// --- Step 1: Decode JSON payload into an auxiliary struct supporting flat and nested keys ---
 	type rawMachineJSON struct {
-		Enabled              *bool         `json:"enabled"`
-		HousekeepingExecutor string        `json:"housekeeping_executor"`
-		ReportsSurface       string        `json:"reports_surface"`
-		TickTrigger          string        `json:"tick_trigger"`
-		Budgets              BudgetsConfig `json:"budgets"`
-		Spend                SpendConfig   `json:"spend"`
+		Enabled              *bool         `json:"enabled"`               // Explicit JSON enabled toggle (nil when omitted).
+		HousekeepingExecutor string        `json:"housekeeping_executor"` // Top-level JSON housekeeping_executor override.
+		ReportsSurface       string        `json:"reports_surface"`       // Top-level JSON reports_surface override.
+		TickTrigger          string        `json:"tick_trigger"`          // Top-level JSON tick_trigger override.
+		Budgets              BudgetsConfig `json:"budgets"`               // JSON token and latency budgets object.
+		Spend                SpendConfig   `json:"spend"`                 // JSON background spend guard settings.
 
 		Housekeeping struct {
-			Executor string `json:"executor"`
-		} `json:"housekeeping"`
+			Executor string `json:"executor"` // Nested JSON housekeeping.executor string.
+		} `json:"housekeeping"` // Nested JSON housekeeping object.
 		Reports struct {
-			Surface string `json:"surface"`
-		} `json:"reports"`
+			Surface string `json:"surface"` // Nested JSON reports.surface string.
+		} `json:"reports"` // Nested JSON reports object.
 		Tick struct {
-			Trigger string `json:"trigger"`
-		} `json:"tick"`
+			Trigger string `json:"trigger"` // Nested JSON tick.trigger string.
+		} `json:"tick"` // Nested JSON tick object.
 	}
 
 	var raw rawMachineJSON
@@ -201,6 +254,7 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	// --- Step 2: Reconcile flat and nested fields ---
 	if raw.Enabled != nil {
 		c.Enabled = *raw.Enabled
 	}
@@ -223,6 +277,7 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 		c.TickTrigger = raw.Tick.Trigger
 	}
 
+	// --- Step 3: Apply budgets and merge spend configuration over defaults ---
 	c.Budgets = raw.Budgets
 	if c.Spend.QuotaFloor == 0 && len(c.Spend.Jobs) == 0 {
 		c.Spend = DefaultSpendConfig()
@@ -234,22 +289,22 @@ func (c *MachineConfig) UnmarshalJSON(b []byte) error {
 
 // SubsystemConfig describes a subsystem defined in .memory/config.yaml.
 type SubsystemConfig struct {
-	Title       string   `json:"title,omitempty" yaml:"title,omitempty"`
-	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
-	Globs       []string `json:"globs,omitempty" yaml:"globs,omitempty"`
+	Title       string   `json:"title,omitempty" yaml:"title,omitempty"`             // Human-readable subsystem title.
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"` // Summary of the subsystem's responsibilities and boundaries.
+	Globs       []string `json:"globs,omitempty" yaml:"globs,omitempty"`             // Repository-relative file globs belonging to this subsystem.
 }
 
 // RepoConfig represents the repository-level configuration (<repoRoot>/.memory/config.yaml).
 type RepoConfig struct {
-	Enabled             *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	TurnNotes           string                     `json:"turn_notes,omitempty" yaml:"turn_notes,omitempty"`
-	TurnNotesRoleOptOut []string                   `json:"turn_notes_role_opt_out,omitempty" yaml:"turn_notes_role_opt_out,omitempty"`
-	DocSeeds            []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`
-	Subsystems          map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`
-	Budgets             BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`
-	Spend               SpendConfig                `json:"spend,omitempty" yaml:"spend,omitempty"`
-	Gaps                GapsConfig                 `json:"gaps,omitempty" yaml:"gaps,omitempty"`
-	Extra               map[string]any             `json:"extra,omitempty" yaml:",inline"`
+	Enabled             *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`                             // Optional repository-level enable/disable override.
+	TurnNotes           string                     `json:"turn_notes,omitempty" yaml:"turn_notes,omitempty"`                       // Turn note capture mode ("on", "fallback-only", or "off").
+	TurnNotesRoleOptOut []string                   `json:"turn_notes_role_opt_out,omitempty" yaml:"turn_notes_role_opt_out,omitempty"` // Agent roles excluded from turn note capture.
+	DocSeeds            []string                   `json:"doc_seeds,omitempty" yaml:"doc_seeds,omitempty"`                         // Explicit file paths or globs for Day-1 documentation seeding.
+	Subsystems          map[string]SubsystemConfig `json:"subsystems,omitempty" yaml:"subsystems,omitempty"`                       // Declared repository subsystems keyed by subsystem slug.
+	Budgets             BudgetsConfig              `json:"budgets,omitempty" yaml:"budgets,omitempty"`                             // Repository-specific budget overrides.
+	Spend               SpendConfig                `json:"spend,omitempty" yaml:"spend,omitempty"`                                 // Repository-specific spend guard overrides.
+	Gaps                GapsConfig                 `json:"gaps,omitempty" yaml:"gaps,omitempty"`                                   // Repository-specific coverage gap thresholds.
+	Extra               map[string]any             `json:"extra,omitempty" yaml:",inline"`                                         // Unrecognized YAML keys preserved on round-trip.
 }
 
 // TurnNotesMode returns the normalized turn_notes mode ("on", "fallback-only", or "off").
@@ -284,11 +339,11 @@ func DefaultRepoConfig() RepoConfig {
 	}
 }
 
-
 // LoadMachineConfig loads the MachineConfig from <dataDir>/config.yaml.
 // If dataDir is empty, DataDir() is used.
 // If the config.yaml file does not exist, a default configuration is returned without error.
 func LoadMachineConfig(dataDir string) (MachineConfig, error) {
+	// --- Step 1: Resolve target config file path and read contents ---
 	if dataDir == "" {
 		dataDir = DataDir()
 	}
@@ -306,6 +361,7 @@ func LoadMachineConfig(dataDir string) (MachineConfig, error) {
 		return DefaultMachineConfig(), nil
 	}
 
+	// --- Step 2: Unmarshal YAML onto a default-initialized MachineConfig ---
 	cfg := DefaultMachineConfig()
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return MachineConfig{}, fmt.Errorf("parsing machine config %s: %w", configFile, err)
@@ -317,6 +373,7 @@ func LoadMachineConfig(dataDir string) (MachineConfig, error) {
 // LoadRepoConfig loads the RepoConfig from <repoRoot>/.memory/config.yaml.
 // If the config.yaml file does not exist, an empty default configuration is returned without error.
 func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
+	// --- Step 1: Resolve the repository config file path ---
 	if repoRoot == "" {
 		repoRoot = "."
 	}
@@ -330,6 +387,7 @@ func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
 		}
 	}
 
+	// --- Step 2: Read config file bytes or return defaults if absent/empty ---
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -342,6 +400,7 @@ func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
 		return DefaultRepoConfig(), nil
 	}
 
+	// --- Step 3: Unmarshal YAML and normalize default maps and thresholds ---
 	var raw RepoConfig
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return RepoConfig{}, fmt.Errorf("parsing repo config %s: %w", configFile, err)
@@ -359,6 +418,7 @@ func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
 
 // SaveMachineConfig saves the MachineConfig to <dataDir>/config.yaml.
 func SaveMachineConfig(dataDir string, cfg MachineConfig) error {
+	// --- Step 1: Ensure data directory exists and marshal config to YAML ---
 	if dataDir == "" {
 		dataDir = DataDir()
 	}
@@ -372,6 +432,7 @@ func SaveMachineConfig(dataDir string, cfg MachineConfig) error {
 		return fmt.Errorf("marshaling machine config: %w", err)
 	}
 
+	// --- Step 2: Write to a PID-scoped temporary file and rename atomically ---
 	tmpFile := filepath.Join(dataDir, fmt.Sprintf("config-%d.tmp", os.Getpid()))
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("writing machine config tmp file %s: %w", tmpFile, err)
@@ -387,6 +448,7 @@ func SaveMachineConfig(dataDir string, cfg MachineConfig) error {
 
 // SaveRepoConfig saves the RepoConfig to <repoRoot>/.memory/config.yaml.
 func SaveRepoConfig(repoRoot string, cfg RepoConfig) error {
+	// --- Step 1: Ensure .memory directory exists and marshal config to YAML ---
 	if repoRoot == "" {
 		repoRoot = "."
 	}
@@ -401,6 +463,7 @@ func SaveRepoConfig(repoRoot string, cfg RepoConfig) error {
 		return fmt.Errorf("marshaling repo config: %w", err)
 	}
 
+	// --- Step 2: Write to a PID-scoped temporary file and rename atomically ---
 	tmpFile := filepath.Join(memDir, fmt.Sprintf("config-%d.tmp", os.Getpid()))
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("writing repo config tmp file %s: %w", tmpFile, err)
@@ -417,6 +480,7 @@ func SaveRepoConfig(repoRoot string, cfg RepoConfig) error {
 // SetMachineEnabled modifies <data-dir>/config.yaml to set enabled to true or false.
 // It preserves other existing configuration fields.
 func SetMachineEnabled(dataDir string, enabled bool) error {
+	// --- Step 1: Ensure data directory exists and load existing YAML map ---
 	if dataDir == "" {
 		dataDir = DataDir()
 	}
@@ -437,6 +501,7 @@ func SetMachineEnabled(dataDir string, enabled bool) error {
 		_ = yaml.Unmarshal(defBytes, &m)
 	}
 
+	// --- Step 2: Update the enabled key and marshal back to YAML ---
 	if m == nil {
 		m = make(map[string]any)
 	}
@@ -447,6 +512,7 @@ func SetMachineEnabled(dataDir string, enabled bool) error {
 		return fmt.Errorf("marshaling machine config: %w", err)
 	}
 
+	// --- Step 3: Atomically replace config.yaml via temporary file ---
 	tmpFile := filepath.Join(dataDir, fmt.Sprintf("config-%d.tmp", os.Getpid()))
 	if err := os.WriteFile(tmpFile, out, 0644); err != nil {
 		return fmt.Errorf("writing machine config tmp file %s: %w", tmpFile, err)
@@ -460,9 +526,10 @@ func SetMachineEnabled(dataDir string, enabled bool) error {
 	return nil
 }
 
-// SetRepoEnabled modifies <repoRoot>/.memory/config.yaml to set enabled to true or false.
-// It preserves other existing configuration fields.
+// SetRepoEnabled modifies <repoRoot>/.memory/config.yaml to set enabled to true or false,
+// retaining all other repository-level configuration keys (subsystems, scopes, doc_seeds) intact.
 func SetRepoEnabled(repoRoot string, enabled bool) error {
+	// --- Step 1: Ensure .memory directory exists and load existing YAML map ---
 	if repoRoot == "" {
 		repoRoot = "."
 	}
@@ -480,6 +547,7 @@ func SetRepoEnabled(repoRoot string, enabled bool) error {
 		}
 	}
 
+	// --- Step 2: Update the enabled key and marshal back to YAML ---
 	if m == nil {
 		m = make(map[string]any)
 	}
@@ -490,6 +558,7 @@ func SetRepoEnabled(repoRoot string, enabled bool) error {
 		return fmt.Errorf("marshaling repo config: %w", err)
 	}
 
+	// --- Step 3: Atomically replace .memory/config.yaml via temporary file ---
 	tmpFile := filepath.Join(memDir, fmt.Sprintf("config-%d.tmp", os.Getpid()))
 	if err := os.WriteFile(tmpFile, out, 0644); err != nil {
 		return fmt.Errorf("writing repo config tmp file %s: %w", tmpFile, err)
@@ -512,6 +581,7 @@ func DefaultDocSeedGlobs() []string {
 // applying exclusion rules for PA workspaces, evaluation/experiment artifacts, .memory/,
 // and graduated skills containing `generated_by: repo-memory` in their YAML frontmatter.
 func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
+	// --- Step 1: Normalize repoRoot and determine active doc seed patterns ---
 	if repoRoot == "" {
 		repoRoot = "."
 	}
@@ -529,6 +599,7 @@ func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
 		}
 	}
 
+	// --- Step 2: Expand each exact path or wildcard glob across the repository ---
 	matchedSet := make(map[string]bool)
 
 	for _, rawPat := range patterns {
@@ -602,6 +673,7 @@ func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
 		}
 	}
 
+	// --- Step 3: Filter out excluded paths and repo-memory graduated skills ---
 	var result []string
 	for relSlash := range matchedSet {
 		if !strings.HasSuffix(strings.ToLower(relSlash), ".md") {
@@ -621,6 +693,8 @@ func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
 	return result, nil
 }
 
+// normalizeSlashPattern converts raw to forward slashes, trims leading "./" or "/",
+// and returns an empty string for root-only patterns.
 func normalizeSlashPattern(raw string) string {
 	p := filepath.ToSlash(strings.TrimSpace(raw))
 	p = strings.TrimPrefix(p, "./")
@@ -631,7 +705,10 @@ func normalizeSlashPattern(raw string) string {
 	return p
 }
 
+// shouldExcludeDocSeedPath reports whether relSlash must be excluded from doc
+// seeding due to protected directories (.memory, PA workspaces) or default exclusions.
 func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
+	// --- Step 1: Always exclude .memory and Principal Architect workspaces ---
 	if relSlash == ".memory" || strings.HasPrefix(relSlash, ".memory/") || strings.Contains(relSlash, "/.memory/") {
 		return true
 	}
@@ -640,6 +717,8 @@ func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
 		strings.HasPrefix(relSlash, "principal-architect-workspace/") {
 		return true
 	}
+
+	// --- Step 2: Exclude agent instruction files and eval/experiment docs unless explicitly requested ---
 	if !isExplicitExact {
 		baseUpper := strings.ToUpper(filepath.Base(relSlash))
 		if baseUpper == "GEMINI.MD" || baseUpper == "CLAUDE.MD" || baseUpper == "AGENTS.MD" {
@@ -652,16 +731,22 @@ func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
 	return false
 }
 
+// matchSlashGlob reports whether target matches the slash-separated glob pattern
+// supporting "**" multi-segment wildcards.
 func matchSlashGlob(pattern, target string) bool {
 	patSegs := strings.Split(pattern, "/")
 	tgtSegs := strings.Split(target, "/")
 	return matchSegments(patSegs, tgtSegs)
 }
 
+// matchSegments recursively matches slash-split pattern segments against target segments.
 func matchSegments(patSegs, tgtSegs []string) bool {
+	// --- Step 1: Handle base case when pattern segments are exhausted ---
 	if len(patSegs) == 0 {
 		return len(tgtSegs) == 0
 	}
+
+	// --- Step 2: Expand recursive "**" wildcard across zero or more target segments ---
 	if patSegs[0] == "**" {
 		// Collapse consecutive **
 		for len(patSegs) > 1 && patSegs[1] == "**" {
@@ -679,6 +764,8 @@ func matchSegments(patSegs, tgtSegs []string) bool {
 		}
 		return false
 	}
+
+	// --- Step 3: Match single segment with path.Match and recurse ---
 	if len(tgtSegs) == 0 {
 		return false
 	}
@@ -690,7 +777,10 @@ func matchSegments(patSegs, tgtSegs []string) bool {
 	return matchSegments(patSegs[1:], tgtSegs[1:])
 }
 
+// hasGeneratedByRepoMemoryFrontmatter inspects YAML frontmatter at the start of
+// filePath and reports whether `generated_by: repo-memory` is present.
 func hasGeneratedByRepoMemoryFrontmatter(filePath string) bool {
+	// --- Step 1: Read file and verify leading YAML frontmatter fence ---
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return false
@@ -700,6 +790,8 @@ func hasGeneratedByRepoMemoryFrontmatter(filePath string) bool {
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return false
 	}
+
+	// --- Step 2: Scan frontmatter lines for generated_by: repo-memory ---
 	for i := 1; i < len(lines); i++ {
 		trim := strings.TrimSpace(lines[i])
 		if trim == "---" {
@@ -715,5 +807,3 @@ func hasGeneratedByRepoMemoryFrontmatter(filePath string) bool {
 	}
 	return false
 }
-
-

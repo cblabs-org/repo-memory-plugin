@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/jobs/schema.go
+ * Description: Defines the SQLite DDL schema and initialization routine for
+ *               the durable background job table and its scheduler indexes.
+ *
+ * Exported Types / Functions:
+ * - SchemaDDL:  SQLite DDL statement creating the jobs table and indexes.
+ * - InitSchema(): Executes SchemaDDL against an open SQLite database connection.
+ */
+
 package jobs
 
 import (

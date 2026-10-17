@@ -1,3 +1,33 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/ops/iterator.go
+ * Description: Provides chronological ULID-ordered iteration over operation log
+ *              batches across monthly directories, supporting cursor resume and
+ *              git-commit timestamp cutoffs.
+ *
+ * Exported Types / Functions:
+ * - Iterator: Pull and range iterator over chronologically ordered OpBatch files.
+ *
+ *   Lifecycle:
+ *   - NewIterator(): Creates a new Iterator bound to a Reader and context.
+ *   - Close():       Terminates active pull iteration and releases resources. [io.Closer]
+ *
+ *   Own Public API:
+ *   - Seq():         Returns the iter.Seq2 sequence for range iteration.
+ *   - Next():        Pulls the next OpBatch from the iterator until io.EOF.
+ *
+ * - Reader (methods defined in this file):
+ *   - Iterate():           Yields all batches in chronological ULID order.
+ *   - IterateAfter():      Yields batches strictly after a given batch ID.
+ *   - IterateBefore():     Yields batches created before a git commit's timestamp.
+ *   - IterateBeforeTime(): Yields batches created before an explicit cutoff time.
+ */
+
 package ops
 
 import (
@@ -16,15 +46,16 @@ import (
 
 // Iterator provides iteration over op batches.
 type Iterator struct {
-	reader       *Reader
-	ctx          context.Context
-	afterBatchID string
-	beforeTime   *time.Time
-	pullNext     func() (*OpBatch, error, bool)
-	pullStop     func()
+	reader       *Reader                         // Underlying op-log reader supplying batch files.
+	ctx          context.Context                 // Cancellation context governing directory and file reads.
+	afterBatchID string                          // Optional lower-bound batch ID cursor (exclusive).
+	beforeTime   *time.Time                      // Optional upper-bound creation timestamp filter (exclusive).
+	pullNext     func() (*OpBatch, error, bool)  // Active pull-iterator step function initialized by Next.
+	pullStop     func()                          // Active pull-iterator cleanup function called by Close.
 }
 
-// NewIterator creates a new Iterator.
+// NewIterator creates a new Iterator. The caller should call Close when finished
+// if using pull-based iteration via Next.
 func NewIterator(r *Reader, ctx context.Context) *Iterator {
 	if ctx == nil {
 		ctx = context.Background()
@@ -85,6 +116,7 @@ func (r *Reader) IterateAfter(ctx context.Context, afterBatchID string) iter.Seq
 // IterateBefore yields only batches whose CreatedAt is before the given commit's timestamp.
 // The beforeCommit is a git commit reference; its timestamp is resolved via git log -1 --format=%cI <commit>.
 func (r *Reader) IterateBefore(ctx context.Context, beforeCommit string) iter.Seq2[*OpBatch, error] {
+	// --- Step 1: Normalize context and resolve git commit cutoff timestamp ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -94,6 +126,7 @@ func (r *Reader) IterateBefore(ctx context.Context, beforeCommit string) iter.Se
 			yield(nil, err)
 			return
 		}
+		// --- Step 2: Delegate to IterateBeforeTime with the resolved cutoff ---
 		for batch, bErr := range r.IterateBeforeTime(ctx, cutoff) {
 			if !yield(batch, bErr) {
 				return
@@ -111,8 +144,11 @@ func (r *Reader) IterateBeforeTime(ctx context.Context, cutoff time.Time) iter.S
 	return it.Seq()
 }
 
+// iterateInternal walks monthly op-log directories and yields validated batches
+// matching afterBatchID and beforeTime filters in chronological ULID order.
 func (r *Reader) iterateInternal(ctx context.Context, afterBatchID string, beforeTime *time.Time) iter.Seq2[*OpBatch, error] {
 	return func(yield func(*OpBatch, error) bool) {
+		// --- Step 1: Validate context and list valid YYYY-MM month directories ---
 		if ctx == nil {
 			ctx = context.Background()
 		}
@@ -145,6 +181,7 @@ func (r *Reader) iterateInternal(ctx context.Context, afterBatchID string, befor
 
 		seenAfter := (afterBatchID == "")
 
+		// --- Step 2: Walk each month directory in chronological order ---
 		for _, monthDir := range monthDirs {
 			if err := ctx.Err(); err != nil {
 				yield(nil, err)
@@ -171,6 +208,7 @@ func (r *Reader) iterateInternal(ctx context.Context, afterBatchID string, befor
 				return jsonFiles[i].Name() < jsonFiles[j].Name()
 			})
 
+			// --- Step 3: Read each JSON batch file, apply cursor/cutoff filters, and yield ---
 			for _, f := range jsonFiles {
 				if err := ctx.Err(); err != nil {
 					yield(nil, err)
@@ -210,7 +248,9 @@ func (r *Reader) iterateInternal(ctx context.Context, afterBatchID string, befor
 	}
 }
 
+// resolveCommitTime resolves the committer timestamp of beforeCommit using git log.
 func (r *Reader) resolveCommitTime(ctx context.Context, beforeCommit string) (time.Time, error) {
+	// --- Step 1: Validate commit reference and determine git working directory ---
 	if strings.TrimSpace(beforeCommit) == "" {
 		return time.Time{}, errors.New("beforeCommit cannot be empty")
 	}
@@ -220,6 +260,7 @@ func (r *Reader) resolveCommitTime(ctx context.Context, beforeCommit string) (ti
 		dir = r.baseDir
 	}
 
+	// --- Step 2: Execute git log to query ISO-8601 committer timestamp ---
 	var cmd *exec.Cmd
 	if dir != "" {
 		cmd = exec.CommandContext(ctx, "git", "-C", dir, "log", "-1", "--format=%cI", beforeCommit)
@@ -242,6 +283,7 @@ func (r *Reader) resolveCommitTime(ctx context.Context, beforeCommit string) (ti
 		return time.Time{}, fmt.Errorf("git log commit %q: %w (output: %s)", beforeCommit, err, strings.TrimSpace(string(out)))
 	}
 
+	// --- Step 3: Parse RFC3339 timestamp from git output ---
 	raw := strings.TrimSpace(string(out))
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("no commit timestamp found for %q", beforeCommit)

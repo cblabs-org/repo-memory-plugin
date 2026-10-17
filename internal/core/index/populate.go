@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/index/populate.go
+ * Description: Populates the episodes FTS5 table by reading and aggregating
+ *               persisted episode files from an episode.Store.
+ *
+ * Exported Types / Functions:
+ * - Index:
+ *   - PopulateFromStore(): Reads all episodes from an episode.Store and indexes them.
+ */
+
 package index
 
 import (
@@ -10,11 +26,13 @@ import (
 
 // PopulateFromStore reads all episodes from the given store and indexes them.
 func (idx *Index) PopulateFromStore(ctx context.Context, store *episode.Store) error {
+	// --- Step 1: Enumerate all episode file paths in the store ---
 	paths, err := store.ListPaths()
 	if err != nil {
 		return fmt.Errorf("listing episode paths: %w", err)
 	}
 
+	// --- Step 2: Read each episode and aggregate its steps into searchable fields ---
 	for _, path := range paths {
 		ep, err := store.ReadFromPath(path)
 		if err != nil {
@@ -42,6 +60,7 @@ func (idx *Index) PopulateFromStore(ctx context.Context, store *episode.Store) e
 			}
 		}
 
+		// --- Step 3: Build and insert the FTS episode record ---
 		record := EpisodeRecord{
 			EpisodeID:    ep.Header.EpisodeID,
 			SessionID:    ep.Header.SessionID,
@@ -62,6 +81,7 @@ func (idx *Index) PopulateFromStore(ctx context.Context, store *episode.Store) e
 	return nil
 }
 
+// unique returns a deduplicated slice of non-empty strings preserving first-seen order.
 func unique(strs []string) []string {
 	seen := make(map[string]bool)
 	var result []string

@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_seed_docs.go
+ * Description: Implements the `repo-memory seed-docs` CLI command, which seeds
+ *              dossier entries from curated repository markdown documentation
+ *              and skill files and projects updated dossiers to disk.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -16,17 +32,19 @@ import (
 )
 
 var (
-	seedDocsRepoDir    string
-	seedDocsOpsDir     string
-	seedDocsConfigPath string
-	seedDocsDryRun     bool
-	seedDocsJSON       bool
+	seedDocsRepoDir    string // Target repository root path for `repo-memory seed-docs --repo`.
+	seedDocsOpsDir     string // Target `.memory/ops/` path for `repo-memory seed-docs --ops-dir`.
+	seedDocsConfigPath string // Path to `.memory/config.yaml` for `repo-memory seed-docs --config`.
+	seedDocsDryRun     bool   // When true, previews seeded doc entries without writing to disk.
+	seedDocsJSON       bool   // When true, emits the seeding summary as indented JSON.
 )
 
+// seedDocsCmd defines the `repo-memory seed-docs` subcommand.
 var seedDocsCmd = &cobra.Command{
 	Use:   "seed-docs [doc-paths...]",
 	Short: "Seed dossier entries from curated repository markdown documentation and skills",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve repository root, ops directory, and config paths ---
 		repoRoot, err := gitops.FindRepoRoot(seedDocsRepoDir)
 		if err != nil {
 			if absDir, absErr := filepath.Abs(seedDocsRepoDir); absErr == nil {
@@ -64,6 +82,7 @@ var seedDocsCmd = &cobra.Command{
 		resolvedOpsDir := resolve(seedDocsOpsDir, cmd.Flags().Changed("ops-dir"))
 		resolvedConfigPath := resolve(seedDocsConfigPath, cmd.Flags().Changed("config"))
 
+		// --- Step 2: Load repository and scope configurations ---
 		repoCfg, err := config.LoadRepoConfig(resolvedConfigPath)
 		if err != nil && !os.IsNotExist(err) {
 			repoCfg, _ = config.LoadRepoConfig(repoRoot)
@@ -74,6 +93,7 @@ var seedDocsCmd = &cobra.Command{
 			return fmt.Errorf("loading scope config: %w", err)
 		}
 
+		// --- Step 3: Seed document entries into the operation log ---
 		opsReader := ops.NewReader(resolvedOpsDir)
 		var opsWriter *ops.Writer
 		if !seedDocsDryRun {
@@ -93,6 +113,7 @@ var seedDocsCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 4: Reproject dossiers when new operations are written ---
 		totalMutated := res.EntriesAdded + res.EntriesAmend + res.EntriesRetire
 		if !seedDocsDryRun && totalMutated > 0 {
 			proj := dossiers.NewProjector(opsReader)
@@ -107,6 +128,7 @@ var seedDocsCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 5: Render JSON or human-readable summary ---
 		if seedDocsJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")

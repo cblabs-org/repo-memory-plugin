@@ -1,3 +1,18 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_eval.go
+ * Description: CLI subcommand for executing evaluation benchmarks (B1-B5)
+ *              against a repository's SQLite memory index and dataset files.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -13,11 +28,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// evalCmd defines the `repo-memory eval` subcommand.
 var evalCmd = &cobra.Command{
 	Use:   "eval [benchmark]",
 	Short: "Run evaluation benchmarks (B1-B5)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Validate benchmark name and load dataset ---
 		benchmark := args[0]
 		if benchmark != "B2" {
 			return fmt.Errorf("currently only B2 benchmark is implemented")
@@ -33,6 +50,7 @@ var evalCmd = &cobra.Command{
 			return fmt.Errorf("loading dataset: %w", err)
 		}
 
+		// --- Step 2: Resolve repository root, repo ID, and evaluation store ---
 		repoRoot, err := gitops.FindRepoRoot(".")
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
@@ -50,6 +68,7 @@ var evalCmd = &cobra.Command{
 		}
 		defer store.Close()
 
+		// --- Step 3: Open read-only SQLite index and execute benchmark ---
 		dbPath := filepath.Join(repoRoot, ".memory", "views", "index", "episodes.db")
 		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 			dbPath = filepath.Join(config.DataDir(), repoID, "views", "index", "episodes.db")

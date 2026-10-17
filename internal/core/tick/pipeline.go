@@ -1,3 +1,27 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/pipeline.go
+ * Description: Core PipelineExecutor coordinating end-to-end repository background
+ *              processing: capture-to-episode conversion, zero-token checkpoint/artifact
+ *              harvest, sidecar fallback, doc freshness checks, warm consolidation,
+ *              closes_when evaluation, skill graduation sync, and index rebuilds.
+ *
+ * Exported Types / Functions:
+ * - PipelineExecutor:                  Executes the multi-stage memory pipeline for a repository.
+ *   - NewPipelineExecutor():           Constructs a PipelineExecutor for a repository.
+ *   - SetHousekeeper():                Sets the Housekeeper LLM harness on the executor.
+ *   - SetConfig():                     Sets the repository configuration on the executor.
+ *   - ConvertCapturesToEvidence():     Converts queued capture jobs into normalized episodes.
+ *   - HarvestFreeSources():            Runs deterministic zero-token harvest over checkpoints and artifacts.
+ *   - Run():                           Executes all pipeline stages in sequence.
+ * - Ticker.ProcessPipeline():          Initializes stores and runs PipelineExecutor for a repository.
+ */
+
 package tick
 
 import (
@@ -24,25 +48,28 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
+// PipelineExecutor coordinates the multi-stage background pipeline for a single enrolled repository.
 type PipelineExecutor struct {
-	hk          harness.Housekeeper
-	dataDir     string
-	repoRoot    string
-	repoID      string
-	store       *jobs.Store
-	epStore     *episode.Store
-	idx         *index.Index
-	cfg         config.RepoConfig
-	budgetLimit int
-	budgetUsed  int
-	mu          sync.Mutex
+	hk          harness.Housekeeper // Background LLM harness for distillation and consolidation.
+	dataDir     string              // Base memory data directory path.
+	repoRoot    string              // Absolute path to the enrolled repository root.
+	repoID      string              // Registry slug identifying the repository under <data-dir>/<repo-id>.
+	store       *jobs.Store         // SQLite job queue store for the repository.
+	epStore     *episode.Store      // Episode store for reading and writing normalized episodes.
+	idx         *index.Index        // Multi-tier SQLite FTS5 search index handle.
+	cfg         config.RepoConfig   // Parsed .memory/config.yaml settings governing budgets, spend guards, and scopes.
+	budgetLimit int                 // Maximum daily token budget allowed for this run.
+	budgetUsed  int                 // Cumulative tokens consumed during this run.
+	mu          sync.Mutex          // Guards budgetUsed and spend guard updates.
 
-	FallbackIdleThreshold time.Duration // defaults to 2 * time.Hour when <= 0
-	QuotaChecker          func(context.Context) (*telemetry.QuotaStatus, error)
-	Now                   func() time.Time
+	FallbackIdleThreshold time.Duration                                         // Idle threshold before sidecar fallback runs (defaults to 2h when <= 0).
+	QuotaChecker          func(context.Context) (*telemetry.QuotaStatus, error) // Optional quota probe override for testing and spend guards.
+	Now                   func() time.Time                                      // Optional clock override for deterministic testing.
 }
 
+// ProcessPipeline initializes the episode store, search index, and PipelineExecutor for repoID and runs all stages.
 func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoot, repoID string) error {
+	// --- Step 1: Verify housekeeper availability and load repository config ---
 	if t.hk == nil {
 		return nil
 	}
@@ -52,6 +79,7 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 		return fmt.Errorf("loading repo config: %w", err)
 	}
 
+	// --- Step 2: Open episode store and SQLite search index ---
 	epStore := episode.NewStore(t.dataDir, repoID)
 	idxPath := index.IndexPath(t.dataDir, repoID)
 	if err := os.MkdirAll(filepath.Dir(idxPath), 0755); err != nil {
@@ -63,6 +91,7 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 	}
 	defer idx.Close()
 
+	// --- Step 3: Construct PipelineExecutor and run the pipeline ---
 	exec := &PipelineExecutor{
 		hk:          t.hk,
 		dataDir:     t.dataDir,
@@ -78,6 +107,7 @@ func (t *Ticker) ProcessPipeline(ctx context.Context, store *jobs.Store, repoRoo
 	return exec.Run(ctx)
 }
 
+// checkBudget accumulates token usage from cost (if non-nil) and returns an error when budgetLimit is exceeded.
 func (p *PipelineExecutor) checkBudget(cost *jobs.Cost) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -122,16 +152,19 @@ func (p *PipelineExecutor) SetConfig(cfg config.RepoConfig) {
 	}
 }
 
+// usageTracker wraps a Housekeeper to accumulate token usage across multiple invocations.
 type usageTracker struct {
-	hk    harness.Housekeeper
-	mu    sync.Mutex
-	usage harness.Usage
+	hk    harness.Housekeeper // Wrapped Housekeeper delegate invoked for each pipeline stage.
+	mu    sync.Mutex          // Guards cumulative usage counters.
+	usage harness.Usage       // Accumulated token usage across calls.
 }
 
+// newUsageTracker constructs a usageTracker wrapping hk.
 func newUsageTracker(hk harness.Housekeeper) *usageTracker {
 	return &usageTracker{hk: hk}
 }
 
+// Run invokes the underlying Housekeeper for stage and accumulates its token usage.
 func (u *usageTracker) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
 	if u.hk == nil {
 		return harness.Result{}, fmt.Errorf("no housekeeper configured")
@@ -146,6 +179,7 @@ func (u *usageTracker) Run(ctx context.Context, stage harness.Stage, input any) 
 	return res, err
 }
 
+// Cost returns the accumulated token usage converted into a jobs.Cost record.
 func (u *usageTracker) Cost() jobs.Cost {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -163,31 +197,39 @@ func (p *PipelineExecutor) HarvestFreeSources(ctx context.Context) (int, error) 
 	return inbox.HarvestCheckpointsAndArtifacts(ctx, p.dataDir, p.repoID, p.repoRoot, p.epStore, inbox.NewStore(p.dataDir, p.repoID))
 }
 
+// Run executes all sequential stages of the repository memory pipeline.
 func (p *PipelineExecutor) Run(ctx context.Context) error {
+	// --- Step 1: Convert queued transcript captures into normalized episodes ---
 	if err := p.convertCapturesToEvidence(ctx); err != nil {
 		return err
 	}
 
+	// --- Step 2: Harvest zero-token checkpoints and conversation artifacts ---
 	if _, err := p.HarvestFreeSources(ctx); err != nil {
 		return err
 	}
 
+	// --- Step 3: Run Stage 1c sidecar fallback distillation for eligible idle episodes ---
 	if _, err := p.RunSidecarFallback(ctx); err != nil {
 		return err
 	}
 
+	// --- Step 4: Reconcile deterministic doc-seed freshness ---
 	if err := p.checkDocFreshness(ctx); err != nil {
 		return err
 	}
 
+	// --- Step 5: Run Stage 2 warm batch consolidation ---
 	if _, err := p.RunConsolidation(ctx, false); err != nil {
 		return err
 	}
 
+	// --- Step 6: Evaluate deterministic closes_when predicates on open issues ---
 	if _, err := p.EvaluateClosesWhen(ctx); err != nil {
 		return fmt.Errorf("evaluating closes_when conditions: %w", err)
 	}
 
+	// --- Step 7: Check build manifest freshness, rebuild index, and sync graduated skills ---
 	if p.repoRoot != "" {
 		if _, err := skills.CheckBuildManifestFreshness(ctx, p.repoRoot, p.dataDir, p.repoID, p.idx); err != nil {
 			return fmt.Errorf("checking build manifest freshness: %w", err)
@@ -210,16 +252,20 @@ func (p *PipelineExecutor) Run(ctx context.Context) error {
 		}
 	}
 
+	// --- Step 8: Persist updated A6 freshness state ---
 	p.refreshFreshnessState(ctx, false)
 
 	return nil
 }
 
+// convertCapturesToEvidence drains queued KindCapture jobs, parses transcripts, and writes episodes.
 func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error {
+	// --- Step 1: Ensure the episode store is initialized ---
 	if p.epStore == nil {
 		p.epStore = episode.NewStore(p.dataDir, p.repoID)
 	}
 
+	// --- Step 2: Acquire and process each capture job ---
 	for {
 		job, err := p.store.AcquireNext(ctx, 5*time.Minute, jobs.KindCapture)
 		if err != nil {
@@ -235,6 +281,7 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 			continue
 		}
 
+		// --- Step 3: Resolve transcript path from queue copy or original path ---
 		transcriptPath := entry.TranscriptPath
 		queueCandidate := filepath.Join(p.dataDir, p.repoID, "queue", entry.ConversationID+".jsonl")
 		if _, err := os.Stat(queueCandidate); err == nil {
@@ -250,6 +297,7 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 			continue
 		}
 
+		// --- Step 4: Parse transcript and persist episode ---
 		parsed, err := evidence.ParseTranscript(transcriptPath)
 		if err != nil {
 			p.store.Fail(ctx, job.ID, fmt.Sprintf("failed to parse transcript %s: %v", transcriptPath, err), 5*time.Minute)
@@ -268,4 +316,3 @@ func (p *PipelineExecutor) convertCapturesToEvidence(ctx context.Context) error 
 	}
 	return nil
 }
-
