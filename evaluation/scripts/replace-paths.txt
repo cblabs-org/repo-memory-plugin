@@ -1,2 +1,0 @@
-/Users/mcneillm/Documents/Projects/repo-memory-plugin==>/workspace/repo-memory-plugin
-/Users/mcneillm/==>/home/dev/

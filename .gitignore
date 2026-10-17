@@ -5,17 +5,3 @@
 bin/
 dist/
 /repo-memory
-
-# eval-v2 templates (large, contain 566MB managed_components/)
-evaluation/eval-v2/template/
-evaluation/eval-v2/tpl-a/
-evaluation/eval-v2/tpl-b/
-evaluation/eval-v2/tpl-c/
-evaluation/eval-v2/tpl-d/
-# eval-v2 seed data (ops JSON + SQLite index)
-evaluation/eval-v2/seed/
-# eval-v2 per-run working copies and archives
-evaluation/eval-v2/runs/
-# Historical raw session transcripts
-evaluation/esp32-transcripts/
-evaluation/repo-memory-transcripts/

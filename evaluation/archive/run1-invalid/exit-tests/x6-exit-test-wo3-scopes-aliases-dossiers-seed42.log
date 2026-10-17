@@ -1,9 +1,0 @@
---- FAIL: TestAssignSubsystem (0.00s)
-    subsystem_test.go:28: AssignSubsystem("internal/core/config/config.go") = ""; want "core-infrastructure"
-    subsystem_test.go:28: AssignSubsystem("internal/core/pipeline/compact/compact.go") = ""; want "transcript-episode"
-    subsystem_test.go:28: AssignSubsystem("internal/harness/antigravity/hooks.go") = ""; want "capture-runtime"
-    subsystem_test.go:28: AssignSubsystem("cmd/repo-memory/main.go") = ""; want "cli"
-    subsystem_test.go:28: AssignSubsystem("cmd/repo-memory/commands/import.go") = ""; want "cli"
-FAIL
-FAIL	github.com/cblabs-org/repo-memory-plugin/internal/core/config	0.275s
-FAIL

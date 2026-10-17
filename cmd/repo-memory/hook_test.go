@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func TestHookCmd_Stop_Enrolled(t *testing.T) {
 		t.Fatalf("writing transcript: %v", err)
 	}
 
-	payload := `{"conversationId":"conv-cli-stop","transcriptPath":"` + transcriptPath + `","workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-stop","transcriptPath":%q,"workspacePaths":[%q]}`, transcriptPath, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer
@@ -125,7 +126,7 @@ func TestHookCmd_Stop_Unenrolled(t *testing.T) {
 	}
 	defer os.Chdir(origWd)
 
-	payload := `{"conversationId":"conv-cli-unenrolled","workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-unenrolled","workspacePaths":[%q]}`, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer
@@ -168,7 +169,7 @@ func TestHookCmd_Stop_KillSwitch(t *testing.T) {
 	}
 	defer os.Chdir(origWd)
 
-	payload := `{"conversationId":"conv-cli-kill","workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-kill","workspacePaths":[%q]}`, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer
@@ -200,7 +201,7 @@ func TestHookCmd_Stop_HousekeepingGuard(t *testing.T) {
 	}
 	defer os.Chdir(origWd)
 
-	payload := `{"conversationId":"conv-cli-housekeeping","workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-housekeeping","workspacePaths":[%q]}`, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer
@@ -230,7 +231,7 @@ func TestHookCmd_PostToolUse(t *testing.T) {
 	repoDir := t.TempDir()
 	_ = config.CreateEnrolledMarker(repoDir)
 
-	payload := `{"conversationId":"conv-cli-post","toolResult":{"status":"success"},"workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-post","toolResult":{"status":"success"},"workspacePaths":[%q]}`, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer
@@ -261,7 +262,7 @@ func TestHookCmd_PreToolUse(t *testing.T) {
 	_ = config.CreateEnrolledMarker(repoDir)
 
 	// Default allow
-	payload := `{"conversationId":"conv-cli-pretool","toolName":"view_file","workspacePaths":["` + repoDir + `"]}`
+	payload := fmt.Sprintf(`{"conversationId":"conv-cli-pretool","toolName":"view_file","workspacePaths":[%q]}`, repoDir)
 
 	var stdin bytes.Buffer
 	var stdout bytes.Buffer

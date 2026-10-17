@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,11 @@ func TestRunOpsGC_PrunesJunkStaleAndRepairsScopes(t *testing.T) {
 
 	// Create stale polluted dossiers to verify RunOpsGC removes them before re-projecting.
 	staleDossiersDir := filepath.Join(tmpDir, "dossiers")
-	for _, rel := range []string{".agents.md", "modernc.org.md", "pending.md", filepath.Join("<data-dir>", "<repo-id>.md")} {
+	staleRelPaths := []string{".agents.md", "modernc.org.md", "pending.md"}
+	if runtime.GOOS != "windows" {
+		staleRelPaths = append(staleRelPaths, filepath.Join("<data-dir>", "<repo-id>.md"))
+	}
+	for _, rel := range staleRelPaths {
 		p := filepath.Join(staleDossiersDir, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)

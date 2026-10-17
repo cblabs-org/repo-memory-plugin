@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,7 +217,7 @@ func TestProbe_TranscriptSnapshot(t *testing.T) {
 	hookWorkspaceFlag = repoDir
 	hookProbeDecisionFlag = "allow"
 
-	payload := []byte(`{"conversationId":"test-transcript-conv","transcriptPath":"` + transcriptPath + `"}`)
+	payload := []byte(fmt.Sprintf(`{"conversationId":"test-transcript-conv","transcriptPath":%q}`, transcriptPath))
 	out, err := handleProbe("PreToolUse", payload)
 	if err != nil {
 		t.Fatalf("handleProbe failed: %v", err)
@@ -262,7 +263,7 @@ func TestProbe_TranscriptSnapshot_Nonexistent(t *testing.T) {
 	defer func() { hookWorkspaceFlag = origWorkspace }()
 	hookWorkspaceFlag = repoDir
 
-	payload := []byte(`{"conversationId":"test-nonexistent","transcriptPath":"` + nonexistentTranscript + `"}`)
+	payload := []byte(fmt.Sprintf(`{"conversationId":"test-nonexistent","transcriptPath":%q}`, nonexistentTranscript))
 	out, err := handleProbe("Stop", payload)
 	if err != nil {
 		t.Fatalf("handleProbe failed: %v", err)
@@ -347,7 +348,7 @@ func TestProbe_CobraCLI_Execution(t *testing.T) {
 
 	// Execute via cobra command RunE
 	var stdout, stdin bytes.Buffer
-	stdin.WriteString(`{"conversationId":"cli-conv","workspacePaths":["` + repoDir + `"]}`)
+	stdin.WriteString(fmt.Sprintf(`{"conversationId":"cli-conv","workspacePaths":[%q]}`, repoDir))
 
 	hookCmd.SetIn(&stdin)
 	hookCmd.SetOut(&stdout)

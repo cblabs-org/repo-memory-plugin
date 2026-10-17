@@ -59,7 +59,6 @@ func init() {
 	rootCmd.AddCommand(reindexCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(importPACmd)
-	rootCmd.AddCommand(evalCmd)
 	rootCmd.AddCommand(snapshotCmd)
 	rootCmd.AddCommand(usageCmd)
 

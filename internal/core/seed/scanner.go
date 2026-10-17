@@ -130,9 +130,9 @@ func buildRepoPathValidator(opts SeedOptions) func(string) bool {
 				if line == "" {
 					continue
 				}
-				clean := filepath.Clean(line)
+				clean := filepath.ToSlash(filepath.Clean(line))
 				known[clean] = true
-				for dir := filepath.Dir(clean); dir != "." && dir != "/" && dir != ""; dir = filepath.Dir(dir) {
+				for dir := filepath.ToSlash(filepath.Dir(clean)); dir != "." && dir != "/" && dir != ""; dir = filepath.ToSlash(filepath.Dir(dir)) {
 					if known[dir] {
 						break
 					}
@@ -144,7 +144,7 @@ func buildRepoPathValidator(opts SeedOptions) func(string) bool {
 				if !ok {
 					return false
 				}
-				clean := filepath.Clean(strings.TrimSuffix(filePart, "/"))
+				clean := filepath.ToSlash(filepath.Clean(strings.TrimSuffix(filePart, "/")))
 				if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
 					return false
 				}
@@ -198,9 +198,10 @@ func ScanAndParse(paDir string, opts SeedOptions) ([]*ParsedWorkorder, error) {
 				return nil, fmt.Errorf("cannot relativize %s against %s: %w", filePath, opts.RepoRoot, relErr)
 			}
 		}
+		relSlash := filepath.ToSlash(relPath)
 
 		if opts.BeforeCommit != "" {
-			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relPath))
+			cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", opts.BeforeCommit, relSlash))
 			if opts.RepoRoot != "" {
 				cmd.Dir = opts.RepoRoot
 			}

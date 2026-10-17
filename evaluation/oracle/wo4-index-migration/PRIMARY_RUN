@@ -1,1 +1,0 @@
-^(TestEntry_RoundTrip|TestSearchEntries_FTS5|TestEntryAnchors_Lookup|TestLookupByAnchorExact|TestErrorPatterns|TestAliases_ResolveChain|TestEntryHistory|TestRebuildFromOpLog_EndToEnd|TestBackwardCompatibility_EntitiesAndClaims)$

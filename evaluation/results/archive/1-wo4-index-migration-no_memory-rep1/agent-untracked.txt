@@ -1,5 +1,0 @@
-internal/core/index/aliases.go
-internal/core/index/entries.go
-internal/core/index/entry_anchors.go
-internal/core/index/error_patterns.go
-internal/core/index/history.go

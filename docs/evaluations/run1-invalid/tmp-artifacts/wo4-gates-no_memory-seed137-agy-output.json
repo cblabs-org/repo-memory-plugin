@@ -1,1 +1,0 @@
-{"conversation_id":"d9a74863-0b0d-4363-ac87-a9466c084dd7","status":"ERROR","response":"","error":"You have exhausted your capacity on this model. Your quota will reset after 3h7m45s.","duration_seconds":190.738127,"num_turns":1,"usage":{"input_tokens":154413,"output_tokens":11035,"thinking_tokens":7972,"cache_read_tokens":1547839,"total_tokens":165448}}

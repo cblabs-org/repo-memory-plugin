@@ -1,4 +1,0 @@
-# ./internal/core/ops/...
-pattern ./internal/core/ops/...: lstat ./internal/core/ops/: no such file or directory
-FAIL	./internal/core/ops/... [setup failed]
-FAIL

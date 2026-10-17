@@ -1,4 +1,0 @@
-# ./internal/core/dossiers/...
-pattern ./internal/core/dossiers/...: lstat ./internal/core/dossiers/: no such file or directory
-FAIL	./internal/core/dossiers/... [setup failed]
-FAIL

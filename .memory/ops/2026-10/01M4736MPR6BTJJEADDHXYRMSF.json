@@ -9,8 +9,7 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
-          "docs/experiments/X8-lean-agent.md"
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md"
         ],
         "entry_type": "decision",
         "text": "Documented that dynamic file-based resolution fails without daemon restart or correct allowlisting."
@@ -24,8 +23,7 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
-          "docs/experiments/X8-lean-agent.md"
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md"
         ],
         "entry_type": "ruled-out",
         "text": "`agy --agent` silently falls back to the default agent when an agent is not found, which complicated testing."
@@ -39,8 +37,7 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
-          "docs/experiments/X8-lean-agent.md"
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md"
         ],
         "entry_type": "ruled-out",
         "text": "`invoke_subagent` cannot invoke dynamically created agent files without a daemon restart."
@@ -54,8 +51,7 @@
       "source": "seed",
       "fields": {
         "anchors": [
-          "packaging/antigravity/agents/repo-memory-distiller/agent.md",
-          "docs/experiments/X8-lean-agent.md"
+          "packaging/antigravity/agents/repo-memory-distiller/agent.md"
         ],
         "entry_type": "open-issue",
         "text": "`gen_metadata` and `usage` metrics were not visible in the local transcript logs."
