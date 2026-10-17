@@ -259,7 +259,7 @@ func TestRunOpsGC_PrunesJunkStaleAndRepairsScopes(t *testing.T) {
 	}
 
 	// Verify stale dossier files were removed and valid ones rendered.
-	for _, stale := range []string{".agents.md", "modernc.org.md", "pending.md", filepath.Join("<data-dir>", "<repo-id>.md")} {
+	for _, stale := range staleRelPaths {
 		if _, err := os.Stat(filepath.Join(staleDossiersDir, stale)); !os.IsNotExist(err) {
 			t.Errorf("stale dossier %s still exists", stale)
 		}

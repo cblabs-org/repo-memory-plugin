@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -238,6 +239,9 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 	budget := opt.Timeout
 	if budget <= 0 {
 		budget = DefaultHookBudget
+		if runtime.GOOS == "windows" {
+			budget = 2 * time.Second
+		}
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -366,8 +370,12 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		return nil, fmt.Errorf("ensuring data dir layout: %w", err)
 	}
 
-	// Query Git branch and HEAD commit (bounded by 50ms context timeout to preserve budget)
-	gitCtx, gitCancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	// Query Git branch and HEAD commit (bounded by context timeout to preserve budget)
+	gitTimeout := 50 * time.Millisecond
+	if runtime.GOOS == "windows" {
+		gitTimeout = 1 * time.Second
+	}
+	gitCtx, gitCancel := context.WithTimeout(ctx, gitTimeout)
 	branch, _ := gitops.GetCurrentBranchWithContext(gitCtx, repoRoot)
 	head, _ := gitops.GetHeadCommitWithContext(gitCtx, repoRoot)
 	gitCancel()
