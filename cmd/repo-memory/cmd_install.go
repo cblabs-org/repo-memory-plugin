@@ -24,9 +24,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -172,24 +174,7 @@ func RunInstall(pluginDir, binPath string) error {
 
 	configDir := filepath.Dir(parentDir)
 	configPath := filepath.Join(configDir, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var config map[string]interface{}
-		if err := json.Unmarshal(data, &config); err == nil {
-			if pluginsVal, ok := config["plugins"]; ok {
-				if plugins, ok := pluginsVal.(map[string]interface{}); ok {
-					delete(plugins, "repo-memory")
-					plugins["repo-memory-daemon"] = map[string]interface{}{"enabled": true}
-					config["plugins"] = plugins
-					if out, err := json.MarshalIndent(config, "", "  "); err == nil {
-						out = append(out, '\n')
-						if err := atomicWriteConfig(configPath, data, out); err != nil {
-							fmt.Fprintf(os.Stderr, "warning: could not update config.json: %v\n", err)
-						}
-					}
-				}
-			}
-		}
-	}
+	enableDaemonInGlobalConfig(configPath, filepath.Base(parentDir) == "plugins")
 
 	wsDir := ResolveWorkspacePluginDir(pluginDir)
 
@@ -207,6 +192,9 @@ func RunInstall(pluginDir, binPath string) error {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
 	}
+
+	// Clean up any legacy duplicate skill directory inside workspace-plugin
+	_ = os.RemoveAll(filepath.Join(wsDir, "skills"))
 
 	// --- Step 3: Generate JSON and Markdown file contents using templates with absolute binary path ---
 	hooksContent := antigravity.GenerateHooksJSON(binPath)
@@ -308,11 +296,12 @@ func RunPortableInstall(pluginDir, targetOS, version string) error {
 		return fmt.Errorf("validating generated portable hooks template: %w", err)
 	}
 
+	adminSkillContent := antigravity.GenerateAdminSkillMD(skillBinPath)
 	files := map[string]string{
 		filepath.Join(pluginDir, "plugin.json"):                             antigravity.GenerateDaemonPluginJSONWithVersion(version),
 		filepath.Join(pluginDir, "config.json"):                             antigravity.GenerateConfigJSON(),
 		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):        antigravity.GeneratePortableSidecarJSON(targetOS),
-		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"): antigravity.GenerateAdminSkillMD(skillBinPath),
+		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"): adminSkillContent,
 		filepath.Join(wsDir, "plugin.json"):                                 antigravity.GenerateWorkspacePluginJSONWithVersion(version),
 		filepath.Join(wsDir, "mcp_config.json"):                             antigravity.GeneratePortableMCPConfigJSON(targetOS),
 		filepath.Join(wsDir, "hooks.json"):                                  hooksContent,
@@ -388,16 +377,95 @@ var installCmd = &cobra.Command{
 	},
 }
 
-// atomicWriteConfig writes config data atomically: back up the original,
+// enableDaemonInGlobalConfig ensures `plugins["repo-memory-daemon"] = {"enabled": true}`
+// is recorded in <configDir>/config.json (creating config.json or the "plugins" map if
+// createIfMissing is true) and notifies a running Antigravity Language Server via
+// JetboxWriteState when ANTIGRAVITY_LS_ADDRESS and ANTIGRAVITY_CSRF_TOKEN are present.
+func enableDaemonInGlobalConfig(configPath string, createIfMissing bool) {
+	// --- Step 1: Read existing config.json or initialize a new map when installing under plugins/ ---
+	var config map[string]interface{}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if !os.IsNotExist(err) || !createIfMissing {
+			return
+		}
+		config = make(map[string]interface{})
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil || config == nil {
+			return
+		}
+	}
+
+	// --- Step 2: Ensure "plugins" map exists and enable repo-memory-daemon ---
+	plugins, ok := config["plugins"].(map[string]interface{})
+	if !ok || plugins == nil {
+		if !createIfMissing {
+			return
+		}
+		plugins = make(map[string]interface{})
+	}
+	delete(plugins, "repo-memory")
+	plugins["repo-memory-daemon"] = map[string]interface{}{"enabled": true}
+	config["plugins"] = plugins
+
+	out, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return
+	}
+	out = append(out, '\n')
+
+	if err := atomicWriteConfig(configPath, data, out); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not update config.json: %v\n", err)
+		return
+	}
+
+	// --- Step 3: Notify running Language Server via JetboxWriteState if inside an active session ---
+	lsAddr := strings.TrimSpace(os.Getenv("ANTIGRAVITY_LS_ADDRESS"))
+	if lsAddr == "" {
+		lsAddr = "localhost:5387"
+	}
+	csrfToken := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CSRF_TOKEN"))
+	if csrfToken != "" {
+		payload, err := json.Marshal(map[string]any{
+			"userConfig": map[string]any{
+				"plugins": map[string]any{
+					"repo-memory-daemon": map[string]any{"enabled": true},
+				},
+			},
+		})
+		if err == nil {
+			req, reqErr := http.NewRequest(
+				http.MethodPost,
+				fmt.Sprintf("http://%s/exa.language_server_pb.LanguageServerService/JetboxWriteState", lsAddr),
+				bytes.NewReader(payload),
+			)
+			if reqErr == nil {
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("x-codeium-csrf-token", csrfToken)
+				client := &http.Client{Timeout: 2 * time.Second}
+				if resp, doErr := client.Do(req); doErr == nil && resp != nil {
+					_ = resp.Body.Close()
+				}
+			}
+		}
+	}
+}
+
+// atomicWriteConfig writes config data atomically: back up the original (when present),
 // write to a temp file in the same directory, then rename into place.
 // This prevents corruption from crashes or concurrent IDE writes.
 func atomicWriteConfig(configPath string, originalData, newData []byte) error {
-	// --- Step 1: Back up the original config.json to a sibling .bak file ---
+	// --- Step 1: Ensure parent directory exists and back up any original config.json ---
 	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
 
 	backupPath := configPath + ".bak"
-	if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
-		return fmt.Errorf("backing up config.json: %w", err)
+	if len(originalData) > 0 {
+		if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
+			return fmt.Errorf("backing up config.json: %w", err)
+		}
 	}
 
 	// --- Step 2: Write updated payload to a temporary file in the same directory ---
@@ -423,7 +491,7 @@ func atomicWriteConfig(configPath string, originalData, newData []byte) error {
 		return fmt.Errorf("renaming temp to config.json: %w", err)
 	}
 
-	os.Remove(backupPath)
+	_ = os.Remove(backupPath)
 	return nil
 }
 
