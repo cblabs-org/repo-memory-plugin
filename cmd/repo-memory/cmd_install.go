@@ -9,13 +9,16 @@
  * Description: Installs and upgrades the Antigravity two-plugin layout
  *              (global repo-memory-daemon with tick sidecar and repo-memory-admin
  *              skill + nested workspace-plugin/repo-memory with hooks, MCP server,
- *              and repo-memory-distiller agent).
+ *              and repo-memory-distiller agent), and generates portable archive
+ *              bundles for drop-in .zip distribution.
  *
  * Exported Types / Functions:
  * - ResolveAntigravityPluginDir(): Resolves the target global daemon plugin directory.
  * - ResolveWorkspacePluginDir():   Resolves the nested workspace-plugin directory.
+ * - ReadInstalledPluginVersion():  Reads the semantic version string from an installed daemon plugin.json.
  * - ValidateHooksJSON():           Verifies hooks.json is valid JSON with at least one hook entry.
- * - RunInstall():                  Writes and validates the daemon and workspace plugin bundles.
+ * - RunInstall():                  Writes and validates the daemon and workspace plugin bundles for a resolved binary path.
+ * - RunPortableInstall():          Writes a self-contained portable plugin bundle using ~ / $HOME runner paths.
  */
 
 package main
@@ -26,14 +29,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/packaging/antigravity"
 	"github.com/spf13/cobra"
 )
 
-// installHarness holds the target agent harness flag (--harness).
-var installHarness string
+var (
+	installHarness      string // Target agent harness flag (--harness; defaults to "antigravity").
+	installPortableFlag bool   // When true (--portable), writes a machine-independent bundle for .zip distribution.
+	installTargetOS     string // Target OS for --portable bundle generation (--os; defaults to runtime.GOOS).
+)
 
 // ResolveAntigravityPluginDir resolves the target plugin directory for the Antigravity daemon:
 // 1. REPO_MEMORY_PLUGIN_DIR or ANTIGRAVITY_PLUGIN_DIR environment variables (for testing/custom roots)
@@ -59,6 +67,26 @@ func ResolveAntigravityPluginDir() (string, error) {
 // ResolveWorkspacePluginDir resolves the nested workspace-plugin directory inside the daemon directory.
 func ResolveWorkspacePluginDir(daemonDir string) string {
 	return filepath.Join(daemonDir, "workspace-plugin", "repo-memory")
+}
+
+// ReadInstalledPluginVersion reads the "version" field from <pluginDir>/plugin.json.
+// It returns an empty string if the manifest does not exist or cannot be parsed.
+func ReadInstalledPluginVersion(pluginDir string) string {
+	if strings.TrimSpace(pluginDir) == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(pluginDir, "plugin.json"))
+	if err != nil {
+		return ""
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return ""
+	}
+	if v, ok := parsed["version"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 // ValidateHooksJSON parses hooks.json data and verifies it has at least one valid hook entry.
@@ -186,12 +214,12 @@ func RunInstall(pluginDir, binPath string) error {
 		return fmt.Errorf("validating generated hooks template: %w", err)
 	}
 
-	daemonPluginContent := antigravity.GenerateDaemonPluginJSON()
+	daemonPluginContent := antigravity.GenerateDaemonPluginJSONWithVersion(Version)
 	configContent := antigravity.GenerateConfigJSON()
 	sidecarContent := antigravity.GenerateSidecarJSON(binPath)
 	adminSkillContent := antigravity.GenerateAdminSkillMD(binPath)
 
-	workspacePluginContent := antigravity.GenerateWorkspacePluginJSON()
+	workspacePluginContent := antigravity.GenerateWorkspacePluginJSONWithVersion(Version)
 	mcpContent := antigravity.GenerateMCPConfigJSON(binPath)
 	distillerAgentContent := antigravity.GenerateDistillerAgentMD()
 
@@ -215,14 +243,11 @@ func RunInstall(pluginDir, binPath string) error {
 	}
 
 	// --- Step 4: Write and verify hooks.json with read-back safety validation ---
-	// Workspace plugin hooks live at <plugin-root>/hooks.json
-	// (NOT <plugin-root>/hooks/hooks.json — that path is for a different plugin layout)
 	hooksPath := filepath.Join(wsDir, "hooks.json")
 	if err := os.WriteFile(hooksPath, []byte(hooksContent), 0644); err != nil {
 		return fmt.Errorf("writing file %s: %w", hooksPath, err)
 	}
 
-	// Safety check: read back, parse as JSON, verify at least one hook entry
 	readBack, err := os.ReadFile(hooksPath)
 	if err != nil {
 		_ = os.Remove(hooksPath)
@@ -236,16 +261,100 @@ func RunInstall(pluginDir, binPath string) error {
 	return nil
 }
 
+// RunPortableInstall writes a machine-independent plugin bundle to pluginDir suitable for
+// packaging as a drop-in .zip archive. It embeds portable ~ / $HOME runner references and
+// writes bin/run-repo-memory.sh (on Unix) without mutating the build host's config.json.
+func RunPortableInstall(pluginDir, targetOS, version string) error {
+	if strings.TrimSpace(pluginDir) == "" {
+		return errors.New("plugin directory cannot be empty")
+	}
+	if strings.TrimSpace(targetOS) == "" {
+		targetOS = runtime.GOOS
+	}
+
+	// --- Step 1: Create daemon, bin, sidecar, skill, and workspace-plugin directories ---
+	wsDir := ResolveWorkspacePluginDir(pluginDir)
+	subdirs := []string{
+		pluginDir,
+		filepath.Join(pluginDir, "bin"),
+		filepath.Join(pluginDir, "sidecars", "tick"),
+		filepath.Join(pluginDir, "skills", "repo-memory-admin"),
+		wsDir,
+		filepath.Join(wsDir, "agents"),
+		filepath.Join(wsDir, "agents", "repo-memory-distiller"),
+	}
+	for _, dir := range subdirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+	}
+
+	// --- Step 2: Select portable binary and hook runner paths for the target OS ---
+	hookRunnerPath := "~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh"
+	skillBinPath := "~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory"
+	if strings.EqualFold(targetOS, "windows") {
+		hookRunnerPath = `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory.exe`
+		skillBinPath = `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory.exe`
+	} else {
+		runnerPath := filepath.Join(pluginDir, "bin", "run-repo-memory.sh")
+		if err := os.WriteFile(runnerPath, []byte(antigravity.GeneratePortableRunnerScript()), 0755); err != nil {
+			return fmt.Errorf("writing portable runner script %s: %w", runnerPath, err)
+		}
+	}
+
+	// --- Step 3: Render and write portable JSON and Markdown manifests ---
+	hooksContent := antigravity.GenerateHooksJSON(hookRunnerPath)
+	if err := ValidateHooksJSON([]byte(hooksContent)); err != nil {
+		return fmt.Errorf("validating generated portable hooks template: %w", err)
+	}
+
+	files := map[string]string{
+		filepath.Join(pluginDir, "plugin.json"):                             antigravity.GenerateDaemonPluginJSONWithVersion(version),
+		filepath.Join(pluginDir, "config.json"):                             antigravity.GenerateConfigJSON(),
+		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):        antigravity.GeneratePortableSidecarJSON(targetOS),
+		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"): antigravity.GenerateAdminSkillMD(skillBinPath),
+		filepath.Join(wsDir, "plugin.json"):                                 antigravity.GenerateWorkspacePluginJSONWithVersion(version),
+		filepath.Join(wsDir, "mcp_config.json"):                             antigravity.GeneratePortableMCPConfigJSON(targetOS),
+		filepath.Join(wsDir, "hooks.json"):                                  hooksContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"): antigravity.GenerateDistillerAgentMD(),
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):          antigravity.GenerateDistillerAgentMD(),
+	}
+
+	for filePath, content := range files {
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("writing file %s: %w", filePath, err)
+		}
+	}
+
+	return nil
+}
+
 // installCmd defines the `repo-memory install` subcommand.
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install repo-memory plugin and harness configurations",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// --- Step 1: Validate target harness and resolve binary path ---
+		// --- Step 1: Validate target harness and resolve plugin directory ---
 		if installHarness != "antigravity" {
 			return fmt.Errorf("unsupported harness %q (only 'antigravity' is supported in Release 1)", installHarness)
 		}
 
+		pluginDir, err := ResolveAntigravityPluginDir()
+		if err != nil {
+			return err
+		}
+
+		// --- Step 2: Handle portable archive bundle generation mode (--portable) ---
+		if installPortableFlag {
+			if err := RunPortableInstall(pluginDir, installTargetOS, Version); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Generated portable repo-memory plugin bundle (%s, version %s) at %s\n",
+				installTargetOS, antigravity.NormalizePluginVersion(Version), pluginDir)
+			return nil
+		}
+
+		// --- Step 3: Resolve executable path and run host installation ---
 		execPath, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("determining executable path: %w", err)
@@ -258,26 +367,22 @@ var installCmd = &cobra.Command{
 			absBinPath = evalPath
 		}
 
-		// --- Step 2: Resolve plugin directory and execute installation ---
-		pluginDir, err := ResolveAntigravityPluginDir()
-		if err != nil {
-			return err
-		}
-
 		if err := RunInstall(pluginDir, absBinPath); err != nil {
 			return err
 		}
 
-		// --- Step 3: Print post-install onboarding instructions ---
+		// --- Step 4: Print post-install onboarding instructions ---
 		wsDir := ResolveWorkspacePluginDir(pluginDir)
-		fmt.Printf("Successfully installed repo-memory daemon plugin to %s\n", pluginDir)
-		fmt.Printf("Workspace plugin bundle at %s\n", wsDir)
-		fmt.Printf("Binary configured at: %s\n\n", absBinPath)
-		fmt.Println("To enroll a repository from chat, use `/repo-memory-admin enroll this repo` (or run `repo-memory enroll .`).")
-		fmt.Println("IMPORTANT: The background tick sidecar is NOT automatically enabled.")
-		fmt.Println("To enable the scheduled background worker, open the Antigravity Automations dashboard:")
-		fmt.Println("  [Open Automations Dashboard](sidecar://dashboard)")
-		fmt.Println("and enable \"Repo Memory Tick\" (repo-memory-daemon/tick).")
+		out := cmd.OutOrStdout()
+		fmt.Fprintf(out, "Successfully installed repo-memory daemon plugin (v%s) to %s\n",
+			antigravity.NormalizePluginVersion(Version), pluginDir)
+		fmt.Fprintf(out, "Workspace plugin bundle at %s\n", wsDir)
+		fmt.Fprintf(out, "Binary configured at: %s\n\n", absBinPath)
+		fmt.Fprintln(out, "To enroll a repository from chat, use `/repo-memory-admin enroll this repo` (or run `repo-memory enroll .`).")
+		fmt.Fprintln(out, "IMPORTANT: The background tick sidecar is NOT automatically enabled.")
+		fmt.Fprintln(out, "To enable the scheduled background worker, open the Antigravity Automations dashboard:")
+		fmt.Fprintln(out, "  [Open Automations Dashboard](sidecar://dashboard)")
+		fmt.Fprintln(out, "and enable \"Repo Memory Tick\" (repo-memory-daemon/tick).")
 
 		return nil
 	},
@@ -324,4 +429,6 @@ func atomicWriteConfig(configPath string, originalData, newData []byte) error {
 
 func init() {
 	installCmd.Flags().StringVar(&installHarness, "harness", "antigravity", "Target agent harness (antigravity)")
+	installCmd.Flags().BoolVar(&installPortableFlag, "portable", false, "Generate a portable plugin bundle using ~ / $HOME runner paths for .zip distribution")
+	installCmd.Flags().StringVar(&installTargetOS, "os", runtime.GOOS, "Target OS when generating a --portable bundle (darwin, linux, windows)")
 }

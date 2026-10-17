@@ -379,3 +379,58 @@ func TestValidateHooksJSON(t *testing.T) {
 	}
 }
 
+func TestRunPortableInstallAndVersionDrift(t *testing.T) {
+	tempPluginDir := t.TempDir()
+	if err := RunPortableInstall(tempPluginDir, "darwin", "v0.4.2"); err != nil {
+		t.Fatalf("RunPortableInstall failed: %v", err)
+	}
+
+	// Verify version stamped into daemon and workspace plugin.json
+	if gotVer := ReadInstalledPluginVersion(tempPluginDir); gotVer != "0.4.2" {
+		t.Errorf("ReadInstalledPluginVersion(daemon) = %q, want '0.4.2'", gotVer)
+	}
+	wsDir := ResolveWorkspacePluginDir(tempPluginDir)
+	if gotWSVer := ReadInstalledPluginVersion(wsDir); gotWSVer != "0.4.2" {
+		t.Errorf("ReadInstalledPluginVersion(workspace) = %q, want '0.4.2'", gotWSVer)
+	}
+
+	// Verify bin/run-repo-memory.sh exists and is executable
+	runnerPath := filepath.Join(tempPluginDir, "bin", "run-repo-memory.sh")
+	info, err := os.Stat(runnerPath)
+	if err != nil {
+		t.Fatalf("expected %s to exist: %v", runnerPath, err)
+	}
+	if info.Mode().Perm()&0111 == 0 {
+		t.Errorf("expected %s to be executable, mode=%v", runnerPath, info.Mode())
+	}
+
+	// Verify hooks.json references portable ~ runner path
+	hooksData, err := os.ReadFile(filepath.Join(wsDir, "hooks.json"))
+	if err != nil {
+		t.Fatalf("reading portable hooks.json: %v", err)
+	}
+	if !strings.Contains(string(hooksData), "~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh hook antigravity") {
+		t.Errorf("portable hooks.json missing expected ~ runner path:\n%s", string(hooksData))
+	}
+
+	// Verify doctor detects version drift when binary Version differs from installed plugin.json version
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", tempPluginDir)
+	origVersion := Version
+	Version = "v0.5.0"
+	defer func() { Version = origVersion }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	doctorCmd.SetOut(buf)
+	doctorCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"doctor", t.TempDir()})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("doctor command failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Plugin bundle version (0.4.2) does not match binary version (0.5.0)") {
+		t.Errorf("expected doctor output to warn on version drift, got:\n%s", buf.String())
+	}
+}
+
+

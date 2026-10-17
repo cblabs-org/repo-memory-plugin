@@ -10,28 +10,38 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release
+    name: Build Binaries & Plugin Zip Bundles
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
 
-      - name: Build binaries
-        run: make build VERSION=${{ github.ref_name }}
+      - name: Build cross-platform binaries and portable plugin zips
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          make build dist-zip VERSION="$VERSION"
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          generate_release_notes: true
           files: |
             bin/repo-memory-darwin-arm64
             bin/repo-memory-darwin-amd64
             bin/repo-memory-linux-amd64
             bin/repo-memory-linux-arm64
             bin/repo-memory-windows-amd64.exe
+            dist/repo-memory-daemon-darwin-arm64.zip
+            dist/repo-memory-daemon-darwin-amd64.zip
+            dist/repo-memory-daemon-linux-amd64.zip
+            dist/repo-memory-daemon-linux-arm64.zip
+            dist/repo-memory-daemon-windows-amd64.zip

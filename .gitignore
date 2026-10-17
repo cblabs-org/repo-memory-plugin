@@ -3,6 +3,7 @@
 *.swo
 *~
 bin/
+dist/
 /repo-memory
 
 # eval-v2 templates (large, contain 566MB managed_components/)

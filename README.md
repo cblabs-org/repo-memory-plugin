@@ -2,7 +2,7 @@
 
 **Repository-scoped, evidence-linked engineering memory for coding agents (Antigravity & Claude Code).**
 
-> **Specification:** [`SPEC.md` (v1.0)](SPEC.md) · **Design (v2.2):** [`docs/design-v2-distillation-retrieval.md`](docs/design-v2-distillation-retrieval.md) · **Provenance & Hardening:** [`docs/addendum-a-provenance-and-hardening.md`](docs/addendum-a-provenance-and-hardening.md) · **Hooks Reference:** [`docs/antigravity-hooks-reference.md`](docs/antigravity-hooks-reference.md)
+> **Specification:** [`SPEC.md` (v1.0)](SPEC.md) · **Design (v2.2):** [`docs/design-v2-distillation-retrieval.md`](docs/design-v2-distillation-retrieval.md) · **Provenance & Hardening:** [`docs/addendum-a-provenance-and-hardening.md`](docs/addendum-a-provenance-and-hardening.md) · **Packaging & Distribution:** [`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md) · **Hooks Reference:** [`docs/antigravity-hooks-reference.md`](docs/antigravity-hooks-reference.md)
 
 ---
 
@@ -20,6 +20,91 @@
   - **`procedural`** (`recipe` [alias `procedure`], `failure-signature`): Validated by `PostToolUse` command exit codes (`success_count` / `failure_count`), flagged `stale_suspect` when build manifests change, and deterministically graduated into `.agents/skills/rm-<slug>/SKILL.md` once `success_count >= 2` across $\ge 2$ conversations (`Addendum A §10`).
   - **`episodic`** (`decision`, `ruled-out`): Append-only architectural choices (with rejected alternatives) and dead-end approaches that failed, preserved across time and superseded only by newer `decision` ops.
 - **Day-1 Value via Doc Seeding & Async Freshness ("Dreaming"):** `repo-memory seed-docs` bootstraps dossiers from curated repository docs (`docs/developer/**/*.md`, `.agents/skills/**/SKILL.md`, or paths configured under `doc_seeds` in `.memory/config.yaml`) (`source: doc-seed`) and builds `<data-dir>/repos/<repo-id>/index.db` on Day 1. During background ticks, the daemon compares `source_doc_blob_sha` against git ("dreaming") to re-distill entries when source documentation changes.
+
+---
+
+## Installation, Enrolment & Upgrading
+
+`repo-memory` installs once globally on your machine (`~/.gemini/config/plugins/repo-memory-daemon/`) with **zero global hook overhead**, and is then enabled selectively per repository via `/repo-memory-admin` or `repo-memory enroll`.
+
+### Step 1 — Install the Global Plugin (`repo-memory-daemon`)
+
+Choose any of the three installation methods below:
+
+#### Option A: One-Line Release Installer (Recommended — No Go Toolchain Required)
+
+Downloads the pre-compiled binary for your OS and CPU architecture (`darwin/arm64`, `darwin/amd64`, `linux/amd64`, `linux/arm64`) from [GitHub Releases](https://github.com/cblabs-org/repo-memory-plugin/releases), links `repo-memory` into `~/.local/bin/repo-memory`, and installs the `repo-memory-daemon` plugin bundle:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cblabs-org/repo-memory-plugin/main/scripts/install-release.sh | sh
+```
+
+#### Option B: Download & Unzip Plugin Archive (Zero CLI)
+
+1. Download the archive for your platform from [GitHub Releases](https://github.com/cblabs-org/repo-memory-plugin/releases):
+   - **macOS (Apple Silicon):** `repo-memory-daemon-darwin-arm64.zip`
+   - **macOS (Intel):** `repo-memory-daemon-darwin-amd64.zip`
+   - **Linux (x86_64):** `repo-memory-daemon-linux-amd64.zip`
+   - **Linux (ARM64):** `repo-memory-daemon-linux-arm64.zip`
+   - **Windows (x86_64):** `repo-memory-daemon-windows-amd64.zip`
+2. Extract the `.zip` directly into `~/.gemini/config/plugins/` so it creates `~/.gemini/config/plugins/repo-memory-daemon/`:
+   ```bash
+   mkdir -p ~/.gemini/config/plugins
+   unzip -q repo-memory-daemon-<os>-<arch>.zip -d ~/.gemini/config/plugins/
+   ```
+   *(Optional: symlink `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory` into `~/.local/bin/repo-memory` if you also want the `repo-memory` CLI on your terminal `$PATH`. On macOS, the bundled `bin/run-repo-memory.sh` wrapper automatically clears Browser/Finder `com.apple.quarantine` attributes on first run.)*
+3. Restart Antigravity so it discovers the newly added plugin directory.
+
+#### Option C: Build & Install from Source (Requires Go 1.24+)
+
+```bash
+git clone https://github.com/cblabs-org/repo-memory-plugin.git
+cd repo-memory-plugin
+./scripts/install.sh   # or: make install
+```
+
+*(To build all cross-platform binaries and portable `.zip` bundles locally into `dist/`, run `make dist-zip`.)*
+
+---
+
+### Step 2 — Enable the Background Tick Sidecar
+
+After installing the plugin, enable the 1-minute background worker (`Repo Memory Tick`) so `repo-memory` automatically consolidates inbox notes, validates procedural recipes, and keeps doc seeds fresh:
+
+1. Open the Antigravity Automations Dashboard (`sidecar://dashboard` or **Settings → Automations**).
+2. Toggle **"Repo Memory Tick"** (`repo-memory-daemon/tick`) to **Enabled**.
+
+---
+
+### Step 3 — Enroll a Repository
+
+Open any Git repository in Antigravity and either:
+
+- **From Chat (Interactive):**
+  ```text
+  /repo-memory-admin enroll this repo please
+  ```
+  The `repo-memory-admin` skill inspects the repository, confirms your Day-1 seeding options (repository docs/skills and any Principal Architect history), runs `enroll`, and verifies health with `doctor` and `status`.
+
+- **From the Terminal (CLI):**
+  ```bash
+  repo-memory enroll .
+  repo-memory status
+  repo-memory doctor .
+  ```
+
+What `enroll` sets up in the repository:
+- **Committed in Git (`.memory/`):** `config.yaml`, `scrub.yaml`, `ATLAS.md`, `QUESTIONS.md`, `dossiers/`, and `ops/` (plus the managed Atlas block in `GEMINI.md`) so engineering memory is shared across the team.
+- **Git-Excluded Local Pointers:** `.memory/.enrolled` and `.agents/plugins.json` (added automatically to `.git/info/exclude`), activating `hooks.json` and the `repo-memory` MCP server for that workspace only.
+
+---
+
+### Upgrading & Uninstalling
+
+- **Upgrading:** Because `~/.gemini/config/plugins/repo-memory-daemon/` is 100% stateless (all repository memory lives in `<repo>/.memory/` and local index state lives in your OS user data directory), upgrading via any method (`git pull && ./scripts/install.sh`, re-running `install-release.sh`, or unzipping a newer `repo-memory-daemon-<os>-<arch>.zip` over `~/.gemini/config/plugins/repo-memory-daemon/`) **immediately upgrades all enrolled repositories on your machine** without re-enrolling.
+- **Checking Version Sync:** Run `repo-memory status` or `repo-memory doctor .` at any time to verify that your CLI binary and installed plugin bundle versions match.
+- **Unenrolling a Repository:** Run `repo-memory unenroll .` (or `/repo-memory-admin unenroll this repo`) to remove hooks and `.agents/plugins.json` while keeping committed `.memory/` files intact (pass `--purge` to also delete local SQLite index state).
+- **Uninstalling Globally:** Run `repo-memory uninstall --harness antigravity` (pass `--purge` to also remove all local user data).
 
 ---
 
@@ -136,6 +221,7 @@ Spawned per session over `stdio` and backed by `<data-dir>/repos/<repo-id>/index
 - [`SPEC.md`](SPEC.md) — Canonical `v1.0` System Specification (`v2.2` Architecture)
 - [`docs/design-v2-distillation-retrieval.md`](docs/design-v2-distillation-retrieval.md) — v2 Distillation, Storage & Retrieval Architecture (Revision 4, `v2.2`)
 - [`docs/addendum-a-provenance-and-hardening.md`](docs/addendum-a-provenance-and-hardening.md) — Provenance, Seeding, Validation & Hardening (Revision 3)
+- [`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md) — Dual-Channel Plugin Packaging, Portable `.zip` Bundles & Versioning Guide
 - [`docs/antigravity-hooks-reference.md`](docs/antigravity-hooks-reference.md) — Empirical Antigravity Hooks Reference (`injectSteps`, `userMessage` vs `ephemeralMessage`, subagent ordering, two-plugin split)
 - [`docs/experiments/SPEC-CHANGES.md`](docs/experiments/SPEC-CHANGES.md) — Experiment Spike (`E01`–`E12`) Specification Reconciliation Ledger
 - [`docs/evaluations/pa-memory-retrieval-effectiveness.md`](docs/evaluations/pa-memory-retrieval-effectiveness.md) — 231-Session Empirical Study of Pull vs Push Memory Retrieval

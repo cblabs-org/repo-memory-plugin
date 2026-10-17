@@ -159,6 +159,52 @@ func TestGenerateWorkspacePluginJSON(t *testing.T) {
 	}
 }
 
+func TestVersionStampingAndPortableGenerators(t *testing.T) {
+	if got := antigravity.NormalizePluginVersion("v0.2.3"); got != "0.2.3" {
+		t.Errorf("NormalizePluginVersion('v0.2.3') = %q, want '0.2.3'", got)
+	}
+	if got := antigravity.NormalizePluginVersion("dev"); got != antigravity.DefaultPluginVersion {
+		t.Errorf("NormalizePluginVersion('dev') = %q, want %q", got, antigravity.DefaultPluginVersion)
+	}
+
+	daemonJSON := antigravity.GenerateDaemonPluginJSONWithVersion("v0.3.1")
+	var daemonMap map[string]any
+	if err := json.Unmarshal([]byte(daemonJSON), &daemonMap); err != nil {
+		t.Fatalf("GenerateDaemonPluginJSONWithVersion produced invalid JSON: %v", err)
+	}
+	if daemonMap["version"] != "0.3.1" {
+		t.Errorf("expected daemon version '0.3.1', got %v", daemonMap["version"])
+	}
+
+	wsJSON := antigravity.GenerateWorkspacePluginJSONWithVersion("0.3.1")
+	var wsMap map[string]any
+	if err := json.Unmarshal([]byte(wsJSON), &wsMap); err != nil {
+		t.Fatalf("GenerateWorkspacePluginJSONWithVersion produced invalid JSON: %v", err)
+	}
+	if wsMap["version"] != "0.3.1" {
+		t.Errorf("expected workspace version '0.3.1', got %v", wsMap["version"])
+	}
+
+	for _, targetOS := range []string{"darwin", "linux", "windows"} {
+		mcpJSON := antigravity.GeneratePortableMCPConfigJSON(targetOS)
+		var mcpMap map[string]any
+		if err := json.Unmarshal([]byte(mcpJSON), &mcpMap); err != nil {
+			t.Fatalf("GeneratePortableMCPConfigJSON(%q) produced invalid JSON: %v", targetOS, err)
+		}
+
+		sidecarJSON := antigravity.GeneratePortableSidecarJSON(targetOS)
+		var sidecarMap map[string]any
+		if err := json.Unmarshal([]byte(sidecarJSON), &sidecarMap); err != nil {
+			t.Fatalf("GeneratePortableSidecarJSON(%q) produced invalid JSON: %v", targetOS, err)
+		}
+	}
+
+	runnerScript := antigravity.GeneratePortableRunnerScript()
+	if !strings.Contains(runnerScript, "com.apple.quarantine") || !strings.Contains(runnerScript, `exec "$BIN" "$@"`) {
+		t.Errorf("GeneratePortableRunnerScript missing expected quarantine cleanup or exec line:\n%s", runnerScript)
+	}
+}
+
 func TestGenerateConfigJSON(t *testing.T) {
 	content := antigravity.GenerateConfigJSON()
 
