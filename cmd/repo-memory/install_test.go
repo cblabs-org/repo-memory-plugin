@@ -23,6 +23,7 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	// Verify required subdirectories exist
 	expectedDirs := []string{
 		filepath.Join(tempPluginDir, "sidecars", "tick"),
+		filepath.Join(tempPluginDir, "skills", "repo-memory-admin"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller"),
@@ -99,6 +100,16 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		}
 	}
 
+	// Verify global repo-memory-admin skill markdown exists and substitutes binary path
+	adminSkillPath := filepath.Join(tempPluginDir, "skills", "repo-memory-admin", "SKILL.md")
+	adminSkillData, err := os.ReadFile(adminSkillPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", adminSkillPath, err)
+	}
+	if !strings.Contains(string(adminSkillData), "name: repo-memory-admin") || !strings.Contains(string(adminSkillData), binPath+" enroll") {
+		t.Errorf("admin skill file %s missing expected content:\n%s", adminSkillPath, string(adminSkillData))
+	}
+
 	// Verify sidecar args and restart_policy
 	sidecarPath := filepath.Join(tempPluginDir, "sidecars", "tick", "sidecar.json")
 	sidecarData, err := os.ReadFile(sidecarPath)
@@ -138,6 +149,14 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	}
 	if !strings.Contains(string(updatedSidecar), newBinPath) {
 		t.Errorf("expected updated sidecar to contain new binary path %s", newBinPath)
+	}
+
+	updatedAdminSkill, err := os.ReadFile(adminSkillPath)
+	if err != nil {
+		t.Fatalf("reading updated SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(updatedAdminSkill), newBinPath+" enroll") {
+		t.Errorf("expected updated SKILL.md to contain new binary path %s", newBinPath)
 	}
 }
 

@@ -122,3 +122,100 @@ func TestEngine_ExcludesOpenIssueWithoutClosesWhenFromPushDelivery(t *testing.T)
 		}
 	}
 }
+
+func TestEngine_MidTurnPrioritizesSemanticOverDecisionDiary(t *testing.T) {
+	ctx := context.Background()
+	workspaceRoot := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+
+	anchorFile := filepath.Join(workspaceRoot, "internal", "service.go")
+	if err := os.MkdirAll(filepath.Dir(anchorFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(anchorFile, []byte("package internal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := index.NewIndex(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idx.Close()
+
+	now := time.Now().UTC()
+	entries := []dossiers.Entry{
+		{
+			ID:           "dec-diary",
+			DossierScope: "internal",
+			Type:         dossiers.EntryTypeDecision,
+			Kind:         dossiers.CognitiveKindSemantic,
+			Text:         "Chose helper X during initial refactor.",
+			Anchors:      []string{"internal/service.go"},
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		},
+		{
+			ID:           "rul-diary",
+			DossierScope: "internal",
+			Type:         dossiers.EntryTypeRuledOut,
+			Kind:         dossiers.CognitiveKindEpisodic,
+			Text:         "Ruled out synchronous polling in service.go.",
+			Anchors:      []string{"internal/service.go"},
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		},
+		{
+			ID:           "got-actionable",
+			DossierScope: "internal",
+			Type:         dossiers.EntryTypeGotcha,
+			Kind:         dossiers.CognitiveKindSemantic,
+			Text:         "Always hold mu before mutating service state.",
+			Anchors:      []string{"internal/service.go"},
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		},
+	}
+
+	for _, e := range entries {
+		if err := idx.UpsertEntry(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		if len(e.Anchors) > 0 {
+			if err := idx.UpsertEntryAnchors(ctx, e.ID, e.Anchors); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	eng := NewEngine(idx, workspaceRoot)
+
+	// 1. AnchorEntries (MomentFirstTouch) excludes decision diary entries and ranks gotcha above ruled-out.
+	touchHits, err := eng.AnchorEntries(ctx, "internal/service.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(touchHits) != 2 {
+		t.Fatalf("expected 2 AnchorEntries (gotcha + ruled-out, excluding decision), got %d: %+v", len(touchHits), touchHits)
+	}
+	if touchHits[0].Entry.ID != "got-actionable" {
+		t.Errorf("expected got-actionable to rank first ahead of ruled-out, got %s", touchHits[0].Entry.ID)
+	}
+	for _, h := range touchHits {
+		if h.Entry.ID == "dec-diary" {
+			t.Errorf("expected decision entry dec-diary to be excluded from mid-turn AnchorEntries")
+		}
+	}
+
+	// 2. DossierEntries (MomentFirstEntry) includes gotcha and ranks it above ruled-out.
+	eng.ResetInjected()
+	dossierHits, err := eng.DossierEntries(ctx, "internal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dossierHits) != 2 {
+		t.Fatalf("expected 2 DossierEntries (gotcha + ruled-out), got %d: %+v", len(dossierHits), dossierHits)
+	}
+	if dossierHits[0].Entry.ID != "got-actionable" {
+		t.Errorf("expected got-actionable to rank first in DossierEntries, got %s", dossierHits[0].Entry.ID)
+	}
+}

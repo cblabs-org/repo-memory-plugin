@@ -707,9 +707,13 @@ func DetectMilestones(steps []Step, afterStepIdx int, isInitialMark bool) Milest
 }
 
 // BuildTurnNoteRequestPrompt returns the canonical Stage 1 Stop continuation prompt.
+// The first line is kept to <= 29 characters ("repo-memory: saving turn note") so
+// that when the host prepends "Stop hook blocked termination: " (31 chars), the
+// 60-character collapsible SystemMessageStep header displays cleanly without truncation.
 func BuildTurnNoteRequestPrompt(noteTitles []string, hasCheckpointSinceMark bool) string {
 	var b strings.Builder
-	b.WriteString("repo-memory: before you stop, write a memory note for this repository. Cover only what happened since your last memory note, or since the start of the conversation if there is none. Don't continue the task, don't call tools, and don't repeat your previous answer.\n\n")
+	b.WriteString("repo-memory: saving turn note\n\n")
+	b.WriteString("Before you stop, write a memory note for this repository. Cover only what happened since your last memory note, or since the start of the conversation if there is none. Don't continue the task, don't call tools, and don't repeat your previous answer.\n\n")
 	b.WriteString("Record only what a capable engineer new to this code would get wrong without being told:\n")
 	b.WriteString("- decisions, with why and the alternatives rejected;\n")
 	b.WriteString("- approaches that failed, and why;\n")

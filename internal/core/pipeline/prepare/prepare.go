@@ -185,8 +185,10 @@ func shouldDropStep(s harness.Step) bool {
 		return true
 	}
 	combined := s.Text + "\n" + s.Excerpt
+	lower := strings.ToLower(combined)
 	if strings.Contains(combined, "[repo-memory ") ||
-		strings.Contains(combined, "repo-memory: before you stop, write a memory note") ||
+		strings.Contains(lower, "repo-memory: saving turn note") ||
+		strings.Contains(lower, "before you stop, write a memory note") ||
 		strings.Contains(combined, "<!-- repo-memory:begin") {
 		return true
 	}

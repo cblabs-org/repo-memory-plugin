@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "ops": [
+    {
+      "type": "add",
+      "entry_id": "docseed-f66eb00e",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".agents/plugins.json"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "f4afbc7d9f806951265f38d501d67a12c7a162fd",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Per-Workspace Plugin (`\u003cworkspace\u003e/.agents/plugins.json`):** Enrolled repositories reference the nested `workspace-plugin/repo-memory` directory via a resolved **absolute path** (because `.agents/plugins.json` does not expand `~` or `$HOME`). This activates `hooks.json`, `mcp.json`, agents, and skills exclusively for that workspace."
+      }
+    },
+    {
+      "type": "amend",
+      "entry_id": "docseed-70521f15",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-17T08:11:08.358700232Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "f4afbc7d9f806951265f38d501d67a12c7a162fd",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and newly entered scope entries that are tracked in a per-session `InjectedSet`."
+      }
+    },
+    {
+      "type": "add",
+      "entry_id": "docseed-3b418a67",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-15T17:43:53Z",
+      "source": "doc-seed",
+      "fields": {
+        "anchors": [
+          ".memory/ATLAS.md"
+        ],
+        "entry_type": "invariant",
+        "evidence": [
+          "doc:docs/antigravity-hooks-reference.md"
+        ],
+        "kind": "semantic",
+        "source_doc_blob_sha": "f4afbc7d9f806951265f38d501d67a12c7a162fd",
+        "source_doc_path": "docs/antigravity-hooks-reference.md",
+        "text": "**Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `systemMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads..."
+      }
+    },
+    {
+      "type": "retire",
+      "entry_id": "docseed-dfdc29da",
+      "dossier_scope": "root",
+      "timestamp": "2026-10-17T08:11:08.358700232Z",
+      "source": "doc-seed",
+      "fields": {
+        "reason": "source_doc_updated: docs/antigravity-hooks-reference.md (f4afbc7d9f80)"
+      }
+    }
+  ],
+  "created_at": "2026-10-17T08:11:08.439961489Z",
+  "batch_id": "01M54EMARQKRMRXYWSCQ7BG94W"
+}

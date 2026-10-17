@@ -165,17 +165,20 @@ func TestPreInvocation_TaskStart_And_Empty(t *testing.T) {
 	}
 	
 	step := resp.InjectSteps[0]
-	userMsg := step.UserMessage
-	if userMsg == "" {
-		t.Fatalf("expected userMessage entry, got empty")
+	if step.SystemMessage == nil || step.SystemMessage.SystemMessage == "" {
+		t.Fatalf("expected systemMessage entry, got nil/empty")
 	}
+	if len(step.SystemMessage.Metadata) > 0 {
+		t.Errorf("expected nil/empty metadata on systemMessage, got %v", step.SystemMessage.Metadata)
+	}
+	sysMsg := step.SystemMessage.SystemMessage
 	if step.EphemeralMessage != "" {
 		t.Errorf("expected empty ephemeralMessage on task-start, got %q", step.EphemeralMessage)
 	}
 	
 	// Check tag
-	if !strings.Contains(userMsg, "[repo-memory test-1]") {
-		t.Errorf("userMessage missing tag, got: %s", userMsg)
+	if !strings.Contains(sysMsg, "[repo-memory test-1]") {
+		t.Errorf("systemMessage missing tag, got: %s", sysMsg)
 	}
 }
 
@@ -266,24 +269,24 @@ func TestPreInvocation_AboutToEdit(t *testing.T) {
 	}
 
 	var ephemeralMsg string
-	var hasUserMsg bool
+	var hasSystemMsg bool
 	for _, step := range resp.InjectSteps {
 		if step.EphemeralMessage != "" {
-			if step.UserMessage != "" {
-				t.Errorf("expected about-to-edit step to have empty userMessage, got %q", step.UserMessage)
+			if step.SystemMessage != nil {
+				t.Errorf("expected about-to-edit step to have nil systemMessage, got %+v", step.SystemMessage)
 			}
 			ephemeralMsg = step.EphemeralMessage
 		}
-		if step.UserMessage != "" {
+		if step.SystemMessage != nil && step.SystemMessage.SystemMessage != "" {
 			if step.EphemeralMessage != "" {
 				t.Errorf("expected first-touch step to have empty ephemeralMessage, got %q", step.EphemeralMessage)
 			}
-			hasUserMsg = true
+			hasSystemMsg = true
 		}
 	}
 
-	if !hasUserMsg {
-		t.Errorf("expected first-touch userMessage to be present")
+	if !hasSystemMsg {
+		t.Errorf("expected first-touch systemMessage to be present")
 	}
 
 	wantEphemeral := "[repo-memory] Check injected entries above before editing file.go"
@@ -395,9 +398,8 @@ CHECKPOINT
 		t.Fatalf("expected inject steps, got none")
 	}
 
-	userMsg := resp.InjectSteps[0].UserMessage
-	if !strings.Contains(userMsg, "Must preserve state after compaction") {
-		t.Errorf("expected reinjection text in userMessage, got: %s", userMsg)
+	if resp.InjectSteps[0].SystemMessage == nil || !strings.Contains(resp.InjectSteps[0].SystemMessage.SystemMessage, "Must preserve state after compaction") {
+		t.Errorf("expected reinjection text in systemMessage, got: %+v", resp.InjectSteps[0].SystemMessage)
 	}
 	if resp.InjectSteps[0].EphemeralMessage != "" {
 		t.Errorf("expected empty ephemeralMessage on reinjection, got: %s", resp.InjectSteps[0].EphemeralMessage)
@@ -501,15 +503,15 @@ func TestPreInvocation_AntigravityNativeToolCalls(t *testing.T) {
 
 	var hasContext, hasWarning bool
 	for _, step := range resp.InjectSteps {
-		if strings.Contains(step.UserMessage, "Must preserve service.go invariants") {
+		if step.SystemMessage != nil && strings.Contains(step.SystemMessage.SystemMessage, "Must preserve service.go invariants") {
 			if step.EphemeralMessage != "" {
 				t.Errorf("expected empty ephemeralMessage on context step, got %q", step.EphemeralMessage)
 			}
 			hasContext = true
 		}
 		if strings.Contains(step.EphemeralMessage, "before editing service.go") {
-			if step.UserMessage != "" {
-				t.Errorf("expected empty userMessage on about-to-edit step, got %q", step.UserMessage)
+			if step.SystemMessage != nil {
+				t.Errorf("expected nil systemMessage on about-to-edit step, got %+v", step.SystemMessage)
 			}
 			hasWarning = true
 		}
@@ -603,8 +605,8 @@ func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
 	if err := json.Unmarshal(out1, &resp1); err != nil {
 		t.Fatalf("unmarshal out1: %v", err)
 	}
-	if len(resp1.InjectSteps) == 0 || !strings.Contains(resp1.InjectSteps[0].UserMessage, "Must preserve service.go invariants") {
-		t.Fatalf("expected userMessage injection on initial call, got %+v", resp1.InjectSteps)
+	if len(resp1.InjectSteps) == 0 || resp1.InjectSteps[0].SystemMessage == nil || !strings.Contains(resp1.InjectSteps[0].SystemMessage.SystemMessage, "Must preserve service.go invariants") {
+		t.Fatalf("expected systemMessage injection on initial call, got %+v", resp1.InjectSteps)
 	}
 	if resp1.InjectSteps[0].EphemeralMessage != "" {
 		t.Errorf("expected empty ephemeralMessage, got %q", resp1.InjectSteps[0].EphemeralMessage)
@@ -652,8 +654,8 @@ func TestPreInvocation_RewindRearmsDedup(t *testing.T) {
 	if err := json.Unmarshal(out3, &resp3); err != nil {
 		t.Fatalf("unmarshal out3: %v", err)
 	}
-	if len(resp3.InjectSteps) == 0 || !strings.Contains(resp3.InjectSteps[0].UserMessage, "Must preserve service.go invariants") {
-		t.Fatalf("expected userMessage re-injection after rewind, got %+v", resp3.InjectSteps)
+	if len(resp3.InjectSteps) == 0 || resp3.InjectSteps[0].SystemMessage == nil || !strings.Contains(resp3.InjectSteps[0].SystemMessage.SystemMessage, "Must preserve service.go invariants") {
+		t.Fatalf("expected systemMessage re-injection after rewind, got %+v", resp3.InjectSteps)
 	}
 	if resp3.InjectSteps[0].EphemeralMessage != "" {
 		t.Errorf("expected empty ephemeralMessage after rewind, got %q", resp3.InjectSteps[0].EphemeralMessage)
@@ -776,17 +778,17 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 	if resp1.InjectSteps[0].EphemeralMessage != "" {
 		t.Errorf("Phase 1 expected empty EphemeralMessage, got %q", resp1.InjectSteps[0].EphemeralMessage)
 	}
-	if !strings.Contains(resp1.InjectSteps[0].UserMessage, "[repo-memory task-entry-1]") {
-		t.Errorf("Phase 1 expected UserMessage containing [repo-memory task-entry-1], got %q", resp1.InjectSteps[0].UserMessage)
+	if resp1.InjectSteps[0].SystemMessage == nil || !strings.Contains(resp1.InjectSteps[0].SystemMessage.SystemMessage, "[repo-memory task-entry-1]") {
+		t.Errorf("Phase 1 expected SystemMessage containing [repo-memory task-entry-1], got %+v", resp1.InjectSteps[0].SystemMessage)
 	}
 
-	// Append injected UserMessage as persistent USER_INPUT step (step_index: 1),
+	// Append injected SystemMessage as persistent SYSTEM_MESSAGE step (step_index: 1),
 	// followed by view_file on internal/core/auth/token.go (step_index: 2),
 	// TOOL_RESPONSE (step_index: 3), and PLANNER_RESPONSE (step_index: 4) with edit intent.
 	step1 := marshalStep(map[string]any{
 		"step_index": 1,
-		"type":       "USER_INPUT",
-		"content":    resp1.InjectSteps[0].UserMessage,
+		"type":       "SYSTEM_MESSAGE",
+		"content":    resp1.InjectSteps[0].SystemMessage.SystemMessage,
 	})
 	step2 := marshalStep(map[string]any{
 		"step_index": 2,
@@ -831,32 +833,38 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 		t.Fatalf("Phase 2 unmarshal: %v (raw: %s)", err, string(out2))
 	}
 
-	var phase2UserMsgs []string
+	var phase2SysMsgs []string
 	var phase2EphemeralMsgs []string
 	for _, st := range resp2.InjectSteps {
-		if st.UserMessage != "" {
+		if st.SystemMessage != nil && st.SystemMessage.SystemMessage != "" {
 			if st.EphemeralMessage != "" {
-				t.Errorf("Phase 2 expected UserMessage step to have empty EphemeralMessage, got %q", st.EphemeralMessage)
+				t.Errorf("Phase 2 expected SystemMessage step to have empty EphemeralMessage, got %q", st.EphemeralMessage)
 			}
-			phase2UserMsgs = append(phase2UserMsgs, st.UserMessage)
+			phase2SysMsgs = append(phase2SysMsgs, st.SystemMessage.SystemMessage)
 		}
 		if st.EphemeralMessage != "" {
-			if st.UserMessage != "" {
-				t.Errorf("Phase 2 expected EphemeralMessage step to have empty UserMessage, got %q", st.UserMessage)
+			if st.SystemMessage != nil {
+				t.Errorf("Phase 2 expected EphemeralMessage step to have nil SystemMessage, got %+v", st.SystemMessage)
 			}
 			phase2EphemeralMsgs = append(phase2EphemeralMsgs, st.EphemeralMessage)
 		}
 	}
 
-	combinedPhase2User := strings.Join(phase2UserMsgs, "\n")
-	if strings.Contains(combinedPhase2User, "task-entry-1") {
-		t.Errorf("Phase 2 expected task-entry-1 to be suppressed by InjectedSet, got: %s", combinedPhase2User)
+	if len(phase2SysMsgs) != 1 {
+		t.Errorf("Phase 2 expected all SystemMessage injections to coalesce into 1 step, got %d: %v", len(phase2SysMsgs), phase2SysMsgs)
 	}
-	if !strings.Contains(combinedPhase2User, "[repo-memory touch-entry-1]") {
-		t.Errorf("Phase 2 expected touch-entry-1 in UserMessage, got: %s", combinedPhase2User)
+	combinedPhase2Sys := strings.Join(phase2SysMsgs, "\n")
+	if strings.Count(combinedPhase2Sys, "--- repo-memory context ---") != 1 {
+		t.Errorf("Phase 2 expected exactly 1 context header in coalesced SystemMessage, got: %s", combinedPhase2Sys)
 	}
-	if !strings.Contains(combinedPhase2User, "[repo-memory dossier-entry-1]") {
-		t.Errorf("Phase 2 expected dossier-entry-1 in UserMessage, got: %s", combinedPhase2User)
+	if strings.Contains(combinedPhase2Sys, "task-entry-1") {
+		t.Errorf("Phase 2 expected task-entry-1 to be suppressed by InjectedSet, got: %s", combinedPhase2Sys)
+	}
+	if !strings.Contains(combinedPhase2Sys, "[repo-memory touch-entry-1]") {
+		t.Errorf("Phase 2 expected touch-entry-1 in SystemMessage, got: %s", combinedPhase2Sys)
+	}
+	if !strings.Contains(combinedPhase2Sys, "[repo-memory dossier-entry-1]") {
+		t.Errorf("Phase 2 expected dossier-entry-1 in SystemMessage, got: %s", combinedPhase2Sys)
 	}
 
 	transcriptBytesPhase2, err := os.ReadFile(transcriptPath)
@@ -864,7 +872,7 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(transcriptBytesPhase2), "[repo-memory task-entry-1]") {
-		t.Errorf("Phase 2 expected task-entry-1 USER_INPUT step to remain present in transcript_full.jsonl")
+		t.Errorf("Phase 2 expected task-entry-1 SYSTEM_MESSAGE step to remain present in transcript_full.jsonl")
 	}
 
 	wantAboutToEdit := "[repo-memory] Check injected entries above before editing token.go"
@@ -875,8 +883,8 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 	// Phase 3 (Turn 1, invocationNum: 2, initialNumSteps: 7 — Mid-turn Deduplication)
 	step5 := marshalStep(map[string]any{
 		"step_index": 5,
-		"type":       "USER_INPUT",
-		"content":    combinedPhase2User,
+		"type":       "SYSTEM_MESSAGE",
+		"content":    combinedPhase2Sys,
 	})
 	step6 := marshalStep(map[string]any{
 		"step_index": 6,
@@ -943,13 +951,16 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 	if reinjStep.EphemeralMessage != "" {
 		t.Errorf("Phase 4 expected empty EphemeralMessage on compaction re-injection, got %q", reinjStep.EphemeralMessage)
 	}
+	if reinjStep.SystemMessage == nil {
+		t.Fatalf("Phase 4 expected non-nil SystemMessage on compaction re-injection")
+	}
 	for _, wantID := range []string{"task-entry-1", "touch-entry-1", "dossier-entry-1"} {
-		if !strings.Contains(reinjStep.UserMessage, wantID) {
-			t.Errorf("Phase 4 expected re-injected UserMessage to contain %q, got: %s", wantID, reinjStep.UserMessage)
+		if !strings.Contains(reinjStep.SystemMessage.SystemMessage, wantID) {
+			t.Errorf("Phase 4 expected re-injected SystemMessage to contain %q, got: %s", wantID, reinjStep.SystemMessage.SystemMessage)
 		}
 	}
-	if strings.Contains(reinjStep.UserMessage, "about-to-edit") || strings.Contains(reinjStep.UserMessage, "before editing") {
-		t.Errorf("Phase 4 expected about-to-edit not to be re-injected, got: %s", reinjStep.UserMessage)
+	if strings.Contains(reinjStep.SystemMessage.SystemMessage, "about-to-edit") || strings.Contains(reinjStep.SystemMessage.SystemMessage, "before editing") {
+		t.Errorf("Phase 4 expected about-to-edit not to be re-injected, got: %s", reinjStep.SystemMessage.SystemMessage)
 	}
 
 	dataDir := os.Getenv("REPO_MEMORY_DATA_DIR")
@@ -984,19 +995,19 @@ func TestPreInvocation_MultiInvocationLifecycle(t *testing.T) {
 	if err := json.Unmarshal(out5, &resp5); err != nil {
 		t.Fatalf("Phase 5 unmarshal: %v (raw: %s)", err, string(out5))
 	}
-	var phase5UserMsgs []string
+	var phase5SysMsgs []string
 	for _, st := range resp5.InjectSteps {
 		if st.EphemeralMessage != "" {
 			t.Errorf("Phase 5 expected empty EphemeralMessage after rewind, got %q", st.EphemeralMessage)
 		}
-		if st.UserMessage != "" {
-			phase5UserMsgs = append(phase5UserMsgs, st.UserMessage)
+		if st.SystemMessage != nil && st.SystemMessage.SystemMessage != "" {
+			phase5SysMsgs = append(phase5SysMsgs, st.SystemMessage.SystemMessage)
 		}
 	}
-	combinedPhase5User := strings.Join(phase5UserMsgs, "\n")
+	combinedPhase5Sys := strings.Join(phase5SysMsgs, "\n")
 	for _, wantID := range []string{"touch-entry-1", "dossier-entry-1"} {
-		if !strings.Contains(combinedPhase5User, wantID) {
-			t.Errorf("Phase 5 expected rewind re-injection of %q in UserMessage, got: %s", wantID, combinedPhase5User)
+		if !strings.Contains(combinedPhase5Sys, wantID) {
+			t.Errorf("Phase 5 expected rewind re-injection of %q in SystemMessage, got: %s", wantID, combinedPhase5Sys)
 		}
 	}
 

@@ -378,13 +378,14 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 			if p1Step.EphemeralMessage != "" {
 				t.Errorf("Phase 1 expected empty EphemeralMessage, got %q", p1Step.EphemeralMessage)
 			}
-			if p1Step.UserMessage == "" {
-				t.Fatalf("Phase 1 expected non-empty UserMessage")
+			if p1Step.SystemMessage == nil || p1Step.SystemMessage.SystemMessage == "" {
+				t.Fatalf("Phase 1 expected non-empty SystemMessage")
 			}
 
-			p1Lines := len(strings.Split(strings.TrimSpace(p1Step.UserMessage), "\n"))
-			p1RawTokens := len(p1Step.UserMessage) / 4
-			p1IDs := extractEntryIDsFromText(p1Step.UserMessage)
+			p1Text := p1Step.SystemMessage.SystemMessage
+			p1Lines := len(strings.Split(strings.TrimSpace(p1Text), "\n"))
+			p1RawTokens := len(p1Text) / 4
+			p1IDs := extractEntryIDsFromText(p1Text)
 			p1Seed, p1DocSeed, p1Tokens, p1Details := classifyEntryIDs(p1IDs)
 			if p1Lines > 180 {
 				t.Errorf("Phase 1 lines %d exceeded 180-line cap", p1Lines)
@@ -401,7 +402,7 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 
 			metrics = append(metrics, probePhaseMetrics{
 				Phase:            "Phase 1: Invocation 0 (MomentTaskStart)",
-				Channel:          "userMessage",
+				Channel:          "systemMessage",
 				EntryCount:       len(p1IDs),
 				SeedCount:        p1Seed,
 				DocSeedCount:     p1DocSeed,
@@ -420,9 +421,9 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 			// =========================================================================
 			step1 := marshalStep(map[string]any{
 				"step_index": 1,
-				"type":       "USER_INPUT",
+				"type":       "SYSTEM_MESSAGE",
 				"source":     "SYSTEM_SDK",
-				"content":    p1Step.UserMessage,
+				"content":    p1Text,
 			})
 			var toolCalls []map[string]any
 			for _, rel := range tc.touchedFiles {
@@ -471,16 +472,16 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 				t.Fatalf("Phase 2 unmarshal: %v (raw: %s)", err, string(out2))
 			}
 
-			var p2UserMsgs []string
+			var p2SysMsgs []string
 			for _, st := range resp2.InjectSteps {
 				if st.EphemeralMessage != "" {
 					t.Errorf("Phase 2 expected empty EphemeralMessage, got %q", st.EphemeralMessage)
 				}
-				if st.UserMessage != "" {
-					p2UserMsgs = append(p2UserMsgs, st.UserMessage)
+				if st.SystemMessage != nil && st.SystemMessage.SystemMessage != "" {
+					p2SysMsgs = append(p2SysMsgs, st.SystemMessage.SystemMessage)
 				}
 			}
-			p2Combined := strings.Join(p2UserMsgs, "\n")
+			p2Combined := strings.Join(p2SysMsgs, "\n")
 			p2IDs := extractEntryIDsFromText(p2Combined)
 			if len(p2IDs) == 0 {
 				t.Fatalf("Phase 2 expected MomentFirstTouch + MomentFirstEntry entries, got 0")
@@ -497,7 +498,7 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 				}
 			}
 
-			// Verify Invocation 0 UserMessage remains persisted in transcript_full.jsonl
+			// Verify Invocation 0 SystemMessage remains persisted in transcript_full.jsonl
 			rawTranscriptP2, err := os.ReadFile(transcriptPath)
 			if err != nil {
 				t.Fatal(err)
@@ -513,7 +514,7 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 
 			metrics = append(metrics, probePhaseMetrics{
 				Phase:            "Phase 2: Invocation 1 (FirstTouch + FirstEntry)",
-				Channel:          "userMessage",
+				Channel:          "systemMessage",
 				EntryCount:       len(p2IDs),
 				SeedCount:        p2Seed,
 				DocSeedCount:     p2DocSeed,
@@ -527,10 +528,10 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 				t.Logf("[Phase 2 FirstTouch/FirstEntry] %s", d)
 			}
 
-			// Append Phase 2 UserMessage to transcript and verify Invocation 2 deduplication
+			// Append Phase 2 SystemMessage to transcript and verify Invocation 2 deduplication
 			step5 := marshalStep(map[string]any{
 				"step_index": 5,
-				"type":       "USER_INPUT",
+				"type":       "SYSTEM_MESSAGE",
 				"source":     "SYSTEM_SDK",
 				"content":    p2Combined,
 			})
@@ -601,8 +602,8 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 				t.Fatalf("Phase 3 expected 1 about-to-edit step, got %d: %+v", len(resp3.InjectSteps), resp3.InjectSteps)
 			}
 			p3Step := resp3.InjectSteps[0]
-			if p3Step.UserMessage != "" {
-				t.Errorf("Phase 3 expected empty UserMessage on about-to-edit, got %q", p3Step.UserMessage)
+			if p3Step.SystemMessage != nil {
+				t.Errorf("Phase 3 expected nil SystemMessage on about-to-edit, got %+v", p3Step.SystemMessage)
 			}
 			wantEphemeral := "[repo-memory] Check injected entries above before editing Application.cpp"
 			if p3Step.EphemeralMessage != wantEphemeral {
@@ -728,12 +729,13 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 			if p4Step.EphemeralMessage != "" {
 				t.Errorf("Phase 4 expected empty EphemeralMessage on BuildReinjection, got %q", p4Step.EphemeralMessage)
 			}
-			if p4Step.UserMessage == "" {
-				t.Fatalf("Phase 4 expected non-empty UserMessage on BuildReinjection")
+			if p4Step.SystemMessage == nil || p4Step.SystemMessage.SystemMessage == "" {
+				t.Fatalf("Phase 4 expected non-empty SystemMessage on BuildReinjection")
 			}
-			p4IDs := extractEntryIDsFromText(p4Step.UserMessage)
+			p4Text := p4Step.SystemMessage.SystemMessage
+			p4IDs := extractEntryIDsFromText(p4Text)
 			p4Seed, p4DocSeed, p4Tokens, _ := classifyEntryIDs(p4IDs)
-			p4Lines := len(strings.Split(strings.TrimSpace(p4Step.UserMessage), "\n"))
+			p4Lines := len(strings.Split(strings.TrimSpace(p4Text), "\n"))
 			if p4Tokens > 1000 {
 				t.Errorf("Phase 4 BuildReinjection tokens %d exceeded 1000-token budget", p4Tokens)
 			}
@@ -748,7 +750,7 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 
 			metrics = append(metrics, probePhaseMetrics{
 				Phase:            "Phase 4: Post-CHECKPOINT (BuildReinjection)",
-				Channel:          "userMessage",
+				Channel:          "systemMessage",
 				EntryCount:       len(p4IDs),
 				SeedCount:        p4Seed,
 				DocSeedCount:     p4DocSeed,
@@ -782,19 +784,19 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 			if err := json.Unmarshal(out5, &resp5); err != nil {
 				t.Fatalf("Phase 5 unmarshal: %v (raw: %s)", err, string(out5))
 			}
-			var p5UserMsgs []string
+			var p5SysMsgs []string
 			for _, st := range resp5.InjectSteps {
 				if st.EphemeralMessage != "" {
 					t.Errorf("Phase 5 expected empty EphemeralMessage after rewind, got %q", st.EphemeralMessage)
 				}
-				if st.UserMessage != "" {
-					p5UserMsgs = append(p5UserMsgs, st.UserMessage)
+				if st.SystemMessage != nil && st.SystemMessage.SystemMessage != "" {
+					p5SysMsgs = append(p5SysMsgs, st.SystemMessage.SystemMessage)
 				}
 			}
-			p5Combined := strings.Join(p5UserMsgs, "\n")
+			p5Combined := strings.Join(p5SysMsgs, "\n")
 			p5IDs := extractEntryIDsFromText(p5Combined)
 			if len(p5IDs) == 0 {
-				t.Fatalf("Phase 5 expected DetectRewind to re-arm dedup and re-inject entries via UserMessage, got 0")
+				t.Fatalf("Phase 5 expected DetectRewind to re-arm dedup and re-inject entries via SystemMessage, got 0")
 			}
 			p5Seed, p5DocSeed, p5Tokens, _ := classifyEntryIDs(p5IDs)
 			p5Lines := len(strings.Split(strings.TrimSpace(p5Combined), "\n"))
@@ -809,7 +811,7 @@ func TestEvalV2ReadSideMicroProbe(t *testing.T) {
 
 			metrics = append(metrics, probePhaseMetrics{
 				Phase:            "Phase 5: Post-/rewind (DetectRewind Re-Arm)",
-				Channel:          "userMessage",
+				Channel:          "systemMessage",
 				EntryCount:       len(p5IDs),
 				SeedCount:        p5Seed,
 				DocSeedCount:     p5DocSeed,

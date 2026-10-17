@@ -208,3 +208,25 @@ func TestGenerateDistillerAgentMD(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateAdminSkillMD(t *testing.T) {
+	binPath := "/usr/local/bin/repo-memory"
+	content := antigravity.GenerateAdminSkillMD(binPath)
+	for _, want := range []string{
+		"name: repo-memory-admin",
+		"/usr/local/bin/repo-memory enroll",
+		"/usr/local/bin/repo-memory seed-docs --repo",
+		"/usr/local/bin/repo-memory reproject --repo",
+		"/usr/local/bin/repo-memory reindex --repo",
+		"/usr/local/bin/repo-memory doctor",
+		"/usr/local/bin/repo-memory status --repo",
+		"/usr/local/bin/repo-memory unenroll",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("GenerateAdminSkillMD missing %q", want)
+		}
+	}
+	if strings.Contains(content, "<bin>") {
+		t.Errorf("expected all <bin> placeholders to be replaced in GenerateAdminSkillMD")
+	}
+}

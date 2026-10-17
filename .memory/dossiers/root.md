@@ -2,14 +2,17 @@
 
 ## Invariants & contracts
 
+### [docseed-3b418a67] **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `systemMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads...
+`invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
+
 ### [docseed-70521f15] **Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and newly entered scope entries that are tracked in a per-session `InjectedSet`.
 `invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
 
 ### [docseed-9d9196ea] The 125 v1 claims and `.memory/views/`. They are replaced by `.memory/ops/` and `.memory/dossiers/`.
 `invariant · kind: semantic · anchors: .memory/ops, .memory/dossiers · source_doc: docs/design-v2-distillation-retrieval.md · evidence: doc:docs/design-v2-distillation-retrieval.md`
 
-### [docseed-dfdc29da] **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/t...
-`invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
+### [docseed-f66eb00e] **Per-Workspace Plugin (`<workspace>/.agents/plugins.json`):** Enrolled repositories reference the nested `workspace-plugin/repo-memory` directory via a resolved **absolute path** (because `.agents/plugins.json` does not expand `~` or `$HOME`). This activates `hooks.json`, `mcp.json`, agents, and skills exclusively for that workspace.
+`invariant · kind: semantic · anchors: .agents/plugins.json · source_doc: docs/antigravity-hooks-reference.md · evidence: doc:docs/antigravity-hooks-reference.md`
 
 ### [docseed-f9386d51] **Updating:** only the text between the markers is ever rewritten. The version tag (`v1` $\to$ `v2`) allows automatic in-place upgrades from `views/MAP.md` to `.memory/ATLAS.md`.
 `invariant · kind: semantic · anchors: .memory/ATLAS.md · source_doc: docs/addendum-a-provenance-and-hardening.md · evidence: doc:docs/addendum-a-provenance-and-hardening.md`

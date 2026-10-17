@@ -1,3 +1,29 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/skills/tracker.go
+ * Description: Procedural recipe command extraction, per-conversation execution
+ *              outcome tracking, and build-manifest git blob SHA freshness auditing.
+ *
+ * Exported Types / Functions:
+ * - EntryOutcome:                Per-entry execution outcome history and manifest blob SHAs.
+ * - OutcomeState:                Persisted map of EntryOutcome records across sessions.
+ * - OutcomesPath():              Returns the filesystem path of procedural_outcomes.json.
+ * - LoadOutcomeState():          Loads OutcomeState from disk (or returns an empty initialized state).
+ * - SaveOutcomeState():          Atomically writes OutcomeState to procedural_outcomes.json.
+ * - NormalizeCommand():          Normalizes shell command strings for deterministic comparison.
+ * - ExtractRecipeCommands():     Extracts executable shell commands from recipe/procedure entries.
+ * - CommandMatchesRecipe():      Reports whether an executed command matches a recipe's commands.
+ * - IsBuildManifestPath():       Reports whether a repo-relative path is a tracked build manifest.
+ * - RecordCommandOutcome():      Records command execution outcomes and updates stale_suspect state.
+ * - CheckBuildManifestFreshness(): Flags procedural entries stale_suspect when anchored manifests change.
+ */
+
+// Package skills manages procedural command validation and deterministic skill graduation.
 package skills
 
 import (
@@ -19,10 +45,11 @@ import (
 )
 
 var (
-	inlineCodeSpanRe = regexp.MustCompile("`([^`\\n]+)`")
-	stepPrefixRe     = regexp.MustCompile(`^(?:[-*+]\s+|\d+[.)]\s+|(?i:step\s+\d+\s*[:.-]\s*)|(?i:command\s*:\s*)|(?i:cmd\s*:\s*))+`)
-	whitespaceRunRe  = regexp.MustCompile(`\s+`)
-	compoundSplitRe  = regexp.MustCompile(`\s*(?:&&|\|\||;|\n)\s*`)
+	inlineCodeSpanRe   = regexp.MustCompile("`([^`\\n]+)`")
+	stepPrefixRe       = regexp.MustCompile(`^(?:[-*+]\s+|\d+[.)]\s+|(?i:step\s+\d+\s*[:.-]\s*)|(?i:command\s*:\s*)|(?i:cmd\s*:\s*))+`)
+	imperativeLeadInRe = regexp.MustCompile(`^(?i:run|execute|invoke|call|use|then|first|next|finally|verify|test|build|check)\b`)
+	whitespaceRunRe    = regexp.MustCompile(`\s+`)
+	compoundSplitRe    = regexp.MustCompile(`\s*(?:&&|\|\||;|\n)\s*`)
 )
 
 var commonCLIVerbs = map[string]bool{
@@ -228,6 +255,39 @@ func looksLikeInlineCommand(rawSpan string) bool {
 	return false
 }
 
+// isExecutableInlineSpan reports whether an inline backtick span on a non-fenced
+// line appears in a procedural step/directive position rather than mid-sentence prose.
+func isExecutableInlineSpan(rawLine, fullMatch, innerSpan string) bool {
+	if !looksLikeInlineCommand(innerSpan) {
+		return false
+	}
+	stripped := strings.TrimSpace(stepPrefixRe.ReplaceAllString(strings.TrimSpace(rawLine), ""))
+	idx := strings.Index(stripped, fullMatch)
+	if idx < 0 {
+		return false
+	}
+	before := strings.TrimSpace(stripped[:idx])
+	after := strings.TrimSpace(stripped[idx+len(fullMatch):])
+
+	// Trailing text after an executable inline command step must be empty or
+	// punctuation/annotation (not mid-sentence prose like "on `git diff` changes").
+	if after != "" {
+		firstAfter := after[0]
+		switch firstAfter {
+		case '.', ',', ';', ':', '(', '[', '-', '&', '|':
+		default:
+			if !strings.HasPrefix(after, "->") && !strings.HasPrefix(after, "—") && !strings.HasPrefix(after, "–") {
+				return false
+			}
+		}
+	}
+
+	if before == "" || strings.HasSuffix(before, ":") {
+		return true
+	}
+	return imperativeLeadInRe.MatchString(before)
+}
+
 // ExtractRecipeCommands extracts shell commands from fenced code blocks, inline code spans,
 // or explicit command lines in a recipe/procedure entry text.
 func ExtractRecipeCommands(text string) []string {
@@ -242,6 +302,7 @@ func ExtractRecipeCommands(text string) []string {
 		commands = append(commands, norm)
 	}
 
+	// --- Step 1: Scan lines, tracking fenced code block state ---
 	lines := strings.Split(text, "\n")
 	inFence := false
 
@@ -263,18 +324,18 @@ func ExtractRecipeCommands(text string) []string {
 			continue
 		}
 
-		// 1. Check inline code spans on this line.
+		// --- Step 2: Check inline code spans in procedural step position ---
 		matches := inlineCodeSpanRe.FindAllStringSubmatch(rawLine, -1)
 		if len(matches) > 0 {
 			for _, m := range matches {
-				if looksLikeInlineCommand(m[1]) {
+				if isExecutableInlineSpan(rawLine, m[0], m[1]) {
 					addCmd(m[1])
 				}
 			}
 			continue
 		}
 
-		// 2. Check explicit command lines ($ ... or starting with common CLI verbs).
+		// --- Step 3: Check explicit command lines ($ ... or starting with common CLI verbs) ---
 		stripped := strings.TrimSpace(stepPrefixRe.ReplaceAllString(trimmed, ""))
 		if strings.HasPrefix(stripped, "$ ") || strings.HasPrefix(stripped, "$") {
 			norm := NormalizeCommand(stripped)
@@ -509,6 +570,19 @@ func appendUniqueString(slice []string, val string) []string {
 	return append(slice, val)
 }
 
+func containsString(slice []string, val string) bool {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return false
+	}
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
+}
+
 // RecordCommandOutcome updates procedural outcome statistics and stale_suspect flags for all
 // active recipe/procedure entries whose extracted commands match command.
 func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID, command string, succeeded bool) ([]string, error) {
@@ -519,6 +593,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 		return nil, nil
 	}
 
+	// --- Step 1: Load active procedural entries from .memory/ops/ and index.db ---
 	entries, inOps, err := loadActiveProceduralEntries(ctx, repoRoot, dataDir, repoID, nil)
 	if err != nil {
 		return nil, err
@@ -527,6 +602,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 		return nil, nil
 	}
 
+	// --- Step 2: Match executed command against recipe steps and update outcome state ---
 	outcomeState, _ := LoadOutcomeState(dataDir, repoID)
 	now := time.Now().UTC()
 	sessionToken := strings.TrimSpace(convID)
@@ -537,6 +613,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 	var matchedEntries []dossiers.Entry
 	var matchedIDs []string
 	var batchOps []ops.Op
+	outcomeDirty := false
 
 	for _, entry := range entries {
 		recipeCmds := ExtractRecipeCommands(entry.Text)
@@ -544,8 +621,31 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 			continue
 		}
 
+		matchedIDs = append(matchedIDs, entry.ID)
 		eo := outcomeState.getOrCreate(entry.ID)
+		alreadySucceededInConv := strings.TrimSpace(convID) != "" &&
+			containsString(eo.SucceededConversations, sessionToken) &&
+			!entry.StaleSuspect &&
+			entry.FailureCount == 0 &&
+			eo.LastFailedConversation == ""
+
 		if succeeded {
+			for _, a := range entry.Anchors {
+				relPath := stripAnchorSymbol(a)
+				if IsBuildManifestPath(relPath) && strings.TrimSpace(repoRoot) != "" {
+					if sha := gitBlobSHA(ctx, repoRoot, relPath); sha != "" && eo.ManifestBlobSHAs[relPath] != sha {
+						eo.ManifestBlobSHAs[relPath] = sha
+						outcomeDirty = true
+					}
+				}
+			}
+
+			// Avoid redundant op-log/dossier/ATLAS churn when this conversation
+			// has already recorded a clean success for this recipe.
+			if alreadySucceededInConv {
+				continue
+			}
+
 			entry.SuccessCount++
 			entry.FailureCount = 0
 			entry.StaleSuspect = false
@@ -554,15 +654,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 			eo.SucceededConversations = appendUniqueString(eo.SucceededConversations, sessionToken)
 			eo.ConsecutiveFailedConversations = nil
 			eo.LastFailedConversation = ""
-
-			for _, a := range entry.Anchors {
-				relPath := stripAnchorSymbol(a)
-				if IsBuildManifestPath(relPath) && strings.TrimSpace(repoRoot) != "" {
-					if sha := gitBlobSHA(ctx, repoRoot, relPath); sha != "" {
-						eo.ManifestBlobSHAs[relPath] = sha
-					}
-				}
-			}
+			outcomeDirty = true
 
 			if strings.TrimSpace(convID) != "" {
 				entry.Evidence = appendUniqueString(entry.Evidence, "conv:"+strings.TrimSpace(convID))
@@ -574,10 +666,10 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 			if len(eo.ConsecutiveFailedConversations) >= 2 {
 				entry.StaleSuspect = true
 			}
+			outcomeDirty = true
 		}
 
 		matchedEntries = append(matchedEntries, entry)
-		matchedIDs = append(matchedIDs, entry.ID)
 
 		opType := ops.OpAmend
 		fields := map[string]any{
@@ -594,7 +686,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 				EntryID:      entry.ID,
 				DossierScope: entry.DossierScope,
 				Timestamp:    now,
-				Source:        firstNonEmpty(entry.Source, ops.SourceTurnNote),
+				Source:       firstNonEmpty(entry.Source, ops.SourceTurnNote),
 				SessionID:    strings.TrimSpace(convID),
 				Fields: map[string]any{
 					"entry_type":        string(entry.Type),
@@ -622,12 +714,18 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 		})
 	}
 
-	if len(matchedEntries) == 0 {
+	if len(matchedIDs) == 0 {
 		return nil, nil
 	}
 
-	if err := SaveOutcomeState(dataDir, repoID, outcomeState); err != nil {
-		return matchedIDs, err
+	// --- Step 3: Persist outcome state and project any new op-log mutations ---
+	if outcomeDirty {
+		if err := SaveOutcomeState(dataDir, repoID, outcomeState); err != nil {
+			return matchedIDs, err
+		}
+	}
+	if len(matchedEntries) == 0 {
+		return matchedIDs, nil
 	}
 
 	if strings.TrimSpace(repoRoot) != "" && len(batchOps) > 0 {
@@ -641,6 +739,7 @@ func RecordCommandOutcome(ctx context.Context, dataDir, repoID, repoRoot, convID
 		}
 	}
 
+	// --- Step 4: Sync SQLite index and graduated skills ---
 	if strings.TrimSpace(dataDir) != "" && strings.TrimSpace(repoID) != "" {
 		idxPath := index.IndexPath(dataDir, repoID)
 		if err := os.MkdirAll(filepath.Dir(idxPath), 0o755); err == nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/internal/mcpserver"
 )
 
@@ -161,4 +162,26 @@ func assertResult(t *testing.T, resp map[string]any, label string) map[string]an
 		t.Fatalf("%s: expected result object, got %v", label, resp)
 	}
 	return result
+}
+
+func TestResolveEnrolledRepoForMCP_PluginRootFallback(t *testing.T) {
+	dataDir := t.TempDir()
+	pluginRoot := t.TempDir()
+	repoRoot := t.TempDir()
+	repoID := "test-repo-id-123"
+
+	if err := config.CreateEnrolledMarker(repoRoot); err != nil {
+		t.Fatalf("failed to create enrolled marker: %v", err)
+	}
+	if err := config.AddToRegistry(dataDir, []string{repoRoot}, repoID, repoRoot); err != nil {
+		t.Fatalf("failed to add registry entry: %v", err)
+	}
+
+	gotID, gotRoot, ok := resolveEnrolledRepoForMCP(dataDir, pluginRoot)
+	if !ok {
+		t.Fatalf("expected resolveEnrolledRepoForMCP to fall back to enrolled repo in registry when cwd is pluginRoot")
+	}
+	if gotID != repoID || gotRoot != repoRoot {
+		t.Fatalf("expected (%q, %q), got (%q, %q)", repoID, repoRoot, gotID, gotRoot)
+	}
 }

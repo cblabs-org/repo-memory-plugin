@@ -95,8 +95,11 @@ func TestBuildReinjection(t *testing.T) {
 	if step == nil {
 		t.Fatalf("Expected step, got nil")
 	}
-	if !strings.Contains(step.UserMessage, "Some test data") {
-		t.Errorf("Expected test data in userMessage, got %s", step.UserMessage)
+	if step.SystemMessage == nil || !strings.Contains(step.SystemMessage.SystemMessage, "Some test data") {
+		t.Errorf("Expected test data in systemMessage, got %+v", step.SystemMessage)
+	}
+	if step.SystemMessage != nil && len(step.SystemMessage.Metadata) > 0 {
+		t.Errorf("Expected empty metadata on systemMessage, got %v", step.SystemMessage.Metadata)
 	}
 	if step.EphemeralMessage != "" {
 		t.Errorf("Expected empty ephemeralMessage, got %s", step.EphemeralMessage)

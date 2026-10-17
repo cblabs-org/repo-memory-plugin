@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_install.go
+ * Description: Installs and upgrades the Antigravity two-plugin layout
+ *              (global repo-memory-daemon with tick sidecar and repo-memory-admin
+ *              skill + nested workspace-plugin/repo-memory with hooks, MCP server,
+ *              and repo-memory-distiller agent).
+ *
+ * Exported Types / Functions:
+ * - ResolveAntigravityPluginDir(): Resolves the target global daemon plugin directory.
+ * - ResolveWorkspacePluginDir():   Resolves the nested workspace-plugin directory.
+ * - ValidateHooksJSON():           Verifies hooks.json is valid JSON with at least one hook entry.
+ * - RunInstall():                  Writes and validates the daemon and workspace plugin bundles.
+ */
+
 package main
 
 import (
@@ -12,6 +32,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// installHarness holds the target agent harness flag (--harness).
 var installHarness string
 
 // ResolveAntigravityPluginDir resolves the target plugin directory for the Antigravity daemon:
@@ -142,10 +163,11 @@ func RunInstall(pluginDir, binPath string) error {
 
 	wsDir := ResolveWorkspacePluginDir(pluginDir)
 
-	// 1. Create necessary directory hierarchy
+	// --- Step 1: Create necessary directory hierarchy ---
 	subdirs := []string{
 		pluginDir,
 		filepath.Join(pluginDir, "sidecars", "tick"),
+		filepath.Join(pluginDir, "skills", "repo-memory-admin"),
 		wsDir,
 		filepath.Join(wsDir, "agents"),
 		filepath.Join(wsDir, "agents", "repo-memory-distiller"),
@@ -156,7 +178,7 @@ func RunInstall(pluginDir, binPath string) error {
 		}
 	}
 
-	// 2. Generate JSON file contents using templates with absolute binary path
+	// --- Step 2: Generate JSON and Markdown file contents using templates with absolute binary path ---
 	hooksContent := antigravity.GenerateHooksJSON(binPath)
 	if err := ValidateHooksJSON([]byte(hooksContent)); err != nil {
 		return fmt.Errorf("validating generated hooks template: %w", err)
@@ -165,6 +187,7 @@ func RunInstall(pluginDir, binPath string) error {
 	daemonPluginContent := antigravity.GenerateDaemonPluginJSON()
 	configContent := antigravity.GenerateConfigJSON()
 	sidecarContent := antigravity.GenerateSidecarJSON(binPath)
+	adminSkillContent := antigravity.GenerateAdminSkillMD(binPath)
 
 	workspacePluginContent := antigravity.GenerateWorkspacePluginJSON()
 	mcpContent := antigravity.GenerateMCPConfigJSON(binPath)
@@ -172,14 +195,15 @@ func RunInstall(pluginDir, binPath string) error {
 
 	files := map[string]string{
 		// Daemon files
-		filepath.Join(pluginDir, "plugin.json"):                      daemonPluginContent,
-		filepath.Join(pluginDir, "config.json"):                      configContent,
-		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"): sidecarContent,
+		filepath.Join(pluginDir, "plugin.json"):                                daemonPluginContent,
+		filepath.Join(pluginDir, "config.json"):                                configContent,
+		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):           sidecarContent,
+		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"):    adminSkillContent,
 		// Workspace files
-		filepath.Join(wsDir, "plugin.json"):                                          workspacePluginContent,
-		filepath.Join(wsDir, "mcp_config.json"):                                      mcpContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"):          distillerAgentContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):                   distillerAgentContent,
+		filepath.Join(wsDir, "plugin.json"):                                    workspacePluginContent,
+		filepath.Join(wsDir, "mcp_config.json"):                                mcpContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"):    distillerAgentContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):             distillerAgentContent,
 	}
 
 	for path, content := range files {
@@ -243,7 +267,7 @@ var installCmd = &cobra.Command{
 		fmt.Printf("Successfully installed repo-memory daemon plugin to %s\n", pluginDir)
 		fmt.Printf("Workspace plugin bundle at %s\n", wsDir)
 		fmt.Printf("Binary configured at: %s\n\n", absBinPath)
-		fmt.Println("Repositories must be enrolled with `repo-memory enroll` to activate hooks and memory.")
+		fmt.Println("To enroll a repository from chat, use `/repo-memory-admin enroll this repo` (or run `repo-memory enroll .`).")
 		fmt.Println("IMPORTANT: The background tick sidecar is NOT automatically enabled.")
 		fmt.Println("To enable the scheduled background worker, open the Antigravity Automations dashboard:")
 		fmt.Println("  [Open Automations Dashboard](sidecar://dashboard)")

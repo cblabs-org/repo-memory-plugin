@@ -65,8 +65,8 @@
 
 Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from global plugins under `~/.gemini/config/plugins/<name>/`, while workspace hooks and MCP tools can be scoped per repository via `.agents/plugins.json` ([`docs/experiments/phase0-plugin-split.md`](docs/experiments/phase0-plugin-split.md)):
 
-1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Runs the 1-minute `repo-memory tick` sidecar with **zero global hooks** (zero overhead in non-enrolled workspaces) and bundles `workspace-plugin/repo-memory/`.
-2. **Per-Workspace Plugin (`.agents/plugins.json`):** `repo-memory enroll` (`init`) writes the resolved **absolute path** to `workspace-plugin/repo-memory` into `.agents/plugins.json`, activating `hooks/hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), `repo-memory mcp`, and `repo-memory-distiller` only for enrolled repositories.
+1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Runs the 1-minute `repo-memory tick` sidecar with **zero global hooks** (zero overhead in non-enrolled workspaces), exposes the global `repo-memory-admin` management skill (`skills/repo-memory-admin/SKILL.md`, invokable via `/repo-memory-admin` in any workspace to enroll, seed, inspect, or unenroll repositories), and bundles `workspace-plugin/repo-memory/`.
+2. **Per-Workspace Plugin (`.agents/plugins.json`):** `repo-memory enroll` (`init`) writes the resolved **absolute path** to `workspace-plugin/repo-memory` into `.agents/plugins.json`, activating `hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), `repo-memory mcp`, and `repo-memory-distiller` only for enrolled repositories.
 
 ---
 

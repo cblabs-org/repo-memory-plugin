@@ -25,7 +25,7 @@
 | v1.1.10 | Hook ordering: `hooks.json` hooks run before built-in termination checks |
 | v1.2.1 | Added `excludeDefaultComponents: true` for custom agents, preserving `PostInvocation` hooks |
 | v1.2.3–4 | Fixed `/hooks` for plugin-bundled hooks; fixed `hooks.json` dropped during token budget truncation |
-| v1.3.3 | Confirmed `userMessage` plain-string persistence (`USER_INPUT` / `SYSTEM_SDK`) vs 1-step `ephemeralMessage` (`EPHEMERAL_MESSAGE`) and nested-object `systemMessage` |
+| v1.3.3 | Confirmed `systemMessage` (`SYSTEM_MESSAGE` / `SYSTEM_SDK`, with `metadata` omitted) and `userMessage` (`USER_INPUT` / `SYSTEM_SDK`) persistence vs 1-step `ephemeralMessage` (`EPHEMERAL_MESSAGE`) |
 
 ---
 
@@ -91,25 +91,33 @@ Every hook command receives a JSON object on `stdin` containing:
 agent's context via the `injectSteps` response field. Three message types are supported, with
 critically different lifetimes:
 
-### A. `userMessage` — Persistent Session Scope (Recommended for Dossiers & Context)
+### A. `systemMessage` — Persistent Session Scope (Recommended for Dossiers & Context)
 
 ```json
 {
   "injectSteps": [
     {
-      "userMessage": "<repo-memory context=\"startup\" scopes=\"global,auth\">...</repo-memory>"
+      "systemMessage": {
+        "systemMessage": "<repo-memory context=\"startup\" scopes=\"global,auth\">...</repo-memory>"
+      }
     }
   ]
 }
 ```
 
-- **Value type:** Plain string
-- **Transcript:** Appends a `USER_INPUT` step (`"source": "SYSTEM_SDK"`)
+- **Value type:** Nested object `{"systemMessage": "..."}` (NOT a plain string)
+- **Transcript:** Appends a `SYSTEM_MESSAGE` step (`"source": "SYSTEM_SDK"`)
+- **UI rendering:** Renders as a compact, collapsed row (`Hook Json PreInvocation >` at the start of a turn, or folded inside `Worked for Xs >` during mid-turn tool loops) rather than splitting the conversation turn with a full-width user message bubble.
 - **Persistence:** **Remains in the conversation history across all subsequent invocations and turns**
   until context compaction (`CHECKPOINT`) or transcript rewind (`step_index` regression).
+- **Schema caveat (`metadata` map in `agy 1.3.x`):** While `hooks.md` documents an optional
+  `"metadata": {"key": "value"}` map inside the `systemMessage` object, populating `metadata` with
+  any entries in `agy 1.3.x` causes a runtime panic during step scrubbing
+  (`type mismatch: cannot convert string to message`). Always omit `metadata` (or leave it empty)
+  when emitting `systemMessage`.
 - **Best for:** Durable session-scoped memory dossiers, startup `.memory/ATLAS.md` context, and
   newly entered scope entries that are tracked in a per-session `InjectedSet`.
-- **Compaction & Rewind interaction:** Because `userMessage` persists until `CHECKPOINT` or
+- **Compaction & Rewind interaction:** Because `systemMessage` persists until `CHECKPOINT` or
   transcript rewind, pair `InjectedSet` deduplication with `DetectCompaction` (checking for new
   `CHECKPOINT` steps in `transcript.jsonl`) and `DetectRewind` (checking whether the highest
   `step_index` regressed below `LastSeenStepIndex`), clearing `InjectedSet` when either occurs.
@@ -139,29 +147,24 @@ critically different lifetimes:
 - **Best for:** Strictly 1-step transient nudges, post-`PreToolUse` gate reminders, or status
   notices that should evaporate immediately after one model step.
 
-### C. `systemMessage` — Nested-Object Persistent Scope (Avoid Plain Strings)
+### C. `userMessage` — Plain-String Persistent Scope (Splits UI Turn)
 
 ```json
 {
   "injectSteps": [
     {
-      "systemMessage": {
-        "systemMessage": "System-level instruction injected by hook.",
-        "metadata": {
-          "source": "my-hook"
-        }
-      }
+      "userMessage": "User-turn message injected by hook."
     }
   ]
 }
 ```
 
-- **Value type:** Nested object (NOT a plain string)
-- **Schema caveat:** Unlike `ephemeralMessage` and `userMessage` (which take a plain string),
-  passing a plain string `{"systemMessage": "..."}` in `agy 1.3.3` fails proto deserialization
-  (`type mismatch: cannot convert string to message`). Because `userMessage` accepts a plain string
-  directly and persists identically across the session (`USER_INPUT` with `"source": "SYSTEM_SDK"`),
-  `repo-memory` uses `userMessage` as its canonical persistent delivery channel.
+- **Value type:** Plain string
+- **Transcript:** Appends a `USER_INPUT` step (`"source": "SYSTEM_SDK"`)
+- **UI caveat:** Persists across turns identically to `systemMessage`, but because it appends a
+  `USER_INPUT` step, the transcript UI treats each injection as a new user prompt—breaking mid-turn
+  `Worked for Xs` collapsible groups and rendering a full-width user message card. Prefer
+  `systemMessage` (with `metadata` omitted) for background context injection.
 
 ### D. `toolCall` — No-Op (Documented but Non-Functional)
 
@@ -189,7 +192,9 @@ Multiple inject steps can be combined in a single response:
 {
   "injectSteps": [
     {
-      "userMessage": "Persistent session-scoped dossier context."
+      "systemMessage": {
+        "systemMessage": "Persistent session-scoped dossier context."
+      }
     },
     {
       "ephemeralMessage": "One-shot reminder for this immediate invocation only."
@@ -376,7 +381,7 @@ Empirically validated in `E08` and `X8`:
    - **Step 2:** `PreInvocation` (`invocationNum == 0`, `initialNumSteps == 0`) fires in the **child** subagent session *before* the parent's initial prompt step is written to the child's `transcript.jsonl`.
    - **Step 3:** The child subagent executes its tool calls (`PreToolUse` / `PostToolUse` / `PreInvocation`) and eventually triggers `Stop` (`terminationReason == "NO_TOOL_CALL"`).
    - **Step 4:** `PostToolUse` (`toolCall.name == "invoke_subagent"`) fires in the **parent** session.
-3. **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `userMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/touches files or receives its prompt step.
+3. **Architectural implication for `repo-memory`:** Because the child's first `PreInvocation` fires at `initialNumSteps == 0` before its prompt is written to `transcript.jsonl`, `PreInvocation` starts the child with the baseline startup dossier (`.memory/ATLAS.md` + `global`) via `systemMessage` and automatically injects task-specific scopes on subsequent `PreInvocation` calls once the child reads/touches files or receives its prompt step.
 
 ---
 
@@ -406,9 +411,11 @@ if len(ledger.Injections) > 0 && len(steps) > 0 {
 // Engine filters out entries already present in ledger.InjectedSet
 taskPayload, err := engine.EvaluateMoment(ctx, delivery.MomentTaskStart, taskCtx)
 if err == nil && len(taskPayload.Entries) > 0 {
-    // Inject as persistent UserMessage so entries survive across tool calls and turns
+    // Inject as persistent SystemMessage (with Metadata omitted) so entries survive across tool calls and turns
     injectSteps = append(injectSteps, InjectStep{
-        UserMessage: taskPayload.FormattedText,
+        SystemMessage: &SystemMessageEntry{
+            SystemMessage: taskPayload.FormattedText,
+        },
     })
 }
 ```

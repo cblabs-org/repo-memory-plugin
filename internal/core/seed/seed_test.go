@@ -338,3 +338,108 @@ func TestScanAndParse_ValidatesRepoPathsAndBeforeCommitTimestamp(t *testing.T) {
 		t.Errorf("got CommitTime %v, want %v (from BeforeCommit, not HEAD)", parsed[0].CommitTime.UTC(), wantTime)
 	}
 }
+
+func TestParseCompletionReport_SplitAuthorityYAMLFrontmatter(t *testing.T) {
+	content := `---
+schema_version: 1
+wo_id: WO-01.3
+pr_id: PR-01
+title: "Split-Authority models and document parser"
+complexity: architect
+status: COMPLETED
+allowed_files:
+  - daemon/workspace-plugin/principal-architect/scripts/schemas.py
+  - tests/test_schemas.py
+completion:
+  status: COMPLETED
+  attempt_num: 1
+  receipt_id: "rcpt_4b3b6d967b22"
+  commit_sha: "555a90732214"
+  files_modified:
+    - daemon/workspace-plugin/principal-architect/scripts/schemas.py
+    - tests/test_schemas.py
+  verification_summary: "29 passed in pytest; ruff check clean."
+  out_of_scope_findings:
+    - "pa status creates state.db when invoked on unenrolled workspace"
+  decisions_made:
+    - "Preserved pre-H2 preamble as Section(heading='', body=...) so parse_document/dump_document round-trips losslessly."
+  dead_ends:
+    - "Splitting on raw ## without multiline regex broke code blocks containing comments."
+---
+
+# WO-01.3 — Split-Authority Models
+
+## 1. Role & Objective
+Implement schemas.py.
+
+## Completion Report
+
+### 1. Summary of Changes
+- Implemented schemas.py and test_schemas.py.
+`
+	report, err := seed.ParseCompletionReport(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report == nil {
+		t.Fatalf("expected non-nil report for v0.1.0+ Split-Authority WORKORDER.md")
+	}
+	if report.Status != "COMPLETED" {
+		t.Errorf("got status %q, want COMPLETED", report.Status)
+	}
+	if len(report.Changes) != 2 {
+		t.Fatalf("got %d changes, want 2: %+v", len(report.Changes), report.Changes)
+	}
+	if len(report.Decisions) != 1 || !strings.Contains(report.Decisions[0], "Preserved pre-H2 preamble") {
+		t.Errorf("unexpected decisions: %v", report.Decisions)
+	}
+	if len(report.DeadEnds) != 1 || !strings.Contains(report.DeadEnds[0], "Splitting on raw ##") {
+		t.Errorf("unexpected dead ends: %v", report.DeadEnds)
+	}
+	if len(report.Findings) != 1 || !strings.Contains(report.Findings[0], "pa status creates state.db") {
+		t.Errorf("unexpected findings: %v", report.Findings)
+	}
+}
+
+func TestParseProjectReport_ArchitecturalDistillation(t *testing.T) {
+	content := `---
+schema_version: 1
+charter:
+  pr_id: PR-01
+  slug: pr-01-core-schemas-and-enrollment
+  allowed_modules:
+    - daemon/workspace-plugin/principal-architect/scripts/schemas.py
+    - daemon/workspace-plugin/principal-architect/scripts/pa_cli.py
+status: GRADUATED
+---
+
+# PR-01 — Core Schemas
+
+## 4. Outcome & Session Log
+
+### 4.1 Architectural Distillation (` + "`memory_mode: builtin`" + `)
+
+- **Key Architectural Decisions & Invariants Preserved:**
+  - Pre-H2 preambles in ` + "`daemon/workspace-plugin/principal-architect/scripts/schemas.py`" + ` are preserved as a leading Section.
+  - ` + "`pa status`" + ` is strictly read-only on unenrolled repositories.
+- **Verification & Audit Summary:**
+  - 51 passed.
+`
+	report, err := seed.ParseProjectReport(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report == nil {
+		t.Fatalf("expected non-nil project report")
+	}
+	if report.ProjectName != "pr-01-core-schemas-and-enrollment" {
+		t.Errorf("got ProjectName %q, want pr-01-core-schemas-and-enrollment", report.ProjectName)
+	}
+	if len(report.Decisions) != 2 {
+		t.Fatalf("got %d decisions, want 2: %v", len(report.Decisions), report.Decisions)
+	}
+	if len(report.Changes) != 2 {
+		t.Fatalf("got %d changes, want 2: %+v", len(report.Changes), report.Changes)
+	}
+}
+
