@@ -1,3 +1,24 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/preinvocation.go
+ * Description: Implements the Antigravity PreInvocation hook handler, performing
+ *              prompt-term sanitization, rewind and compaction detection,
+ *              task-start/first-touch/first-entry/about-to-edit push selection,
+ *              single-block SystemMessage coalescing, and cross-process ledger persistence.
+ *
+ * Exported Types / Functions:
+ * - PreInvocationPayload: JSON payload delivered to the PreInvocation hook.
+ *   - Normalize():        Populates canonical fields from snake_case fallbacks.
+ * - ExtractPromptTerms(): Sanitizes and tokenizes user prompt text into FTS query terms.
+ * - HandlePreInvocation(): Processes a PreInvocation hook event and returns InjectStepsResponse JSON.
+ */
+
+// Package antigravity implements the Antigravity IDE/CLI hook and transcript adapters.
 package antigravity
 
 import (
@@ -18,14 +39,20 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
+// editIntentPattern matches natural-language edit intentions in planner thinking/responses.
 var editIntentPattern = regexp.MustCompile(`(?i)\b(?:edit|modify|change|update|write\s+to|replace)\s+(?:the\s+file\s+|file\s+)?[` + "`" + `"'` + `]?([a-zA-Z0-9_\-./\\]+)`)
 
 var (
-	xmlTagPattern                 = regexp.MustCompile(`</?[A-Za-z_][A-Za-z0-9_-]*>`)
-	embeddedURLPattern            = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	// xmlTagPattern matches XML/HTML wrapper tags such as <USER_REQUEST>.
+	xmlTagPattern = regexp.MustCompile(`</?[A-Za-z_][A-Za-z0-9_-]*>`)
+	// embeddedURLPattern matches embedded http/https URLs in prompts.
+	embeddedURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	// compoundPrefixModifierPattern matches common hyphenated compound prefixes.
 	compoundPrefixModifierPattern = regexp.MustCompile(`(?i)\b(?:on-device|in-memory|built-in|real-time|end-to-end|top-level)\b`)
+	// compoundSuffixModifierPattern matches common hyphenated compound suffixes.
 	compoundSuffixModifierPattern = regexp.MustCompile(`(?i)-(?:compatible|based|like|ready|style|aware|safe)\b`)
-	urlBoilerplateSegments        = map[string]bool{
+	// urlBoilerplateSegments lists generic URL path/subdomain segments stripped from prompt URLs.
+	urlBoilerplateSegments = map[string]bool{
 		"api": true, "public": true, "simple": true, "latest": true, "pro": true,
 		"v1": true, "v2": true, "v3": true, "v4": true, "v5": true,
 		"v6": true, "v7": true, "v8": true, "v9": true,
@@ -36,6 +63,7 @@ var (
 // API endpoint path/subdomain segments from embedded http/https URLs while
 // preserving domain/resource nouns (e.g., "coingecko", "price").
 func sanitizePromptURLs(s string) string {
+	// --- Step 1: Replace each embedded URL with its non-boilerplate path/domain tokens ---
 	return embeddedURLPattern.ReplaceAllStringFunc(s, func(rawURL string) string {
 		u := strings.TrimPrefix(strings.TrimPrefix(rawURL, "https://"), "http://")
 		if idx := strings.IndexAny(u, "?#"); idx >= 0 {
@@ -60,11 +88,13 @@ func sanitizePromptURLs(s string) string {
 // generic hyphenated compound modifiers, splits on non-word characters, filters
 // shared stopwords, and returns deduplicated terms of length >= 3.
 func ExtractPromptTerms(prompt string) []string {
+	// --- Step 1: Strip XML tags, URLs, and generic compound modifiers ---
 	cleaned := xmlTagPattern.ReplaceAllString(prompt, " ")
 	cleaned = sanitizePromptURLs(cleaned)
 	cleaned = compoundPrefixModifierPattern.ReplaceAllString(cleaned, " ")
 	cleaned = compoundSuffixModifierPattern.ReplaceAllString(cleaned, " ")
 
+	// --- Step 2: Tokenize on non-word boundaries and deduplicate non-stopwords ---
 	seen := make(map[string]bool)
 	var terms []string
 	parts := strings.FieldsFunc(cleaned, func(r rune) bool {
@@ -81,18 +111,29 @@ func ExtractPromptTerms(prompt string) []string {
 	return terms
 }
 
+// PreInvocationPayload represents the JSON payload delivered to the PreInvocation hook.
 type PreInvocationPayload struct {
-	ConversationID      string   `json:"conversationId"`
-	ConversationIDSnake string   `json:"conversation_id"`
-	InvocationNum       int      `json:"invocationNum"`
-	InitialNumSteps     int      `json:"initialNumSteps"`
-	UserPrompt          string   `json:"userPrompt"`
-	TranscriptPath      string   `json:"transcriptPath"`
-	TranscriptPathSnake string   `json:"transcript_path"`
-	WorkspacePaths      []string `json:"workspacePaths"`
+	// ConversationID is the camelCase conversation identifier.
+	ConversationID string `json:"conversationId"`
+	// ConversationIDSnake is the snake_case conversation identifier fallback.
+	ConversationIDSnake string `json:"conversation_id"`
+	// InvocationNum is the 0-based model invocation index within the current user turn.
+	InvocationNum int `json:"invocationNum"`
+	// InitialNumSteps is the number of transcript steps at the start of the turn.
+	InitialNumSteps int `json:"initialNumSteps"`
+	// UserPrompt is the user prompt text for the turn.
+	UserPrompt string `json:"userPrompt"`
+	// TranscriptPath is the camelCase path to the conversation transcript file.
+	TranscriptPath string `json:"transcriptPath"`
+	// TranscriptPathSnake is the snake_case transcript path fallback.
+	TranscriptPathSnake string `json:"transcript_path"`
+	// WorkspacePaths is the camelCase list of active workspace root paths.
+	WorkspacePaths []string `json:"workspacePaths"`
+	// WorkspacePathsSnake is the snake_case workspace paths fallback.
 	WorkspacePathsSnake []string `json:"workspace_paths"`
 }
 
+// Normalize populates canonical fields from their snake_case fallbacks when empty.
 func (p *PreInvocationPayload) Normalize() {
 	if p.ConversationID == "" {
 		p.ConversationID = p.ConversationIDSnake
@@ -105,7 +146,10 @@ func (p *PreInvocationPayload) Normalize() {
 	}
 }
 
+// HandlePreInvocation processes an Antigravity PreInvocation hook event and returns
+// the serialized InjectStepsResponse JSON.
 func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
+	// --- Step 1: Parse payload and evaluate fast-exit guards ---
 	var input PreInvocationPayload
 	if err := json.Unmarshal(payload, &input); err != nil {
 		return []byte("{}"), nil
@@ -126,6 +170,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
+	// --- Step 2: Resolve enrolled workspace root, repoID, index, and conversation ledger ---
 	workspaceRoot := hookOpts.WorkspaceOverride
 	if workspaceRoot == "" {
 		if len(input.WorkspacePaths) > 0 {
@@ -179,9 +224,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	rewound := false
 	maxRemainingStepIdx := 0
 
-	var injectSteps []InjectStep
+	var systemMessageBlocks []string
+	var ephemeralSteps []InjectStep
 
-	// First-entry and first-touch moments
+	// --- Step 3: Parse transcript delta, detect rewind, and extract touched workspace paths ---
 	var touchedFiles []string
 	var steps []Step
 	if input.TranscriptPath != "" {
@@ -270,8 +316,8 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 		}
 	}
-	
-	// Compaction Detection — only re-detect if we haven't already handled this checkpoint.
+
+	// --- Step 4: Detect transcript compaction and build lost-entry re-injection ---
 	if len(ledger.Injections) > 0 && len(steps) > 0 {
 		res := DetectCompaction(steps, ledger)
 		if res.Detected && res.CheckpointStepIdx > ledger.LastHandledCheckpointStep {
@@ -286,10 +332,10 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 					}
 				}
 			}
-			
+
 			reinjStep, err := BuildReinjection(ctx, idx, res.LostInjections, checkpointText, 1000)
-			if err == nil && reinjStep != nil {
-				injectSteps = append(injectSteps, *reinjStep)
+			if err == nil && reinjStep != nil && reinjStep.SystemMessage != nil && reinjStep.SystemMessage.SystemMessage != "" {
+				systemMessageBlocks = append(systemMessageBlocks, reinjStep.SystemMessage.SystemMessage)
 				ledger.RearmDedup()
 				rearmed = true
 			}
@@ -300,7 +346,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 	engine := delivery.NewEngine(idx, workspaceRoot, delivery.WithInjectedSet(ledger.InjectedSet))
 
-	// Task start moment — only on the first invocation of a new user turn.
+	// --- Step 5: Select MomentTaskStart entries on the first invocation of a new conversation ---
 	if input.InvocationNum == 0 && input.InitialNumSteps <= 1 {
 		promptTerms := ExtractPromptTerms(input.UserPrompt)
 
@@ -322,18 +368,16 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 		entries, err := engine.TaskStartEntries(ctx, promptTerms, diffPaths)
 		if err != nil {
-			injectSteps = append(injectSteps, InjectStep{
+			ephemeralSteps = append(ephemeralSteps, InjectStep{
 				EphemeralMessage: fmt.Sprintf("[repo-memory] search error: %v", err),
 			})
 		} else if len(entries) > 0 {
 			formatted := delivery.FormatEntries(entries)
-			injectSteps = append(injectSteps, InjectStep{
-				UserMessage: formatted,
-			})
+			systemMessageBlocks = append(systemMessageBlocks, formatted)
 			for _, ent := range entries {
 				ledger.RecordInjection(delivery.InjectionRecord{
 					EntryID:   ent.Entry.ID,
-					Channel:   delivery.ChannelUser,
+					Channel:   delivery.ChannelSystem,
 					Moment:    delivery.MomentTaskStart,
 					StepIndex: input.InitialNumSteps,
 				})
@@ -341,8 +385,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	// Mid-turn moments: first-touch and first-entry.
-	// These run on every invocation, gated by ledger dedup (HasSeenAnchor/HasSeenDossier).
+	// --- Step 6: Select MomentFirstTouch and MomentFirstEntry entries for newly touched files/scopes ---
 	for _, path := range touchedFiles {
 		anchor := path
 		if rel, err := filepath.Rel(workspaceRoot, path); err == nil && !strings.HasPrefix(rel, "..") {
@@ -357,13 +400,11 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 			if err == nil && len(entries) > 0 {
 				formatted := delivery.FormatEntriesForMoment(entries, delivery.MomentFirstTouch, workspaceRoot)
-				injectSteps = append(injectSteps, InjectStep{
-					UserMessage: formatted,
-				})
+				systemMessageBlocks = append(systemMessageBlocks, formatted)
 				for _, ent := range entries {
 					ledger.RecordInjection(delivery.InjectionRecord{
 						EntryID:   ent.Entry.ID,
-						Channel:   delivery.ChannelUser,
+						Channel:   delivery.ChannelSystem,
 						Moment:    delivery.MomentFirstTouch,
 						StepIndex: input.InitialNumSteps,
 					})
@@ -405,13 +446,11 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 				entries, err := engine.DossierEntries(ctx, scopeName)
 				if err == nil && len(entries) > 0 {
 					formatted := delivery.FormatEntriesForMoment(entries, delivery.MomentFirstEntry, workspaceRoot)
-					injectSteps = append(injectSteps, InjectStep{
-						UserMessage: formatted,
-					})
+					systemMessageBlocks = append(systemMessageBlocks, formatted)
 					for _, ent := range entries {
 						ledger.RecordInjection(delivery.InjectionRecord{
 							EntryID:   ent.Entry.ID,
-							Channel:   delivery.ChannelUser,
+							Channel:   delivery.ChannelSystem,
 							Moment:    delivery.MomentFirstEntry,
 							StepIndex: input.InitialNumSteps,
 						})
@@ -422,7 +461,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 		}
 	}
 
-	// About-to-edit moment — runs mid-turn too, with dedup.
+	// --- Step 7: Evaluate MomentAboutToEdit ephemeral reminder ---
 	if len(steps) > 0 {
 		var latestPlanner *Step
 		for i := len(steps) - 1; i >= 0; i-- {
@@ -458,7 +497,7 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 
 				if hasEntriesInContext(ctx, idx, ledger, workspaceRoot, target) {
 					filename := filepath.Base(target)
-					injectSteps = append(injectSteps, InjectStep{
+					ephemeralSteps = append(ephemeralSteps, InjectStep{
 						EphemeralMessage: fmt.Sprintf("[repo-memory] Check injected entries above before editing %s", filename),
 					})
 					ledger.RecordInjection(delivery.InjectionRecord{
@@ -472,6 +511,17 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 			}
 		}
 	}
+
+	// --- Step 8: Coalesce all persistent SystemMessage blocks into a single InjectStep and persist ledger ---
+	var injectSteps []InjectStep
+	if coalesced := delivery.CoalesceContextBlocks(systemMessageBlocks); coalesced != "" {
+		injectSteps = append(injectSteps, InjectStep{
+			SystemMessage: &SystemMessageEntry{
+				SystemMessage: coalesced,
+			},
+		})
+	}
+	injectSteps = append(injectSteps, ephemeralSteps...)
 
 	// Persist ledger changes under the cross-process lock.
 	// We replay only this invocation's new records (from injectionBase onwards)
@@ -536,7 +586,9 @@ func HandlePreInvocation(ctx context.Context, payload []byte, opts ...HookOption
 	return out, nil
 }
 
+// matchAnchor reports whether anchor and target refer to the same file or path suffix.
 func matchAnchor(anchor, target, workspaceRoot string) bool {
+	// --- Step 1: Normalize and compare exact and workspace-joined paths ---
 	cleanA := filepath.Clean(anchor)
 	cleanT := filepath.Clean(target)
 	if cleanA == cleanT {
@@ -545,6 +597,7 @@ func matchAnchor(anchor, target, workspaceRoot string) bool {
 	if filepath.Join(workspaceRoot, cleanA) == filepath.Join(workspaceRoot, cleanT) {
 		return true
 	}
+	// --- Step 2: Check path suffix and basename matches ---
 	if strings.HasSuffix(cleanA, "/"+cleanT) || strings.HasSuffix(cleanT, "/"+cleanA) {
 		return true
 	}
@@ -557,7 +610,10 @@ func matchAnchor(anchor, target, workspaceRoot string) bool {
 	return false
 }
 
+// hasEntriesInContext reports whether the conversation ledger already holds
+// injected entries or seen anchors matching targetFile.
 func hasEntriesInContext(ctx context.Context, idx *index.Index, ledger *delivery.Ledger, workspaceRoot, targetFile string) bool {
+	// --- Step 1: Check entries previously injected in this conversation ---
 	for _, inj := range ledger.Injections {
 		if inj.EntryID == "" || strings.HasPrefix(inj.EntryID, "about-to-edit:") {
 			continue
@@ -572,6 +628,7 @@ func hasEntriesInContext(ctx context.Context, idx *index.Index, ledger *delivery
 		}
 	}
 
+	// --- Step 2: Check seen anchors that have indexed entries ---
 	for seenAnchor := range ledger.SeenAnchors {
 		if matchAnchor(seenAnchor, targetFile, workspaceRoot) {
 			ids, err := idx.LookupByAnchor(ctx, seenAnchor)

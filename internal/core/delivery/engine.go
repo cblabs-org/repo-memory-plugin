@@ -1,3 +1,9 @@
+/*
+engine.go implements the push-delivery selection engine across task-start,
+first-entry (dossier scope), first-touch (file/symbol anchor), command-error,
+and pre-edit gate moments.
+*/
+
 package delivery
 
 import (
@@ -12,42 +18,56 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
+// Engine selects, verifies, ranks, and deduplicates dossier entries for push delivery.
 type Engine struct {
-	index         *index.Index
-	projector     *dossiers.Projector
+	// index is the SQLite FTS5/anchor index backing entry queries.
+	index *index.Index
+	// projector is the optional dossier projector.
+	projector *dossiers.Projector
+	// scopeResolver resolves file paths to dossier scopes.
 	scopeResolver *config.ScopeResolver
+	// workspaceRoot is the absolute path to the repository root used for anchor verification.
 	workspaceRoot string
-	budgets       map[Moment]int
-	minScore      int
-	injectedSet   map[string]bool
+	// budgets maps each delivery Moment to its maximum token budget.
+	budgets map[Moment]int
+	// minScore is the minimum composite score required for push delivery.
+	minScore int
+	// injectedSet tracks entry IDs already injected in the active conversation.
+	injectedSet map[string]bool
 }
 
+// EngineOption configures an Engine instance.
 type EngineOption func(*Engine)
 
+// WithBudgets overrides the per-moment token budgets on an Engine.
 func WithBudgets(budgets map[Moment]int) EngineOption {
 	return func(e *Engine) {
 		e.budgets = budgets
 	}
 }
 
+// WithScopeResolver sets the scope resolver on an Engine.
 func WithScopeResolver(resolver *config.ScopeResolver) EngineOption {
 	return func(e *Engine) {
 		e.scopeResolver = resolver
 	}
 }
 
+// WithMinScore overrides the minimum relevance score threshold on an Engine.
 func WithMinScore(minScore int) EngineOption {
 	return func(e *Engine) {
 		e.minScore = minScore
 	}
 }
 
+// WithInjectedSet shares an existing per-conversation injected-entry set with the Engine.
 func WithInjectedSet(set map[string]bool) EngineOption {
 	return func(e *Engine) {
 		e.injectedSet = set
 	}
 }
 
+// NewEngine constructs a push-delivery Engine backed by idx and rooted at workspaceRoot.
 func NewEngine(idx *index.Index, workspaceRoot string, opts ...EngineOption) *Engine {
 	e := &Engine{
 		index:         idx,
@@ -65,14 +85,17 @@ func NewEngine(idx *index.Index, workspaceRoot string, opts ...EngineOption) *En
 	return e
 }
 
+// InjectedSet returns the set of entry IDs marked as injected in this session.
 func (e *Engine) InjectedSet() map[string]bool {
 	return e.injectedSet
 }
 
+// IsInjected reports whether entry id has already been injected in this session.
 func (e *Engine) IsInjected(id string) bool {
 	return e.injectedSet != nil && e.injectedSet[id]
 }
 
+// MarkInjected records entry id as injected in this session.
 func (e *Engine) MarkInjected(id string) {
 	if e.injectedSet == nil {
 		e.injectedSet = make(map[string]bool)
@@ -80,10 +103,12 @@ func (e *Engine) MarkInjected(id string) {
 	e.injectedSet[id] = true
 }
 
+// ResetInjected clears the per-session injected entry set.
 func (e *Engine) ResetInjected() {
 	e.injectedSet = make(map[string]bool)
 }
 
+// filterUninjected returns only entries that have not yet been injected in this session.
 func (e *Engine) filterUninjected(entries []dossiers.Entry) []dossiers.Entry {
 	var uninjected []dossiers.Entry
 	for _, ent := range entries {
@@ -94,6 +119,7 @@ func (e *Engine) filterUninjected(entries []dossiers.Entry) []dossiers.Entry {
 	return uninjected
 }
 
+// selectAndRecord selects entries within moment's token budget and marks them injected.
 func (e *Engine) selectAndRecord(ranked []RankedEntry, moment Moment) []RankedEntry {
 	selected := SelectWithinBudget(ranked, e.budgets[moment], e.minScore)
 	for _, s := range selected {
@@ -102,7 +128,9 @@ func (e *Engine) selectAndRecord(ranked []RankedEntry, moment Moment) []RankedEn
 	return selected
 }
 
+// filterAndVerify removes retired entries, pull-only open issues, and entries whose anchors all fail verification.
 func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
+	// --- Step 1: Filter retired and pull-only open-issue entries ---
 	var valid []dossiers.Entry
 	for _, ent := range entries {
 		if ent.Retired {
@@ -111,6 +139,7 @@ func (e *Engine) filterAndVerify(entries []dossiers.Entry) []dossiers.Entry {
 		if ent.Type == dossiers.EntryTypeOpenIssue && strings.TrimSpace(ent.ClosesWhen) == "" {
 			continue
 		}
+		// --- Step 2: Verify file/symbol anchors against the workspace ---
 		if len(ent.Anchors) > 0 {
 			verified, _ := VerifyAnchors(ent.Anchors, e.workspaceRoot)
 			if len(verified) == 0 {
@@ -156,6 +185,7 @@ func IsStopWord(word string) bool {
 // Terms are split on non-word characters (so "auth.go" → "auth", "go"),
 // stop words are filtered, and remaining terms are quoted and joined with OR.
 func sanitizeFTSQuery(terms []string) string {
+	// --- Step 1: Split terms on non-word characters and filter stopwords ---
 	seen := make(map[string]bool)
 	var clean []string
 	for _, term := range terms {
@@ -173,6 +203,7 @@ func sanitizeFTSQuery(terms []string) string {
 			clean = append(clean, `"`+escaped+`"`)
 		}
 	}
+	// --- Step 2: Join quoted terms with OR ---
 	if len(clean) == 0 {
 		return ""
 	}
@@ -182,11 +213,13 @@ func sanitizeFTSQuery(terms []string) string {
 // maxFTSResults caps FTS search results to preserve bm25 ranking relevance.
 const maxFTSResults = 20
 
+// TaskStartEntries selects push-delivery entries for MomentTaskStart by combining
+// FTS5 prompt-term matches with git diff anchor matches.
 func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, diffPaths []string) ([]RankedEntry, error) {
+	// --- Step 1: Query FTS5 index by sanitized prompt terms ---
 	entryMap := make(map[string]dossiers.Entry)
 	ftsScores := make(map[string]float64)
 
-	// Query by prompt terms — search errors are surfaced to caller.
 	if len(promptTerms) > 0 {
 		query := sanitizeFTSQuery(promptTerms)
 		if query != "" {
@@ -205,7 +238,7 @@ func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, dif
 		}
 	}
 
-	// Query by diff paths (these are repo-relative, matching anchor format).
+	// --- Step 2: Query index by recent git diff file paths ---
 	for _, path := range diffPaths {
 		ids, err := e.index.LookupByAnchor(ctx, path)
 		if err != nil {
@@ -221,6 +254,7 @@ func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, dif
 		}
 	}
 
+	// --- Step 3: Filter, verify, rank, and budget candidate entries ---
 	var entries []dossiers.Entry
 	for _, ent := range entryMap {
 		entries = append(entries, ent)
@@ -231,42 +265,75 @@ func (e *Engine) TaskStartEntries(ctx context.Context, promptTerms []string, dif
 	return e.selectAndRecord(ranked, MomentTaskStart), nil
 }
 
+// isPushEligibleForScopeOrTouch reports whether an entry type is eligible for
+// automatic mid-turn push delivery on MomentFirstEntry or MomentFirstTouch.
+// Historical `decision` entries are reserved for TaskStart FTS/diff queries and
+// `memory_why` pull lookups so mid-turn file reads do not flood context with
+// implementation diary rationale.
+func isPushEligibleForScopeOrTouch(t dossiers.EntryType) bool {
+	switch t {
+	case dossiers.EntryTypeInvariant,
+		dossiers.EntryTypeContract,
+		dossiers.EntryTypeConvention,
+		dossiers.EntryTypeGotcha,
+		dossiers.EntryTypeExternalBehaviour,
+		dossiers.EntryTypeFailureSignature,
+		dossiers.EntryTypeRuledOut,
+		dossiers.EntryTypeRecipe,
+		dossiers.EntryTypeProcedure,
+		dossiers.EntryTypeOpenIssue:
+		return true
+	default:
+		return false
+	}
+}
+
+// DossierEntries selects push-delivery entries for MomentFirstEntry when an
+// agent first enters a module scope.
 func (e *Engine) DossierEntries(ctx context.Context, scope string) ([]RankedEntry, error) {
+	// --- Step 1: List all entries in the target scope ---
 	entries, err := e.index.ListEntriesByScope(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
-	
+
+	// --- Step 2: Filter to actionable semantic, procedural, and negative-knowledge types ---
 	var valid []dossiers.Entry
 	for _, ent := range entries {
-		if ent.Type == dossiers.EntryTypeInvariant || ent.Type == dossiers.EntryTypeContract || ent.Type == dossiers.EntryTypeFailureSignature || ent.Type == dossiers.EntryTypeRuledOut {
+		if isPushEligibleForScopeOrTouch(ent.Type) && ent.Type != dossiers.EntryTypeOpenIssue {
 			valid = append(valid, ent)
 		}
 	}
-	
+
+	// --- Step 3: Verify anchors, deduplicate, rank, and select within MomentFirstEntry budget ---
 	validEntries := e.filterUninjected(e.filterAndVerify(valid))
 	ranked := RankEntries(validEntries, nil)
 	return e.selectAndRecord(ranked, MomentFirstEntry), nil
 }
 
+// AnchorEntries selects push-delivery entries for MomentFirstTouch when an
+// agent first touches a file or symbol anchor.
 func (e *Engine) AnchorEntries(ctx context.Context, anchor string) ([]RankedEntry, error) {
+	// --- Step 1: Verify the touched anchor exists in the workspace ---
 	if !VerifyAnchor(anchor, e.workspaceRoot) {
 		return nil, nil
 	}
-	
+
+	// --- Step 2: Look up entries matching the anchor and filter out diary-only decisions ---
 	ids, err := e.index.LookupByAnchor(ctx, anchor)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var entries []dossiers.Entry
 	for _, id := range ids {
 		ent, err := e.index.GetEntry(ctx, id)
-		if err == nil && ent != nil {
+		if err == nil && ent != nil && isPushEligibleForScopeOrTouch(ent.Type) {
 			entries = append(entries, *ent)
 		}
 	}
-	
+
+	// --- Step 3: Verify anchors, deduplicate, rank, and select within MomentFirstTouch budget ---
 	validEntries := e.filterUninjected(e.filterAndVerify(entries))
 	ranked := RankEntries(validEntries, []string{anchor})
 	return e.selectAndRecord(ranked, MomentFirstTouch), nil
@@ -286,15 +353,17 @@ func patternMatchesOutput(pattern, output string) bool {
 	return strings.Contains(strings.ToLower(output), strings.ToLower(pattern))
 }
 
+// ErrorEntries selects push-delivery entries for MomentError when a command fails.
 func (e *Engine) ErrorEntries(ctx context.Context, commandPrefix string, output string) ([]RankedEntry, error) {
+	// --- Step 1: Look up error patterns registered for commandPrefix ---
 	results, err := e.index.LookupErrorPatterns(ctx, commandPrefix)
 	if err != nil {
 		return nil, err
 	}
-	
+
+	// --- Step 2: Filter to patterns matching the actual command output ---
 	var entries []dossiers.Entry
 	for _, res := range results {
-		// Filter: pattern must match the actual output
 		if !patternMatchesOutput(res.Pattern, output) {
 			continue
 		}
@@ -303,7 +372,8 @@ func (e *Engine) ErrorEntries(ctx context.Context, commandPrefix string, output 
 			entries = append(entries, *ent)
 		}
 	}
-	
+
+	// --- Step 3: Verify, deduplicate, rank, and select within MomentError budget ---
 	validEntries := e.filterUninjected(e.filterAndVerify(entries))
 	ranked := RankEntries(validEntries, nil)
 	return e.selectAndRecord(ranked, MomentError), nil
@@ -320,7 +390,9 @@ func isGateEntry(ent *dossiers.Entry) bool {
 		gatePattern.MatchString(ent.Verified)
 }
 
+// GateEntries selects unacknowledged `gate: edit` entries anchored to targetFile.
 func (e *Engine) GateEntries(ctx context.Context, targetFile string, ledger *Ledger) ([]RankedEntry, error) {
+	// --- Step 1: Look up exact file or symbol anchors ---
 	// Use exact anchor match for gates to avoid LIKE wildcards matching unrelated files.
 	ids, err := e.index.LookupByAnchorExact(ctx, targetFile)
 	if err != nil {
@@ -335,13 +407,14 @@ func (e *Engine) GateEntries(ctx context.Context, targetFile string, ledger *Led
 			ids = symbolIDs
 		}
 	}
-	
+
+	// --- Step 2: Filter to unacknowledged gate entries ---
 	var entries []dossiers.Entry
 	for _, id := range ids {
 		if ledger != nil && ledger.IsGateAcknowledged(id) {
 			continue
 		}
-		
+
 		ent, err := e.index.GetEntry(ctx, id)
 		if err == nil && ent != nil {
 			if isGateEntry(ent) {
@@ -349,7 +422,8 @@ func (e *Engine) GateEntries(ctx context.Context, targetFile string, ledger *Led
 			}
 		}
 	}
-	
+
+	// --- Step 3: Verify, rank, and select within MomentGate budget ---
 	validEntries := e.filterAndVerify(entries)
 	ranked := RankEntries(validEntries, []string{targetFile})
 	return SelectWithinBudget(ranked, e.budgets[MomentGate], e.minScore), nil

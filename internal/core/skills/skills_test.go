@@ -55,6 +55,13 @@ func TestExtractAndMatchRecipeCommands(t *testing.T) {
 	if CommandMatchesRecipe("cargo build", cmds) {
 		t.Errorf("did not expect unrelated command to match")
 	}
+
+	// Verify mid-sentence prose mentions (e.g. docseed-bb4fb8dd) are not extracted as executable commands.
+	proseText := "**Doc-Seeded Dossiers (`repo-memory seed-docs`) & Async Freshness (\"Dreaming\"):** Curated in-repo documentation (`docs/developer/`, `.agents/skills/`) is distilled into anchored dossier entries (`source: doc-seed`) and kept fresh asynchronously on `git diff` changes (§7.6)."
+	proseCmds := ExtractRecipeCommands(proseText)
+	if len(proseCmds) != 0 {
+		t.Errorf("expected 0 commands extracted from mid-sentence prose, got %v", proseCmds)
+	}
 }
 
 func TestQualifiesAndRenderSkillMarkdown(t *testing.T) {

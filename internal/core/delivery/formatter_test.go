@@ -79,3 +79,41 @@ func TestFormatEntriesForMoment_GraduatedSkillPointer(t *testing.T) {
 		t.Errorf("expected stale_suspect recipe not to use skill pointer, got: %s", staleOut)
 	}
 }
+
+func TestFormatEntries_CompactBulletListWithoutSetextHeading(t *testing.T) {
+	ranked := []RankedEntry{
+		{
+			Entry: dossiers.Entry{
+				ID:   "inv-01",
+				Type: dossiers.EntryTypeInvariant,
+				Text: "First invariant rule.",
+			},
+		},
+		{
+			Entry: dossiers.Entry{
+				ID:   "got-02",
+				Type: dossiers.EntryTypeGotcha,
+				Text: "Second gotcha rule.\nWith continuation line.",
+			},
+		},
+	}
+
+	out := FormatEntries(ranked)
+	if !strings.HasPrefix(out, "\n--- repo-memory context ---\n\n- [repo-memory inv-01]") {
+		t.Errorf("expected leading blank line, context header, blank line, and bullet item, got:\n%q", out)
+	}
+	if strings.HasSuffix(strings.TrimSpace(out), "---") {
+		t.Errorf("expected no trailing Setext '---' underline, got:\n%q", out)
+	}
+	if !strings.Contains(out, "- [repo-memory got-02] gotcha: Second gotcha rule.\n  With continuation line.") {
+		t.Errorf("expected multi-line entry continuation to be indented under bullet, got:\n%q", out)
+	}
+
+	coalesced := CoalesceContextBlocks([]string{out, FormatEntries(ranked[:1])})
+	if strings.Count(coalesced, "[repo-memory inv-01]") != 1 {
+		t.Errorf("expected deduplicated inv-01 in CoalesceContextBlocks, got:\n%q", coalesced)
+	}
+	if strings.HasSuffix(strings.TrimSpace(coalesced), "---") {
+		t.Errorf("expected no trailing Setext '---' underline in CoalesceContextBlocks, got:\n%q", coalesced)
+	}
+}

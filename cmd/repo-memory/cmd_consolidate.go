@@ -1,3 +1,18 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_consolidate.go
+ * Description: CLI command for running Stage 2 warm batch consolidation over
+ *              pending inbox notes into .memory/ops/ and multi-tier dossiers.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -5,6 +20,7 @@ import (
 	"fmt"
 	osExec "os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,20 +32,25 @@ import (
 )
 
 var (
-	consolidateForce         bool
-	consolidateDryRun        bool
-	consolidateJSON          bool
-	consolidateDeterministic bool
+	consolidateRepoDir       string // Optional --repo directory override.
+	consolidateForce         bool   // Whether to bypass cadence/count thresholds.
+	consolidateDryRun        bool   // Whether to preview consolidation without writing.
+	consolidateJSON          bool   // Whether to emit structured JSON output.
+	consolidateDeterministic bool   // Whether to use deterministic op synthesis without LLM.
 )
 
+// consolidateCmd defines the `repo-memory consolidate` subcommand.
 var consolidateCmd = &cobra.Command{
 	Use:   "consolidate [repo-dir]",
 	Short: "Run Stage 2 warm batch consolidation over pending inbox notes",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve target repository root and repo ID ---
 		targetDir := "."
-		if len(args) > 0 {
-			targetDir = args[0]
+		if strings.TrimSpace(consolidateRepoDir) != "" {
+			targetDir = strings.TrimSpace(consolidateRepoDir)
+		} else if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+			targetDir = strings.TrimSpace(args[0])
 		}
 
 		repoRoot, err := gitops.FindRepoRoot(targetDir)
@@ -115,6 +136,7 @@ var consolidateCmd = &cobra.Command{
 }
 
 func init() {
+	consolidateCmd.Flags().StringVar(&consolidateRepoDir, "repo", "", "Repository directory (defaults to current working directory)")
 	consolidateCmd.Flags().BoolVar(&consolidateForce, "force", false, "Consolidate immediately regardless of note count or 24h cadence")
 	consolidateCmd.Flags().BoolVar(&consolidateDryRun, "dry-run", false, "Preview candidate routing, filtering, and estimated token usage without writing")
 	consolidateCmd.Flags().BoolVar(&consolidateJSON, "json", false, "Output structured JSON result")

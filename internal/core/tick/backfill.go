@@ -143,19 +143,27 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 		stateDirty := false
 
 		if opts.RepoRoot != "" && remaining > 0 {
-			paDir := filepath.Join(opts.RepoRoot, ".agents", "skills", "principal-architect-workspace")
-			if info, err := os.Stat(paDir); err == nil && info.IsDir() {
-				var candidateFiles []string
-				_ = filepath.WalkDir(paDir, func(path string, d fs.DirEntry, walkErr error) error {
-					if walkErr != nil || d.IsDir() {
+			paDirs := []string{
+				filepath.Join(opts.RepoRoot, ".agents", "plugins", "principal-architect-workspace"),
+				filepath.Join(opts.RepoRoot, ".agents", "skills", "principal-architect-workspace"),
+			}
+			var candidateFiles []string
+			for _, paDir := range paDirs {
+				if info, err := os.Stat(paDir); err == nil && info.IsDir() {
+					_ = filepath.WalkDir(paDir, func(path string, d fs.DirEntry, walkErr error) error {
+						if walkErr != nil || d.IsDir() {
+							return nil
+						}
+						base := strings.ToLower(d.Name())
+						if base == "project.md" || base == "workorder.md" || base == "context_bridge.md" ||
+							base == "memory.md" || base == "module_index.md" || base == "project_index.md" {
+							candidateFiles = append(candidateFiles, path)
+						}
 						return nil
-					}
-					base := strings.ToLower(d.Name())
-					if base == "project.md" || base == "workorder.md" || base == "context_bridge.md" {
-						candidateFiles = append(candidateFiles, path)
-					}
-					return nil
-				})
+					})
+				}
+			}
+			if len(candidateFiles) > 0 {
 				sort.Strings(candidateFiles)
 
 				epStore := p.epStore

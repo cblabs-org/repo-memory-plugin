@@ -1,16 +1,55 @@
+/*
+ * repo-memory-plugin (c) 2026 CBLabs
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_enroll.go
+ * Description: Enrolls a Git repository for memory tracking, configures the
+ *              workspace plugin in .agents/plugins.json, switches any enrolled
+ *              Principal Architect workspace to external memory mode, and performs
+ *              automatic Day-1 seeding of PA history and curated documentation.
+ *
+ * Exported Types / Functions:
+ * - RunEnroll():                      Executes full repository enrollment and Day-1 seeding.
+ * - RunInit():                        Alias for RunEnroll.
+ * - EnsureWorkspacePluginConfigured(): Registers workspace-plugin in .agents/plugins.json.
+ * - RemoveWorkspacePluginConfigured(): Removes workspace-plugin from .agents/plugins.json.
+ * - SyncPAMemoryMode():               Updates memory_mode in Principal Architect .state/state.db.
+ */
+
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/dossiers"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/seed"
 	"github.com/spf13/cobra"
+	_ "modernc.org/sqlite"
+)
+
+var (
+	enrollNoSeedFlag       bool     // When true, skips all automatic Day-1 PA and doc seeding during enroll.
+	enrollNoSeedPAFlag     bool     // When true, skips Day-1 Principal Architect report seeding and episode import.
+	enrollNoSeedDocsFlag   bool     // When true, skips Day-1 seeding of curated repository docs and skills.
+	enrollDocSeedGlobs     []string // Additional doc_seeds globs to persist into .memory/config.yaml on enroll.
+	enrollTurnNotesMode    string   // Optional turn_notes mode ("on", "fallback-only", "off") for .memory/config.yaml.
+	enrollPAMemoryMode     string   // PA handoff mode ("external" or "keep"; defaults to "external").
+	enrollPushGapsFlag     bool     // When true, sets gaps.push = true in .memory/config.yaml.
 )
 
 var enrollCmd = &cobra.Command{
@@ -27,9 +66,22 @@ var enrollCmd = &cobra.Command{
 	},
 }
 
-var initCmd = enrollCmd
+var initCmd = enrollCmd // Retained alias for backwards compatibility.
 
+func init() {
+	enrollCmd.Flags().BoolVar(&enrollNoSeedFlag, "no-seed", false, "Skip automatic Day-1 seeding of docs and Principal Architect history")
+	enrollCmd.Flags().BoolVar(&enrollNoSeedPAFlag, "no-seed-pa", false, "Skip automatic Day-1 seeding of Principal Architect history")
+	enrollCmd.Flags().BoolVar(&enrollNoSeedDocsFlag, "no-seed-docs", false, "Skip automatic Day-1 seeding of repository markdown docs and skills")
+	enrollCmd.Flags().StringSliceVar(&enrollDocSeedGlobs, "doc-seed", nil, "Additional document glob(s) to record under doc_seeds in .memory/config.yaml and seed on Day 1")
+	enrollCmd.Flags().StringVar(&enrollTurnNotesMode, "turn-notes", "", "Configure end-of-turn distillation mode in .memory/config.yaml (on, fallback-only, off)")
+	enrollCmd.Flags().StringVar(&enrollPAMemoryMode, "pa-memory-mode", "external", "Principal Architect memory_mode handoff when PA is present (external, keep)")
+	enrollCmd.Flags().BoolVar(&enrollPushGapsFlag, "push-gaps", false, "Enable pushing coverage gap hints in context (sets gaps.push: true in .memory/config.yaml)")
+}
+
+// RunEnroll executes repository enrollment, workspace plugin registration, Principal Architect
+// memory_mode handoff, and automatic Day-1 seeding of PA completion reports and repository docs.
 func RunEnroll(cmd *cobra.Command, targetDir string) error {
+	// --- Step 1: Resolve repository root and ensure .memory layout ---
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
 		repoRoot = targetDir
@@ -40,7 +92,7 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	}
 
 	memDir := filepath.Join(repoRoot, ".memory")
-	if fi, err := os.Stat(memDir); err == nil && fi.IsDir() {
+	if fi, statErr := os.Stat(memDir); statErr == nil && fi.IsDir() {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: .memory/ directory already exists (inherited from template?)\n")
 	}
 
@@ -57,6 +109,7 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("creating enrolled marker: %w", err)
 	}
 
+	// --- Step 2: Configure .agents/plugins.json and global registry ---
 	if err := EnsureWorkspacePluginConfigured(repoRoot); err != nil {
 		return fmt.Errorf("configuring workspace plugin: %w", err)
 	}
@@ -83,15 +136,220 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 		}
 	}
 
+	// --- Step 3: Apply repo config overrides, hand off PA memory_mode, and run Day-1 seeding ---
+	if err := applyEnrollRepoConfigOverrides(cmd, repoRoot); err != nil {
+		return fmt.Errorf("applying enroll config overrides: %w", err)
+	}
+
+	paMode := strings.ToLower(strings.TrimSpace(enrollPAMemoryMode))
+	if paMode == "" || paMode == "auto" {
+		paMode = "external"
+	}
+	if paMode != "keep" && SyncPAMemoryMode(repoRoot, paMode) {
+		fmt.Fprintf(cmd.OutOrStdout(), "Switched Principal Architect memory_mode -> %s\n", paMode)
+	}
+
+	if !enrollNoSeedFlag {
+		bootstrapRepoMemoryOnEnroll(cmd, repoRoot, dataDir, repoID)
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "Enrolled repository %s (repo-id: %s)\n", repoRoot, repoID)
 	return nil
 }
 
+// RunInit is an alias for RunEnroll retained for backwards compatibility.
 func RunInit(cmd *cobra.Command, targetDir string) error {
 	return RunEnroll(cmd, targetDir)
 }
 
+// applyEnrollRepoConfigOverrides persists any CLI flags (--turn-notes, --doc-seed, --push-gaps)
+// into <repoRoot>/.memory/config.yaml while preserving existing subsystem and spend settings.
+func applyEnrollRepoConfigOverrides(cmd *cobra.Command, repoRoot string) error {
+	hasTurnNotes := strings.TrimSpace(enrollTurnNotesMode) != ""
+	hasDocSeeds := len(enrollDocSeedGlobs) > 0
+	hasPushGaps := enrollPushGapsFlag || (cmd != nil && cmd.Flags().Changed("push-gaps"))
+	if !hasTurnNotes && !hasDocSeeds && !hasPushGaps {
+		return nil
+	}
+
+	cfg, err := config.LoadRepoConfig(repoRoot)
+	if err != nil && !os.IsNotExist(err) {
+		cfg = config.DefaultRepoConfig()
+	}
+
+	if hasTurnNotes {
+		mode := strings.ToLower(strings.TrimSpace(enrollTurnNotesMode))
+		switch mode {
+		case "on", "fallback-only", "fallback_only", "off":
+			if mode == "fallback_only" {
+				mode = "fallback-only"
+			}
+			cfg.TurnNotes = mode
+		default:
+			return fmt.Errorf("invalid --turn-notes mode %q (expected on, fallback-only, or off)", enrollTurnNotesMode)
+		}
+	}
+
+	if hasDocSeeds {
+		seen := make(map[string]bool, len(cfg.DocSeeds))
+		for _, g := range cfg.DocSeeds {
+			seen[strings.TrimSpace(g)] = true
+		}
+		for _, raw := range enrollDocSeedGlobs {
+			for _, part := range strings.Split(raw, ",") {
+				g := strings.TrimSpace(part)
+				if g != "" && !seen[g] {
+					seen[g] = true
+					cfg.DocSeeds = append(cfg.DocSeeds, g)
+				}
+			}
+		}
+	}
+
+	if hasPushGaps {
+		cfg.Gaps.Push = enrollPushGapsFlag
+	}
+
+	return config.SaveRepoConfig(repoRoot, cfg)
+}
+
+// SyncPAMemoryMode checks whether a Principal Architect SQLite state database exists
+// under .agents/{plugins,skills}/principal-architect-workspace/.state/state.db and
+// updates repo_config.memory_mode to mode ("external" on enroll, "builtin" on unenroll).
+func SyncPAMemoryMode(repoRoot, mode string) bool {
+	updated := false
+	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	for _, rel := range []string{
+		filepath.Join(".agents", "plugins", "principal-architect-workspace", ".state", "state.db"),
+		filepath.Join(".agents", "skills", "principal-architect-workspace", ".state", "state.db"),
+	} {
+		dbPath := filepath.Join(repoRoot, rel)
+		info, err := os.Stat(dbPath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			continue
+		}
+		_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
+
+		var tableName string
+		rowErr := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='repo_config'").Scan(&tableName)
+		if rowErr == nil && tableName == "repo_config" {
+			_, execErr := db.Exec(
+				`INSERT INTO repo_config (key, value, updated_at) VALUES ('memory_mode', ?, ?)
+				 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+				mode,
+				nowISO,
+			)
+			if execErr != nil {
+				_, execErr = db.Exec(
+					`INSERT INTO repo_config (key, value) VALUES ('memory_mode', ?)
+					 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+					mode,
+				)
+			}
+			if execErr == nil {
+				updated = true
+			}
+		}
+		_ = db.Close()
+	}
+	return updated
+}
+
+// bootstrapRepoMemoryOnEnroll performs automatic Day-1 seeding from Principal Architect
+// workspaces and curated repository docs when present, projects dossiers, updates GEMINI.md,
+// and builds the SQLite FTS5/BM25 index.
+func bootstrapRepoMemoryOnEnroll(cmd *cobra.Command, repoRoot, dataDir, repoID string) {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	opsDir := filepath.Join(repoRoot, ".memory", "ops")
+	configPath := filepath.Join(repoRoot, ".memory", "config.yaml")
+
+	// --- Step 1: Seed PA completion reports and import PA episodes if a PA workspace exists ---
+	if !enrollNoSeedPAFlag {
+		paDirs := ResolvePAWorkspaceDirs(repoRoot)
+		if len(paDirs) > 0 {
+			if paReports, err := SeedPAWorkspace(ctx, repoRoot, paDirs, opsDir, configPath, "", false, false); err == nil && paReports > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Seeded Principal Architect history from %d reports\n", paReports)
+			}
+			if importedCount, err := ImportPAWorkspace(repoRoot, dataDir, repoID, "", false); err == nil && importedCount > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Imported %d Principal Architect files as episodes\n", importedCount)
+			}
+		}
+	}
+
+	// --- Step 2: Seed curated repository markdown docs and skills if present ---
+	if !enrollNoSeedDocsFlag {
+		repoCfg, err := config.LoadRepoConfig(configPath)
+		if err != nil && !os.IsNotExist(err) {
+			repoCfg = config.DefaultRepoConfig()
+		}
+		if candDocs, globErr := config.ResolveDocSeedGlobs(repoRoot, repoCfg); globErr == nil && len(candDocs) > 0 {
+			scopeCfg, _ := config.LoadScopeConfig(configPath)
+			opsReader := ops.NewReader(opsDir)
+			opsWriter := ops.NewWriter(opsDir)
+			docRes, docErr := seed.SeedDocs(ctx, seed.DocSeedOptions{
+				RepoRoot: repoRoot,
+				OpsDir:   opsDir,
+				DocPaths: candDocs,
+				RepoCfg:  repoCfg,
+				DryRun:   false,
+			}, scopeCfg, opsReader, opsWriter)
+			if docErr == nil && docRes != nil {
+				totalMutated := docRes.EntriesAdded + docRes.EntriesAmend + docRes.EntriesRetire
+				if totalMutated > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "Seeded %d entries from %d repository docs\n", totalMutated, docRes.FilesSeeded)
+				}
+			}
+		}
+	}
+
+	// --- Step 3: Project dossiers, refresh GEMINI.md Atlas, and rebuild index.db if ops exist ---
+	entries, err := os.ReadDir(opsDir)
+	if err != nil {
+		return
+	}
+	hasOpFiles := false
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			hasOpFiles = true
+			break
+		}
+	}
+	if !hasOpFiles {
+		return
+	}
+
+	opsReader := ops.NewReader(opsDir)
+	proj := dossiers.NewProjector(opsReader)
+	if dossiersMap, projErr := proj.Project(ctx); projErr == nil && len(dossiersMap) > 0 {
+		writer := dossiers.NewWriter(filepath.Join(repoRoot, ".memory"))
+		if writeErr := writer.WriteAll(dossiersMap); writeErr == nil {
+			_, _ = config.EnsureInstructionBlock(repoRoot)
+		}
+	}
+
+	dbPath := index.IndexPath(dataDir, repoID)
+	if mkErr := os.MkdirAll(filepath.Dir(dbPath), 0755); mkErr == nil {
+		if idx, idxErr := index.NewIndex(dbPath); idxErr == nil {
+			_ = idx.RebuildFromOpLog(ctx, opsReader)
+			_ = idx.Close()
+		}
+	}
+}
+
+// EnsureWorkspacePluginConfigured registers the repo-memory workspace plugin path inside
+// <repoRoot>/.agents/plugins.json and adds .agents/plugins.json to .git/info/exclude.
 func EnsureWorkspacePluginConfigured(repoRoot string) error {
+	// --- Step 1: Resolve daemon workspace-plugin path and .agents/plugins.json ---
 	daemonDir, err := ResolveAntigravityPluginDir()
 	if err != nil {
 		return fmt.Errorf("resolving daemon plugin directory: %w", err)
@@ -115,6 +373,7 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 		return fmt.Errorf(".agents/plugins.json is tracked in git — it contains machine-specific paths and should not be committed. Remove it from git tracking: git rm --cached .agents/plugins.json")
 	}
 
+	// --- Step 2: Merge workspace-plugin entry into .agents/plugins.json ---
 	var configMap map[string]any
 	if data, err := os.ReadFile(pluginsPath); err == nil {
 		if err := json.Unmarshal(data, &configMap); err != nil {
@@ -160,6 +419,7 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 		}
 	}
 
+	// --- Step 3: Ensure .agents/plugins.json is git-excluded ---
 	if err := ensurePluginsGitExcluded(repoRoot); err != nil {
 		return fmt.Errorf("updating .git/info/exclude: %w", err)
 	}
@@ -167,6 +427,8 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 	return nil
 }
 
+// RemoveWorkspacePluginConfigured removes the repo-memory workspace-plugin entry from
+// <repoRoot>/.agents/plugins.json, deleting the file if no other entries remain.
 func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
 	data, err := os.ReadFile(pluginsPath)
@@ -237,9 +499,10 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	return os.WriteFile(pluginsPath, append(marshaled, '\n'), 0644)
 }
 
+// ensurePluginsGitExcluded appends .agents/plugins.json to <repoRoot>/.git/info/exclude if absent.
 func ensurePluginsGitExcluded(repoRoot string) error {
 	excludePath := filepath.Join(repoRoot, ".git", "info", "exclude")
-	
+
 	infoDir := filepath.Dir(excludePath)
 	if info, err := os.Stat(infoDir); err != nil || !info.IsDir() {
 		return nil
@@ -266,6 +529,7 @@ func ensurePluginsGitExcluded(repoRoot string) error {
 	return os.WriteFile(excludePath, []byte(content), 0644)
 }
 
+// isRepoMemoryWorkspacePluginEntry reports whether entryPath matches the repo-memory workspace plugin.
 func isRepoMemoryWorkspacePluginEntry(entryPath, expectedPath string) bool {
 	if entryPath == "" || expectedPath == "" {
 		return false

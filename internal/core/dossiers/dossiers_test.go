@@ -642,3 +642,29 @@ Recipe body
 	}
 }
 
+func TestRenderAtlas_DateOnlyUTC(t *testing.T) {
+	t1 := time.Date(2026, 10, 17, 7, 11, 49, 194875018, time.UTC)
+	t2 := time.Date(2026, 10, 17, 22, 59, 59, 0, time.UTC)
+
+	a1 := &Atlas{
+		Dossiers: []AtlasEntry{
+			{Scope: "root", Kind: DossierKindModule, EntryCount: 48, LastUpdated: t1},
+		},
+	}
+	a2 := &Atlas{
+		Dossiers: []AtlasEntry{
+			{Scope: "root", Kind: DossierKindModule, EntryCount: 48, LastUpdated: t2},
+		},
+	}
+
+	rendered1 := RenderAtlas(a1)
+	rendered2 := RenderAtlas(a2)
+	if rendered1 != rendered2 {
+		t.Errorf("expected intra-day timestamps on same UTC date to render identical ATLAS.md:\n%s\nvs\n%s", rendered1, rendered2)
+	}
+	if !strings.Contains(rendered1, "| root | module | 48 | 2026-10-17 |") {
+		t.Errorf("expected YYYY-MM-DD Last Updated column, got:\n%s", rendered1)
+	}
+}
+
+

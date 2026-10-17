@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 CBLabs
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_unenroll.go
+ * Description: Removes a repository from repo-memory tracking, cleans up
+ *              .agents/plugins.json and .memory/.enrolled, restores Principal Architect
+ *              memory_mode to builtin when present, and optionally purges private data.
+ *
+ * Exported Types / Functions:
+ * - RunUnenroll(): Executes repository unenrollment and optional private data purge.
+ * - RunLeave():    Alias for RunUnenroll.
+ */
+
 package main
 
 import (
@@ -10,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var unenrollPurgeFlag bool
+var unenrollPurgeFlag bool // When true, deletes <data-dir>/<repo-id>/ during unenroll.
 
 var unenrollCmd = &cobra.Command{
 	Use:     "unenroll [path]",
@@ -35,6 +52,7 @@ func init() {
 
 // RunUnenroll executes repository unenrolment.
 func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
+	// --- Step 1: Resolve repository root and remove managed GEMINI.md block ---
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
 		repoRoot = targetDir
@@ -46,7 +64,6 @@ func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
 
 	dataDir := config.DataDir()
 
-	// Find the entry before removal to obtain RepoID if purge is requested
 	entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot)
 	createdByUs := found && entry != nil && entry.CreatedInstructionFile
 
@@ -54,30 +71,32 @@ func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
 		return fmt.Errorf("removing instruction block from %s: %w", config.InstructionFilename, err)
 	}
 
+	// --- Step 2: Remove registry entry, .agents/plugins.json entry, and .enrolled marker ---
 	removedIDs, err := config.RemoveFromRegistry(dataDir, repoRoot)
 	if err != nil {
 		return fmt.Errorf("removing from registry: %w", err)
 	}
 
-	// Remove .agents/plugins.json workspace-plugin entry before removing .enrolled marker
 	if err := RemoveWorkspacePluginConfigured(repoRoot); err != nil {
 		return fmt.Errorf("removing workspace plugin configuration: %w", err)
 	}
 
-	// Remove .memory/.enrolled marker
 	if err := config.RemoveEnrolledMarker(repoRoot); err != nil {
 		return fmt.Errorf("removing enrolled marker: %w", err)
 	}
 
+	// Restore Principal Architect memory_mode to builtin fallback if PA state.db exists.
+	SyncPAMemoryMode(repoRoot, "builtin")
+
+	// --- Step 3: Optionally purge <data-dir>/<repo-id>/ ---
 	if purge {
 		var idsToPurge []string
 		idsToPurge = append(idsToPurge, removedIDs...)
 		if entry != nil && entry.RepoID != "" {
 			idsToPurge = append(idsToPurge, entry.RepoID)
 		}
-		// If no IDs in registry, try generating RepoID from git
 		if len(idsToPurge) == 0 {
-			if id, err := gitops.GenerateRepoID(repoRoot); err == nil && id != "" {
+			if id, genErr := gitops.GenerateRepoID(repoRoot); genErr == nil && id != "" {
 				idsToPurge = append(idsToPurge, id)
 			}
 		}

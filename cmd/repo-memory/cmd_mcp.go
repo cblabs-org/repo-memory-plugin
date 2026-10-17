@@ -1,3 +1,10 @@
+/*
+cmd_mcp.go implements the `repo-memory mcp` stdio server command for the Model
+Context Protocol (JSON-RPC 2.0), resolving the active enrolled repository from
+either the current working directory or the most recently active registry entry
+when spawned from a plugin root directory.
+*/
+
 package main
 
 import (
@@ -17,6 +24,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/mcpserver"
 )
 
+// mcpCmd is the cobra command that starts the stdio MCP server.
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Stdio MCP server for memory pull tools",
@@ -27,62 +35,159 @@ The server speaks the Model Context Protocol (JSON-RPC 2.0 over stdio),
 handling initialize, ping, notifications/initialized, tools/list, and tools/call.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve data directory and initial working directory ---
 		dataDir := config.DataDir()
 		workspaceRoot, _ := os.Getwd()
 
-		// Derive repoID consistently with the hooks: use registry or git rev-parse.
-		repoID := ""
-		repoRoot := workspaceRoot
-		if entry, found, _ := config.FindRegistryEntry(dataDir, workspaceRoot); found && entry != nil {
-			repoID = entry.RepoID
-			repoRoot = entry.RootPath
-		}
-		if repoID == "" {
-			if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil {
-				repoRoot = root
-				repoID, _ = gitops.GenerateRepoID(root)
+		var activeIdx *index.Index
+		defer func() {
+			if activeIdx != nil {
+				_ = activeIdx.Close()
 			}
-		}
+		}()
 
-		var srv *mcpserver.Server
-		if repoID == "" || !config.IsEnrolledFast(workspaceRoot) {
-			// Non-git workspace or unenrolled repo: serve tools but each
-			// returns "repo not enrolled", without creating any files.
-			srv = mcpserver.NewServer(nil)
-		} else {
-			// Enrolled repo: create index and serve normally.
+		// --- Step 2: Define lazy repository binding closure ---
+		tryBindServer := func() *mcpserver.Server {
+			repoID, repoRoot, ok := resolveEnrolledRepoForMCP(dataDir, workspaceRoot)
+			if !ok {
+				return nil
+			}
 			idxPath := index.IndexPath(dataDir, repoID)
 			if err := os.MkdirAll(filepath.Dir(idxPath), 0755); err != nil {
-				return fmt.Errorf("creating index directory: %w", err)
+				return nil
 			}
-
 			idx, err := index.NewIndex(idxPath)
 			if err != nil {
-				return fmt.Errorf("opening index: %w", err)
+				return nil
 			}
-			defer idx.Close()
-
+			if activeIdx != nil {
+				_ = activeIdx.Close()
+			}
+			activeIdx = idx
 			opsDir := filepath.Join(repoRoot, ".memory", "ops")
-			srv = mcpserver.NewServer(idx,
+			return mcpserver.NewServer(idx,
 				mcpserver.WithOpsWriter(ops.NewWriter(opsDir)),
 				mcpserver.WithRepoContext(dataDir, repoID, repoRoot),
 			)
 		}
-		// Note: pull exposure tracking requires a per-conversation ledger.
-		// The MCP server does not have a conversation ID at startup, so
-		// pull exposures are not persisted until the harness passes one.
-		// TODO: Accept conversation ID from client metadata in initialize.
 
-		return serveMCP(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), srv)
+		// --- Step 3: Bind initial MCP server and run JSON-RPC stdio loop ---
+		srv := tryBindServer()
+		if srv == nil {
+			// Non-git workspace or unenrolled repo: serve tools and lazily re-check
+			// on tools/call in case `repo-memory enroll` runs while MCP is alive.
+			srv = mcpserver.NewServer(nil)
+		}
+
+		return serveMCPWithRebind(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), srv, tryBindServer)
 	},
+}
+
+// resolveEnrolledRepoForMCP resolves the active (repoID, repoRoot) for the MCP stdio server.
+// Direct cwd matches take precedence; when Antigravity spawns a plugin MCP server with cwd set
+// to PLUGIN_ROOT (~/.gemini/config/plugins/...), it falls back to the most recently active
+// enrolled repository in <data-dir>/registry.json.
+func resolveEnrolledRepoForMCP(dataDir, workspaceRoot string) (string, string, bool) {
+	// --- Step 1: Check whether workspaceRoot directly matches an enrolled repo ---
+	if entry, found, _ := config.FindRegistryEntry(dataDir, workspaceRoot); found && entry != nil {
+		if (entry.Enabled == nil || *entry.Enabled) && config.IsEnrolledFast(entry.RootPath) {
+			return entry.RepoID, entry.RootPath, true
+		}
+	}
+	if root, err := gitops.FindRepoRoot(workspaceRoot); err == nil && config.IsEnrolledFast(root) {
+		if repoID, err := gitops.GenerateRepoID(root); err == nil && repoID != "" {
+			return repoID, root, true
+		}
+	}
+
+	// --- Step 2: Fall back to the most recently active enrolled repo in registry.json ---
+	reg, err := config.LoadRegistry(dataDir)
+	if err != nil || len(reg) == 0 {
+		return "", "", false
+	}
+
+	var bestRepoID, bestRoot string
+	var bestMtime int64 = -1
+	seenRepoID := make(map[string]bool)
+
+	for _, entry := range reg {
+		if entry.RepoID == "" || entry.RootPath == "" || seenRepoID[entry.RepoID] {
+			continue
+		}
+		if entry.Enabled != nil && !*entry.Enabled {
+			continue
+		}
+		if !config.IsEnrolledFast(entry.RootPath) {
+			continue
+		}
+		seenRepoID[entry.RepoID] = true
+
+		mtime := latestRepoActivityUnixNano(dataDir, entry.RepoID)
+		if mtime > bestMtime || (mtime == bestMtime && (bestRoot == "" || entry.RootPath < bestRoot)) {
+			bestMtime = mtime
+			bestRepoID = entry.RepoID
+			bestRoot = entry.RootPath
+		}
+	}
+
+	if bestRepoID == "" {
+		return "", "", false
+	}
+	return bestRepoID, bestRoot, true
+}
+
+// latestRepoActivityUnixNano returns the newest modification timestamp (in Unix nanoseconds)
+// across the repository's SQLite index and state directories.
+func latestRepoActivityUnixNano(dataDir, repoID string) int64 {
+	// --- Step 1: Define file and directory mtime helpers ---
+	var latest int64
+	checkPath := func(p string) {
+		if fi, err := os.Stat(p); err == nil {
+			if t := fi.ModTime().UnixNano(); t > latest {
+				latest = t
+			}
+		}
+	}
+	checkDir := func(dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil {
+				if t := info.ModTime().UnixNano(); t > latest {
+					latest = t
+				}
+			}
+		}
+	}
+
+	// --- Step 2: Inspect index.db, freshness.json, ledgers, and marks ---
+	checkPath(index.IndexPath(dataDir, repoID))
+	for _, base := range []string{
+		filepath.Join(dataDir, "repos", repoID),
+		filepath.Join(dataDir, repoID),
+	} {
+		checkPath(filepath.Join(base, "state", "freshness.json"))
+		checkDir(filepath.Join(base, "state", "ledgers"))
+		checkDir(filepath.Join(base, "state", "marks"))
+	}
+	return latest
 }
 
 // serveMCP runs the MCP stdio loop, reading JSON-RPC requests from in and
 // writing responses to out. Extracted from RunE for testability.
 func serveMCP(ctx context.Context, in io.Reader, out io.Writer, srv *mcpserver.Server) error {
+	return serveMCPWithRebind(ctx, in, out, srv, nil)
+}
+
+// serveMCPWithRebind runs the MCP stdio loop and invokes rebind before each tools/call.
+func serveMCPWithRebind(ctx context.Context, in io.Reader, out io.Writer, srv *mcpserver.Server, rebind func() *mcpserver.Server) error {
+	// --- Step 1: Configure line scanner with 1 MiB buffer ---
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
+	// --- Step 2: Dispatch incoming JSON-RPC 2.0 requests ---
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -116,6 +221,13 @@ func serveMCP(ctx context.Context, in io.Reader, out io.Writer, srv *mcpserver.S
 				writeJSONRPC(out, req.ID, -32602, "Invalid params: "+err.Error(), nil)
 				continue
 			}
+			if rebind != nil {
+				if rebound := rebind(); rebound != nil {
+					srv = rebound
+				} else {
+					srv = mcpserver.NewServer(nil)
+				}
+			}
 			result, err := srv.DispatchTool(ctx, call.Name, call.Arguments)
 			if err != nil {
 				// MCP: tool execution errors are normal results with isError: true,
@@ -135,15 +247,23 @@ func serveMCP(ctx context.Context, in io.Reader, out io.Writer, srv *mcpserver.S
 
 // --- JSON-RPC types ---
 
+// jsonRPCRequest represents an inbound JSON-RPC 2.0 request or notification.
 type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"` // nil for notifications
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	// JSONRPC is the protocol version string ("2.0").
+	JSONRPC string `json:"jsonrpc"`
+	// ID is the request identifier (nil for notifications).
+	ID json.RawMessage `json:"id,omitempty"`
+	// Method is the RPC method name.
+	Method string `json:"method"`
+	// Params is the raw JSON method parameters.
+	Params json.RawMessage `json:"params,omitempty"`
 }
 
+// toolsCallParams represents the parameters of an MCP tools/call request.
 type toolsCallParams struct {
-	Name      string          `json:"name"`
+	// Name is the tool name to invoke.
+	Name string `json:"name"`
+	// Arguments is the raw JSON tool arguments object.
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
@@ -152,8 +272,9 @@ type toolsCallParams struct {
 // supportedProtocolVersion is the MCP protocol version we implement.
 const supportedProtocolVersion = "2024-11-05"
 
+// initializeResult builds the MCP initialize response payload.
 func initializeResult(params json.RawMessage) map[string]any {
-	// Echo the client's requested protocol version if we support it.
+	// --- Step 1: Negotiate protocol version ---
 	version := supportedProtocolVersion
 	if len(params) > 0 {
 		var initParams struct {
@@ -165,6 +286,7 @@ func initializeResult(params json.RawMessage) map[string]any {
 			}
 		}
 	}
+	// --- Step 2: Return server info and capabilities ---
 	return map[string]any{
 		"protocolVersion": version,
 		"serverInfo": map[string]any{
@@ -177,6 +299,7 @@ func initializeResult(params json.RawMessage) map[string]any {
 	}
 }
 
+// toolsListResult returns the MCP tools/list response payload.
 func toolsListResult() map[string]any {
 	schemas := mcpserver.ToolSchemas()
 	tools := make([]map[string]any, 0, len(schemas))
@@ -191,6 +314,7 @@ func toolsListResult() map[string]any {
 	return map[string]any{"tools": tools}
 }
 
+// mcpToolResult wraps a tool execution result into an MCP content array.
 func mcpToolResult(result any) map[string]any {
 	text := extractResultText(result)
 	return map[string]any{
@@ -200,6 +324,7 @@ func mcpToolResult(result any) map[string]any {
 	}
 }
 
+// mcpToolError wraps a tool error message into an MCP isError content response.
 func mcpToolError(message string) map[string]any {
 	return map[string]any{
 		"content": []map[string]any{
@@ -209,6 +334,8 @@ func mcpToolError(message string) map[string]any {
 	}
 }
 
+// extractResultText extracts the string `"result"` field from a tool response struct,
+// falling back to its JSON serialization.
 func extractResultText(result any) string {
 	b, _ := json.Marshal(result)
 	var generic map[string]string

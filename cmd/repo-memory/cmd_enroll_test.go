@@ -1,7 +1,20 @@
+//==============================================================================
+//
+//  File Name: cmd_enroll_test.go
+//
+//  File Description:
+//      Integration tests for the enroll, unenroll, and install CLI workflows,
+//      including automatic Principal Architect (PA) memory migration and
+//      builtin/external mode synchronization.
+//
+//==============================================================================
+
 package main
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +24,9 @@ import (
 	"time"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/gitops"
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
+	_ "modernc.org/sqlite"
 )
 
 func TestEnrollUnenrollFlow(t *testing.T) {
@@ -311,5 +327,285 @@ func TestMigrationPath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(daemonPluginDir, "workspace-plugin", "repo-memory", "plugin.json")); err != nil {
 		t.Errorf("workspace plugin.json not found: %v", err)
+	}
+}
+
+//------------------------------------------------------------------------------
+//
+//  Function: TestEnroll_MigratesPAMemoryAndSyncsMode
+//
+//  Description:
+//      Verifies that enrolling a repository with an existing Principal Architect
+//      workspace (.agents/plugins/principal-architect-workspace) automatically:
+//      1. Transitions repo_config.memory_mode in .state/state.db from 'builtin'
+//         to 'external'.
+//      2. Seeds v0.1.0+ Split-Authority WORKORDER.md YAML frontmatter completion
+//         blocks and PROJECT.md Part III distillation invariants into .memory/ops/
+//         and projects .memory/dossiers/ + ATLAS.md.
+//      3. Imports PA files (MEMORY.md, PROJECT.md, WORKORDER.md) as episodes and
+//         rebuilds index.db.
+//      4. Restores repo_config.memory_mode back to 'builtin' on unenroll.
+//
+//------------------------------------------------------------------------------
+func TestEnroll_MigratesPAMemoryAndSyncsMode(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
+	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
+	tempDataDir := filepath.Join(t.TempDir(), "data")
+	tempRepo := filepath.Join(t.TempDir(), "pa-repo")
+	if err := os.MkdirAll(tempRepo, 0755); err != nil {
+		t.Fatalf("creating test repo dir: %v", err)
+	}
+
+	runGit(t, tempRepo, "init")
+	runGit(t, tempRepo, "config", "user.name", "Test User")
+	runGit(t, tempRepo, "config", "user.email", "test@example.com")
+
+	// Create an anchored source file in the repo so file-anchored ops resolve cleanly.
+	srcFile := filepath.Join(tempRepo, "src", "pa_cli", "enroll.py")
+	if err := os.MkdirAll(filepath.Dir(srcFile), 0755); err != nil {
+		t.Fatalf("creating src dir: %v", err)
+	}
+	if err := os.WriteFile(srcFile, []byte("def enroll():\n    pass\n"), 0644); err != nil {
+		t.Fatalf("writing src file: %v", err)
+	}
+
+	// Create PA v0.1.0+ workspace under .agents/plugins/principal-architect-workspace
+	paDir := filepath.Join(tempRepo, ".agents", "plugins", "principal-architect-workspace")
+	stateDir := filepath.Join(paDir, ".state")
+	memDir := filepath.Join(paDir, "memory")
+	woDir := filepath.Join(paDir, "projects", "PR-001", "workorders", "WO-001")
+	for _, d := range []string{stateDir, memDir, woDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("creating PA dir %s: %v", d, err)
+		}
+	}
+
+	// 1. Initialize .state/state.db with memory_mode = 'builtin'
+	stateDBPath := filepath.Join(stateDir, "state.db")
+	db, err := sql.Open("sqlite", stateDBPath)
+	if err != nil {
+		t.Fatalf("opening state.db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE repo_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+		INSERT INTO repo_config (key, value) VALUES ('memory_mode', 'builtin');`); err != nil {
+		_ = db.Close()
+		t.Fatalf("initializing repo_config: %v", err)
+	}
+	_ = db.Close()
+
+	// 2. Write MEMORY.md, PROJECT.md (with Part III distillation), and WORKORDER.md (v0.1.0+ YAML frontmatter)
+	if err := os.WriteFile(filepath.Join(memDir, "MEMORY.md"), []byte("# PA Memory\n\n- Builtin fallback invariant.\n"), 0644); err != nil {
+		t.Fatalf("writing MEMORY.md: %v", err)
+	}
+	projectMD := `---
+id: PR-001
+title: PA Core Architecture
+status: complete
+charter:
+  allowed_modules:
+    - src/pa_cli
+---
+# PR-001: PA Core Architecture
+
+## Part III — Post-Project Architectural Distillation (System Memory)
+
+### Key Architectural Decisions & Invariants Preserved
+- **Two-Tier Install Architecture:** Global daemon owns sidecars while per-repo enrollment stays inert until enrolled.
+`
+	if err := os.WriteFile(filepath.Join(paDir, "projects", "PR-001", "PROJECT.md"), []byte(projectMD), 0644); err != nil {
+		t.Fatalf("writing PROJECT.md: %v", err)
+	}
+
+	workorderMD := `---
+id: WO-001
+parent: PR-001
+title: Implement PA Enroll
+status: complete
+boundary:
+  allowed_files:
+    - src/pa_cli/enroll.py
+completion:
+  status: complete
+  completed_at: "2026-10-16T12:00:00Z"
+  summary: "Implemented enroll workflow."
+  files_modified:
+    - src/pa_cli/enroll.py
+  decisions_made:
+    - "Auto-detect repo-memory at enroll time and set memory_mode accordingly."
+  dead_ends:
+    - "Tried mutating global config.json directly: rejected in favor of per-repo .agents/plugins.json."
+  out_of_scope_findings:
+    - "Legacy workspaces may still have .agents/skills/principal-architect-workspace."
+---
+# WO-001: Implement PA Enroll
+`
+	if err := os.WriteFile(filepath.Join(woDir, "WORKORDER.md"), []byte(workorderMD), 0644); err != nil {
+		t.Fatalf("writing WORKORDER.md: %v", err)
+	}
+
+	runGit(t, tempRepo, "add", ".")
+	runGit(t, tempRepo, "commit", "-m", "seed repo with PA workspace")
+
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", tempPluginDir)
+	t.Setenv("REPO_MEMORY_DATA_DIR", tempDataDir)
+
+	fakeBinPath := filepath.Join(t.TempDir(), "bin", "repo-memory")
+	_ = os.MkdirAll(filepath.Dir(fakeBinPath), 0755)
+	_ = os.WriteFile(fakeBinPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	if err := RunInstall(tempPluginDir, fakeBinPath); err != nil {
+		t.Fatalf("RunInstall failed: %v", err)
+	}
+
+	// Execute RunEnroll
+	var stdout bytes.Buffer
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&stdout)
+	if err := RunEnroll(cmdEnroll, tempRepo); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	// Verify 1: PA state.db memory_mode transitioned to 'external'
+	dbCheck, err := sql.Open("sqlite", stateDBPath)
+	if err != nil {
+		t.Fatalf("reopening state.db: %v", err)
+	}
+	var mode string
+	if err := dbCheck.QueryRow(`SELECT value FROM repo_config WHERE key = 'memory_mode'`).Scan(&mode); err != nil {
+		_ = dbCheck.Close()
+		t.Fatalf("querying memory_mode after enroll: %v", err)
+	}
+	_ = dbCheck.Close()
+	if mode != "external" {
+		t.Errorf("expected PA memory_mode='external' after enroll, got %q", mode)
+	}
+
+	// Verify 2: .memory/ATLAS.md and dossiers were projected from seeded PA entries
+	atlasBytes, err := os.ReadFile(filepath.Join(tempRepo, ".memory", "ATLAS.md"))
+	if err != nil {
+		t.Fatalf("expected .memory/ATLAS.md to exist after enroll bootstrap: %v", err)
+	}
+	if !strings.Contains(string(atlasBytes), "| src |") {
+		t.Errorf("expected .memory/ATLAS.md to contain module scope 'src', got:\n%s", string(atlasBytes))
+	}
+
+	// Verify 3: index.db contains active seeded entries and imported PA episodes
+	repoID, err := gitops.GenerateRepoID(tempRepo)
+	if err != nil {
+		t.Fatalf("generating repoID: %v", err)
+	}
+	activeDossiers, activeEntries := loadProjectedActiveEntries(context.Background(), tempRepo, tempDataDir, repoID)
+	if activeDossiers < 1 || len(activeEntries) < 4 {
+		t.Errorf("expected >=1 dossier and >=4 active entries (1 decision + 1 dead end + 1 finding + 1 project invariant), got %d dossiers and %d entries", activeDossiers, len(activeEntries))
+	}
+
+	idx, err := index.NewIndex(filepath.Join(tempDataDir, repoID, "index.db"))
+	if err != nil {
+		t.Fatalf("opening index.db: %v", err)
+	}
+	defer idx.Close()
+
+	episodes, err := idx.SearchEpisodes(context.Background(), "PA OR enroll OR Builtin")
+	if err != nil {
+		t.Fatalf("searching episodes: %v", err)
+	}
+	if len(episodes) < 3 {
+		t.Errorf("expected at least 3 imported PA episodes (MEMORY.md, PROJECT.md, WORKORDER.md), got %d", len(episodes))
+	}
+
+	// Verify 4: Unenroll restores PA state.db memory_mode back to 'builtin'
+	stdout.Reset()
+	cmdUnenroll := unenrollCmd
+	cmdUnenroll.SetOut(&stdout)
+	if err := RunUnenroll(cmdUnenroll, tempRepo, false); err != nil {
+		t.Fatalf("RunUnenroll failed: %v", err)
+	}
+
+	dbCheckAfter, err := sql.Open("sqlite", stateDBPath)
+	if err != nil {
+		t.Fatalf("reopening state.db after unenroll: %v", err)
+	}
+	var modeAfter string
+	if err := dbCheckAfter.QueryRow(`SELECT value FROM repo_config WHERE key = 'memory_mode'`).Scan(&modeAfter); err != nil {
+		_ = dbCheckAfter.Close()
+		t.Fatalf("querying memory_mode after unenroll: %v", err)
+	}
+	_ = dbCheckAfter.Close()
+	if modeAfter != "builtin" {
+		t.Errorf("expected PA memory_mode='builtin' after unenroll, got %q", modeAfter)
+	}
+}
+
+//------------------------------------------------------------------------------
+//
+//  Function: TestEnroll_ConfigOverrideFlags
+//
+//  Description:
+//      Verifies that CLI flags on `repo-memory enroll` (--turn-notes, --doc-seed,
+//      --push-gaps, --no-seed) persist cleanly into .memory/config.yaml.
+//
+//------------------------------------------------------------------------------
+func TestEnroll_ConfigOverrideFlags(t *testing.T) {
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+
+	tempPluginDir := filepath.Join(t.TempDir(), "plugins", "repo-memory-daemon")
+	tempDataDir := filepath.Join(t.TempDir(), "data")
+	tempRepo := filepath.Join(t.TempDir(), "flag-repo")
+	if err := os.MkdirAll(tempRepo, 0755); err != nil {
+		t.Fatalf("creating test repo dir: %v", err)
+	}
+
+	runGit(t, tempRepo, "init")
+	runGit(t, tempRepo, "config", "user.name", "Test User")
+	runGit(t, tempRepo, "config", "user.email", "test@example.com")
+	runGit(t, tempRepo, "commit", "--allow-empty", "-m", "initial commit")
+
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", tempPluginDir)
+	t.Setenv("REPO_MEMORY_DATA_DIR", tempDataDir)
+
+	fakeBinPath := filepath.Join(t.TempDir(), "bin", "repo-memory")
+	_ = os.MkdirAll(filepath.Dir(fakeBinPath), 0755)
+	_ = os.WriteFile(fakeBinPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	if err := RunInstall(tempPluginDir, fakeBinPath); err != nil {
+		t.Fatalf("RunInstall failed: %v", err)
+	}
+
+	prevTurnNotes := enrollTurnNotesMode
+	prevDocSeeds := enrollDocSeedGlobs
+	prevPushGaps := enrollPushGapsFlag
+	prevNoSeed := enrollNoSeedFlag
+	t.Cleanup(func() {
+		enrollTurnNotesMode = prevTurnNotes
+		enrollDocSeedGlobs = prevDocSeeds
+		enrollPushGapsFlag = prevPushGaps
+		enrollNoSeedFlag = prevNoSeed
+	})
+
+	enrollTurnNotesMode = "fallback-only"
+	enrollDocSeedGlobs = []string{"SPEC.md", "docs/*.md"}
+	enrollPushGapsFlag = true
+	enrollNoSeedFlag = true
+
+	var stdout bytes.Buffer
+	cmdEnroll := enrollCmd
+	cmdEnroll.SetOut(&stdout)
+	if err := RunEnroll(cmdEnroll, tempRepo); err != nil {
+		t.Fatalf("RunEnroll failed: %v", err)
+	}
+
+	repoCfg, err := config.LoadRepoConfig(tempRepo)
+	if err != nil {
+		t.Fatalf("LoadRepoConfig failed: %v", err)
+	}
+	if repoCfg.TurnNotesMode() != "fallback-only" {
+		t.Errorf("expected TurnNotesMode()='fallback-only', got %q", repoCfg.TurnNotesMode())
+	}
+	if len(repoCfg.DocSeeds) != 2 || repoCfg.DocSeeds[0] != "SPEC.md" || repoCfg.DocSeeds[1] != "docs/*.md" {
+		t.Errorf("expected DocSeeds=[SPEC.md, docs/*.md], got %v", repoCfg.DocSeeds)
+	}
+	if !repoCfg.Gaps.Push {
+		t.Errorf("expected Gaps.Push=true, got false")
 	}
 }
