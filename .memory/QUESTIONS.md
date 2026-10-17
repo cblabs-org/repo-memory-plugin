@@ -57,8 +57,7 @@ Generated automatically from repository memory coverage, open issues, and stalen
 
 ## 2. Suspect / Stale Entries Needing Verification
 
-- **[docseed-b52782ec]** (`root`, `recipe`): **Build-manifest sensitivity:** If a commit or working-tree diff modifies a repository build or environment manifest (`Makefile`, `CMakeLists.txt`, `platformio.ini`, `sdkconfig*`, `go.mod`, `package.json`, `Taskfile.yml`, `.github/workflows/*.yml`) anchored to a `recipe`, `tick` flags that recipe `stale_suspect: true` until its command next succeeds (`exit 0`).
-  - Anchors: `Makefile`, `go.mod`
+_No suspect or stale entries._
 
 ## 3. Uncovered & Low-Coverage Scopes
 

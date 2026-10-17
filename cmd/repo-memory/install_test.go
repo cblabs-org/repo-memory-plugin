@@ -100,7 +100,7 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		}
 	}
 
-	// Verify global repo-memory-admin skill markdown exists and substitutes binary path
+	// Verify global repo-memory-admin skill markdown exists in the daemon plugin and substitutes binary path
 	adminSkillPath := filepath.Join(tempPluginDir, "skills", "repo-memory-admin", "SKILL.md")
 	adminSkillData, err := os.ReadFile(adminSkillPath)
 	if err != nil {
@@ -108,6 +108,11 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 	}
 	if !strings.Contains(string(adminSkillData), "name: repo-memory-admin") || !strings.Contains(string(adminSkillData), binPath+" enroll") {
 		t.Errorf("admin skill file %s missing expected content:\n%s", adminSkillPath, string(adminSkillData))
+	}
+	// Verify repo-memory-admin is NOT duplicated inside workspace-plugin
+	wsSkillPath := filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "skills", "repo-memory-admin", "SKILL.md")
+	if _, err := os.Stat(wsSkillPath); !os.IsNotExist(err) {
+		t.Errorf("expected repo-memory-admin skill not to exist inside workspace-plugin (%s)", wsSkillPath)
 	}
 
 	// Verify sidecar args and restart_policy
@@ -432,5 +437,48 @@ func TestRunPortableInstallAndVersionDrift(t *testing.T) {
 		t.Errorf("expected doctor output to warn on version drift, got:\n%s", buf.String())
 	}
 }
+
+func TestInstallEnablesGlobalConfigAndSelfHealsOnEnroll(t *testing.T) {
+	configDir := t.TempDir()
+	pluginDir := filepath.Join(configDir, "plugins", "repo-memory-daemon")
+	binPath := "/usr/local/bin/repo-memory"
+
+	// 1. Install into a fresh <configDir>/plugins/repo-memory-daemon where config.json does not exist yet
+	if err := RunInstall(pluginDir, binPath); err != nil {
+		t.Fatalf("RunInstall failed: %v", err)
+	}
+
+	// Verify <configDir>/config.json was created with plugins.repo-memory-daemon.enabled = true
+	configPath := filepath.Join(configDir, "config.json")
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected %s to be created: %v", configPath, err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(configBytes, &cfg); err != nil {
+		t.Fatalf("unmarshaling config.json: %v", err)
+	}
+	pluginsMap, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'plugins' map in config.json, got %v", cfg)
+	}
+	daemonEntry, ok := pluginsMap["repo-memory-daemon"].(map[string]any)
+	if !ok || daemonEntry["enabled"] != true {
+		t.Errorf("expected repo-memory-daemon enabled=true in config.json, got %v", pluginsMap["repo-memory-daemon"])
+	}
+
+	// 2. Simulate an outdated plugin bundle missing skills/repo-memory-admin/SKILL.md in the daemon plugin
+	daemonSkillPath := filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md")
+	if err := os.Remove(daemonSkillPath); err != nil {
+		t.Fatalf("removing daemon SKILL.md: %v", err)
+	}
+	if err := ensurePluginBundleInstalled(pluginDir, binPath); err != nil {
+		t.Fatalf("ensurePluginBundleInstalled failed: %v", err)
+	}
+	if _, err := os.Stat(daemonSkillPath); err != nil {
+		t.Errorf("expected ensurePluginBundleInstalled to restore %s: %v", daemonSkillPath, err)
+	}
+}
+
 
 

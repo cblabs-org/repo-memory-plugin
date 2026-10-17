@@ -39,6 +39,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/seed"
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
+	"github.com/cblabs-org/repo-memory-plugin/packaging/antigravity"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
 )
@@ -113,6 +114,17 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	}
 
 	// --- Step 2: Configure .agents/plugins.json and global registry ---
+	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
+		if execPath, execErr := os.Executable(); execErr == nil && !isTestExecutable(execPath) {
+			if absBin, absErr := filepath.Abs(execPath); absErr == nil {
+				if evalBin, evalErr := filepath.EvalSymlinks(absBin); evalErr == nil {
+					absBin = evalBin
+				}
+				_ = ensurePluginBundleInstalled(daemonDir, absBin)
+			}
+		}
+	}
+
 	if err := EnsureWorkspacePluginConfigured(repoRoot); err != nil {
 		return fmt.Errorf("configuring workspace plugin: %w", err)
 	}
@@ -540,4 +552,49 @@ func isRepoMemoryWorkspacePluginEntry(entryPath, expectedPath string) bool {
 		return true
 	}
 	return false
+}
+
+// isTestExecutable reports whether execPath appears to be a temporary `go test` binary.
+func isTestExecutable(execPath string) bool {
+	cleaned := filepath.Clean(execPath)
+	base := filepath.Base(cleaned)
+	return strings.HasSuffix(base, ".test") ||
+		strings.HasSuffix(base, ".test.exe") ||
+		strings.Contains(cleaned, string(filepath.Separator)+"go-build")
+}
+
+// ensurePluginBundleInstalled checks whether the daemon and workspace plugin bundles
+// (including the repo-memory-admin skill) are present and up to date at daemonDir, and
+// invokes RunInstall(daemonDir, binPath) to self-heal if any artifact is missing or outdated.
+func ensurePluginBundleInstalled(daemonDir, binPath string) error {
+	// --- Step 1: Check for required plugin manifests and skill files ---
+	wsDir := ResolveWorkspacePluginDir(daemonDir)
+	requiredFiles := []string{
+		filepath.Join(daemonDir, "plugin.json"),
+		filepath.Join(daemonDir, "skills", "repo-memory-admin", "SKILL.md"),
+		filepath.Join(wsDir, "plugin.json"),
+		filepath.Join(wsDir, "hooks.json"),
+		filepath.Join(wsDir, "mcp_config.json"),
+	}
+	needsInstall := false
+	for _, p := range requiredFiles {
+		if _, err := os.Stat(p); err != nil {
+			needsInstall = true
+			break
+		}
+	}
+
+	// --- Step 2: Check for version drift when binary Version is stamped ---
+	if !needsInstall && Version != "" && Version != "dev" {
+		installedVer := ReadInstalledPluginVersion(daemonDir)
+		expectedVer := antigravity.NormalizePluginVersion(Version)
+		if installedVer != expectedVer {
+			needsInstall = true
+		}
+	}
+
+	if !needsInstall {
+		return nil
+	}
+	return RunInstall(daemonDir, binPath)
 }
