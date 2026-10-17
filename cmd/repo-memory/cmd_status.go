@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_status.go
+ * Description: Implements the `repo-memory status` CLI command and active
+ *              dossier projection helper across repo-shared, branch-local, and
+ *              user-local operation log tiers.
+ *
+ * Exported Types / Functions:
+ * - StatusOutput: Structured summary of repository enrollment, freshness, and active memory counts.
+ * - RunStatus():  Inspects repository memory status and emits human-readable or JSON output.
+ */
+
 package main
 
 import (
@@ -20,21 +37,22 @@ import (
 )
 
 var (
-	statusRepoDir string
-	statusJSON    bool
+	statusRepoDir string // Optional --repo directory override for `repo-memory status`.
+	statusJSON    bool   // When true, outputs repository status as structured JSON.
 )
 
 // StatusOutput represents the structured output of `repo-memory status`.
 type StatusOutput struct {
-	RepoRoot        string   `json:"repo_root"`
-	RepoID          string   `json:"repo_id,omitempty"`
-	Enrolled        bool     `json:"enrolled"`
-	Freshness       string   `json:"freshness"`
-	ActiveDossiers  int      `json:"active_dossiers"`
-	ActiveEntries   int      `json:"active_entries"`
-	GraduatedSkills []string `json:"graduated_skills"`
+	RepoRoot        string   `json:"repo_root"`         // Absolute path to the repository root.
+	RepoID          string   `json:"repo_id,omitempty"` // Stable registry slug derived from remote origin URL or root path hash.
+	Enrolled        bool     `json:"enrolled"`          // Whether the repository is actively enrolled.
+	Freshness       string   `json:"freshness"`         // Single-line freshness status header.
+	ActiveDossiers  int      `json:"active_dossiers"`   // Number of scopes with active dossier entries.
+	ActiveEntries   int      `json:"active_entries"`    // Total active (non-retired) dossier entries.
+	GraduatedSkills []string `json:"graduated_skills"`  // Slugs of graduated procedural skills.
 }
 
+// statusCmd defines the `repo-memory status` subcommand.
 var statusCmd = &cobra.Command{
 	Use:   "status [repo-dir]",
 	Short: "Display current repository memory status",
@@ -57,6 +75,7 @@ func init() {
 
 // RunStatus inspects repository memory status and writes human-readable or JSON output to cmd.OutOrStdout().
 func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
+	// --- Step 1: Resolve repository root, registry ID, and enrollment status ---
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -83,6 +102,7 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 	enrolled := config.IsEnrolledFast(repoRoot)
 	freshness := coverage.FormatFreshnessHeader(repoRoot, dataDir, repoID)
 
+	// --- Step 2: Project active dossier entries and check graduated skills ---
 	activeDossiers, activeEntries := loadProjectedActiveEntries(ctx, repoRoot, dataDir, repoID)
 
 	var graduated []string
@@ -103,6 +123,7 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 		GraduatedSkills: graduated,
 	}
 
+	// --- Step 3: Render JSON or human-readable status summary ---
 	if asJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
@@ -118,7 +139,11 @@ func RunStatus(cmd *cobra.Command, targetDir string, asJSON bool) error {
 	return nil
 }
 
+// loadProjectedActiveEntries replays operation logs across repo-shared (Tier 5),
+// branch-local (Tier 4), and user-local (Tier 3) directories, returning the count
+// of active scopes and the deduplicated slice of active entries.
 func loadProjectedActiveEntries(ctx context.Context, repoRoot, dataDir, repoID string) (int, []dossiers.Entry) {
+	// --- Step 1: Define per-directory projection closure ---
 	byID := make(map[string]dossiers.Entry)
 	retiredIDs := make(map[string]bool)
 	var orderedIDs []string
@@ -164,6 +189,7 @@ func loadProjectedActiveEntries(ctx context.Context, repoRoot, dataDir, repoID s
 		}
 	}
 
+	// --- Step 2: Project Tier 5 (repo-shared), Tier 4 (branch-local), and Tier 3 (user-local) ops ---
 	if strings.TrimSpace(repoRoot) != "" {
 		// Tier 5: Repo-shared ops (.memory/ops)
 		projectOpsDir(filepath.Join(repoRoot, ".memory", "ops"))
@@ -190,6 +216,7 @@ func loadProjectedActiveEntries(ctx context.Context, repoRoot, dataDir, repoID s
 		projectOpsDir(filepath.Join(dataDir, repoID, "user-dossiers", "ops"))
 	}
 
+	// --- Step 3: Collect active entries in deterministic order and count distinct scopes ---
 	activeScopes := make(map[string]bool)
 	activeEntries := make([]dossiers.Entry, 0, len(byID))
 	for _, id := range orderedIDs {

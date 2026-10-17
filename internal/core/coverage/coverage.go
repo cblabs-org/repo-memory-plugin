@@ -1,3 +1,31 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/coverage/coverage.go
+ * Description: Computes repository memory coverage scores across scopes, detects
+ *              unmapped source directories, formats concise coverage gap lines,
+ *              and renders .memory/QUESTIONS.md.
+ *
+ * Exported Types / Functions:
+ * - DefaultGapThreshold:       Default coverage score threshold below which a scope is flagged.
+ * - MaxGapLinesPerResponse:    Hard cap on coverage gap lines per tool response (3).
+ * - ScopeCoverage:             Summarizes memory coverage and entry health for a single dossier scope.
+ * - CoverageReport:            Summarizes repository-wide memory coverage, unmapped dirs, and contradictions.
+ * - ComputeCoverage():         Analyzes active entries and repository structure to produce a CoverageReport.
+ * - FormatGapLinesForScope():  Returns up to MaxGapLinesPerResponse one-line gap notices for a scope.
+ * - FormatFreshnessHeader():   Returns the 1-line A6 freshness status header for repoRoot.
+ * - IdentifyCoverageGaps():    Returns all scopes in a CoverageReport whose score is below threshold.
+ * - FormatGapLines():          Returns one-line coverage gap notices across a CoverageReport.
+ * - GenerateQuestionsMarkdown(): Renders .memory/QUESTIONS.md content from coverage and entries.
+ * - WriteQuestionsFile():      Renders and writes <repoRoot>/.memory/QUESTIONS.md.
+ */
+
+// Package coverage computes per-scope memory health scores, identifies unmapped
+// source directories, and formats coverage gap notices and elicitation questions.
 package coverage
 
 import (
@@ -23,25 +51,26 @@ const (
 
 // ScopeCoverage summarizes memory coverage and entry health for a single dossier scope.
 type ScopeCoverage struct {
-	Scope             string   `json:"scope"`
-	Score             float64  `json:"score"`
-	ActiveEntries     int      `json:"active_entries"`
-	SemanticEntries   int      `json:"semantic_entries"`
-	ProceduralEntries int      `json:"procedural_entries"`
-	SuspectEntries    int      `json:"suspect_entries"`
-	OpenIssues        int      `json:"open_issues"`
-	BelowThreshold    bool     `json:"below_threshold"`
-	UnmappedFiles     []string `json:"unmapped_files,omitempty"`
+	Scope             string   `json:"scope"`                    // Canonical dossier scope identifier.
+	Score             float64  `json:"score"`                    // Weighted health score in [0.0, 1.0] rounded to two decimal places.
+	ActiveEntries     int      `json:"active_entries"`           // Count of non-retired, non-superseded entries in the scope.
+	SemanticEntries   int      `json:"semantic_entries"`         // Count of active entries with semantic cognitive kind.
+	ProceduralEntries int      `json:"procedural_entries"`       // Count of active entries with procedural cognitive kind.
+	SuspectEntries    int      `json:"suspect_entries"`          // Count of active entries flagged as stale or suspect.
+	OpenIssues        int      `json:"open_issues"`              // Count of active open-issue entries in the scope.
+	BelowThreshold    bool     `json:"below_threshold"`          // True when Score is strictly below the evaluation threshold.
+	UnmappedFiles     []string `json:"unmapped_files,omitempty"` // Optional list of unanchored source files within the scope.
 }
 
 // CoverageReport summarizes repository-wide memory coverage, unmapped source directories, and contradictions.
 type CoverageReport struct {
-	Scopes         []ScopeCoverage `json:"scopes"`
-	UnmappedDirs   []string        `json:"unmapped_dirs,omitempty"`
-	Contradictions []string        `json:"contradictions,omitempty"`
-	Threshold      float64         `json:"threshold"`
+	Scopes         []ScopeCoverage `json:"scopes"`                   // Sorted per-scope coverage summaries.
+	UnmappedDirs   []string        `json:"unmapped_dirs,omitempty"`  // Source directories lacking any anchored memory entries.
+	Contradictions []string        `json:"contradictions,omitempty"` // Detected cross-entry contradiction descriptions, if any.
+	Threshold      float64         `json:"threshold"`                // Coverage score threshold applied to produce BelowThreshold flags.
 }
 
+// normalizeThreshold returns DefaultGapThreshold when threshold is <= 0, or threshold otherwise.
 func normalizeThreshold(threshold float64) float64 {
 	if threshold <= 0 {
 		return DefaultGapThreshold
@@ -49,15 +78,19 @@ func normalizeThreshold(threshold float64) float64 {
 	return threshold
 }
 
+// isActiveEntry reports whether e is neither retired nor superseded by another entry.
 func isActiveEntry(e dossiers.Entry) bool {
 	return !e.Retired && strings.TrimSpace(e.SupersededBy) == ""
 }
 
+// isSuspectEntry reports whether e is marked StaleSuspect or has Verified set to "suspect".
 func isSuspectEntry(e dossiers.Entry) bool {
 	return e.StaleSuspect || strings.EqualFold(strings.TrimSpace(e.Verified), "suspect")
 }
 
+// computeSingleScopeCoverage calculates the ScopeCoverage metrics and weighted score for a single scope.
 func computeSingleScopeCoverage(scope string, entries []dossiers.Entry, threshold float64) ScopeCoverage {
+	// --- Step 1: Filter to active entries and handle empty scopes ---
 	threshold = normalizeThreshold(threshold)
 	sc := ScopeCoverage{
 		Scope: scope,
@@ -77,6 +110,7 @@ func computeSingleScopeCoverage(scope string, entries []dossiers.Entry, threshol
 		return sc
 	}
 
+	// --- Step 2: Accumulate cognitive kind counts and weighted verification scores ---
 	totalWeight := 0.0
 	for _, e := range active {
 		if e.EffectiveKind() == dossiers.CognitiveKindProcedural {
@@ -99,6 +133,7 @@ func computeSingleScopeCoverage(scope string, entries []dossiers.Entry, threshol
 		totalWeight += 1.0
 	}
 
+	// --- Step 3: Clamp and round the normalized coverage score ---
 	rawScore := totalWeight / float64(len(active))
 	if rawScore < 0 {
 		rawScore = 0
@@ -113,6 +148,7 @@ func computeSingleScopeCoverage(scope string, entries []dossiers.Entry, threshol
 
 // ComputeCoverage analyzes active entries and repository structure to produce a CoverageReport.
 func ComputeCoverage(ctx context.Context, repoRoot string, entries []dossiers.Entry, threshold float64) (*CoverageReport, error) {
+	// --- Step 1: Group active entries by scope and collect all anchored file paths ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -141,6 +177,7 @@ func ComputeCoverage(ctx context.Context, repoRoot string, entries []dossiers.En
 		}
 	}
 
+	// --- Step 2: Merge configured subsystems and declared scopes from repository config ---
 	if strings.TrimSpace(repoRoot) != "" {
 		if rCfg, err := config.LoadRepoConfig(repoRoot); err == nil {
 			for sub := range rCfg.Subsystems {
@@ -160,6 +197,7 @@ func ComputeCoverage(ctx context.Context, repoRoot string, entries []dossiers.En
 		}
 	}
 
+	// --- Step 3: Compute coverage for each sorted scope and scan for unmapped source directories ---
 	sortedScopes := make([]string, 0, len(scopeNames))
 	for s := range scopeNames {
 		sortedScopes = append(sortedScopes, s)
@@ -186,6 +224,7 @@ func ComputeCoverage(ctx context.Context, repoRoot string, entries []dossiers.En
 // FormatGapLinesForScope returns up to MaxGapLinesPerResponse (3) one-line coverage gap notices
 // for a requested scope (SPEC.md §5.2).
 func FormatGapLinesForScope(scope string, activeEntries []dossiers.Entry, unconsolidatedCount int, threshold float64) []string {
+	// --- Step 1: Validate scope and filter to active entries ---
 	scope = strings.TrimSpace(scope)
 	if scope == "" {
 		return nil
@@ -199,6 +238,7 @@ func FormatGapLinesForScope(scope string, activeEntries []dossiers.Entry, uncons
 		}
 	}
 
+	// --- Step 2: Format zero-coverage or low-coverage notice and enforce MaxGapLinesPerResponse ---
 	var lines []string
 	if len(active) == 0 && unconsolidatedCount == 0 {
 		lines = append(lines, fmt.Sprintf("No memory covers %s. Absence of memory is not evidence; read the code.", scope))
@@ -236,6 +276,7 @@ func IdentifyCoverageGaps(report *CoverageReport) []ScopeCoverage {
 
 // FormatGapLines returns one-line coverage gap notices across a CoverageReport.
 func FormatGapLines(report *CoverageReport) []string {
+	// --- Step 1: Format notices for scopes below the coverage threshold ---
 	if report == nil {
 		return nil
 	}
@@ -250,6 +291,8 @@ func FormatGapLines(report *CoverageReport) []string {
 			lines = append(lines, fmt.Sprintf("Low memory coverage for %s (score %.2f). Absence of memory is not evidence; read the code.", sc.Scope, sc.Score))
 		}
 	}
+
+	// --- Step 2: Append notices for unmapped source directories ---
 	for _, dir := range report.UnmappedDirs {
 		lines = append(lines, fmt.Sprintf("Unmapped directory %s has 0 anchored memory entries.", dir))
 	}
@@ -259,6 +302,7 @@ func FormatGapLines(report *CoverageReport) []string {
 // GenerateQuestionsMarkdown renders .memory/QUESTIONS.md listing unresolved open issues,
 // suspect/stale entries needing verification, and uncovered/low-coverage scopes (SPEC.md §9.2).
 func GenerateQuestionsMarkdown(report *CoverageReport, entries []dossiers.Entry) string {
+	// --- Step 1: Partition active entries into open issues and suspect entries ---
 	var b strings.Builder
 	b.WriteString("# Memory Elicitation & Open Questions\n\n")
 	b.WriteString("Generated automatically from repository memory coverage, open issues, and staleness checks.\n\n")
@@ -280,6 +324,7 @@ func GenerateQuestionsMarkdown(report *CoverageReport, entries []dossiers.Entry)
 	sort.Slice(openIssues, func(i, j int) bool { return openIssues[i].ID < openIssues[j].ID })
 	sort.Slice(suspectEntries, func(i, j int) bool { return suspectEntries[i].ID < suspectEntries[j].ID })
 
+	// --- Step 2: Render Section 1 (Unresolved Open Issues) ---
 	b.WriteString("## 1. Unresolved Open Issues\n\n")
 	if len(openIssues) == 0 {
 		b.WriteString("_No unresolved open issues._\n\n")
@@ -301,6 +346,7 @@ func GenerateQuestionsMarkdown(report *CoverageReport, entries []dossiers.Entry)
 		b.WriteString("\n")
 	}
 
+	// --- Step 3: Render Section 2 (Suspect / Stale Entries Needing Verification) ---
 	b.WriteString("## 2. Suspect / Stale Entries Needing Verification\n\n")
 	if len(suspectEntries) == 0 {
 		b.WriteString("_No suspect or stale entries._\n\n")
@@ -319,6 +365,7 @@ func GenerateQuestionsMarkdown(report *CoverageReport, entries []dossiers.Entry)
 		b.WriteString("\n")
 	}
 
+	// --- Step 4: Render Section 3 (Uncovered & Low-Coverage Scopes) ---
 	b.WriteString("## 3. Uncovered & Low-Coverage Scopes\n\n")
 	hasGaps := false
 	if report != nil {
@@ -345,6 +392,7 @@ func GenerateQuestionsMarkdown(report *CoverageReport, entries []dossiers.Entry)
 
 // WriteQuestionsFile renders and writes <repoRoot>/.memory/QUESTIONS.md.
 func WriteQuestionsFile(repoRoot string, report *CoverageReport, entries []dossiers.Entry) error {
+	// --- Step 1: Validate repoRoot and ensure .memory directory exists ---
 	if strings.TrimSpace(repoRoot) == "" {
 		return fmt.Errorf("repoRoot is required")
 	}
@@ -352,6 +400,8 @@ func WriteQuestionsFile(repoRoot string, report *CoverageReport, entries []dossi
 	if err := os.MkdirAll(memDir, 0o755); err != nil {
 		return fmt.Errorf("creating .memory directory: %w", err)
 	}
+
+	// --- Step 2: Generate markdown and write QUESTIONS.md ---
 	content := GenerateQuestionsMarkdown(report, entries)
 	target := filepath.Join(memDir, "QUESTIONS.md")
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
@@ -360,6 +410,7 @@ func WriteQuestionsFile(repoRoot string, report *CoverageReport, entries []dossi
 	return nil
 }
 
+// firstLineSummary returns the first non-empty trimmed line of text.
 func firstLineSummary(text string) string {
 	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -370,7 +421,9 @@ func firstLineSummary(text string) string {
 	return ""
 }
 
+// stripAnchorPath removes #symbol and :Lline suffixes and normalizes slashes on an anchor string.
 func stripAnchorPath(anchor string) string {
+	// --- Step 1: Trim whitespace and strip symbol or line-range suffixes ---
 	a := strings.TrimSpace(anchor)
 	if a == "" {
 		return ""
@@ -381,25 +434,29 @@ func stripAnchorPath(anchor string) string {
 	if idx := strings.Index(a, ":L"); idx >= 0 {
 		a = a[:idx]
 	}
+
+	// --- Step 2: Convert path separators to forward slashes and strip leading relative prefixes ---
 	a = filepath.ToSlash(strings.TrimSpace(a))
 	a = strings.TrimPrefix(a, "./")
 	a = strings.TrimPrefix(a, "/")
 	return a
 }
 
+// excludedTopDirs lists top-level and nested directory names ignored when scanning for unmapped source directories.
 var excludedTopDirs = map[string]bool{
-	".git":          true,
-	".memory":       true,
-	".agents":       true,
-	".github":       true,
-	"vendor":        true,
-	"node_modules":  true,
-	"testdata":      true,
-	"dist":          true,
-	"build":         true,
-	"docs":          true,
+	".git":         true,
+	".memory":      true,
+	".agents":      true,
+	".github":      true,
+	"vendor":       true,
+	"node_modules": true,
+	"testdata":     true,
+	"dist":         true,
+	"build":        true,
+	"docs":         true,
 }
 
+// sourceFileExts lists file extensions recognized as source code when discovering candidate module directories.
 var sourceFileExts = map[string]bool{
 	".go":   true,
 	".py":   true,
@@ -418,17 +475,21 @@ var sourceFileExts = map[string]bool{
 	".sh":   true,
 }
 
+// findUnmappedSourceDirs scans up to two directory levels under repoRoot and returns sorted source
+// directories that have no anchored memory entries or matching populated scopes.
 func findUnmappedSourceDirs(
 	repoRoot string,
 	anchoredPaths map[string]bool,
 	scopeNames map[string]bool,
 	byScope map[string][]dossiers.Entry,
 ) []string {
+	// --- Step 1: Read top-level directories under repoRoot ---
 	topEntries, err := os.ReadDir(repoRoot)
 	if err != nil {
 		return nil
 	}
 
+	// --- Step 2: Collect candidate first- or second-level directories containing source files ---
 	var candidateDirs []string
 	for _, te := range topEntries {
 		if !te.IsDir() {
@@ -459,6 +520,7 @@ func findUnmappedSourceDirs(
 		}
 	}
 
+	// --- Step 3: Filter out directories already covered by anchored paths or populated scopes ---
 	sort.Strings(candidateDirs)
 	var unmapped []string
 	for _, dirRel := range candidateDirs {
@@ -470,7 +532,9 @@ func findUnmappedSourceDirs(
 	return unmapped
 }
 
+// dirHasSourceFiles walks dirPath and reports whether it contains at least one recognized source file.
 func dirHasSourceFiles(dirPath string) bool {
+	// --- Step 1: Walk directory tree skipping hidden and excluded directories ---
 	found := false
 	_ = filepath.WalkDir(dirPath, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -482,6 +546,7 @@ func dirHasSourceFiles(dirPath string) bool {
 			}
 			return nil
 		}
+		// --- Step 2: Stop traversal immediately upon finding a recognized source extension ---
 		ext := strings.ToLower(filepath.Ext(d.Name()))
 		if sourceFileExts[ext] {
 			found = true
@@ -492,18 +557,22 @@ func dirHasSourceFiles(dirPath string) bool {
 	return found
 }
 
+// isDirCovered reports whether dirRel is covered by any anchored file path or populated dossier scope.
 func isDirCovered(
 	dirRel string,
 	anchoredPaths map[string]bool,
 	scopeNames map[string]bool,
 	byScope map[string][]dossiers.Entry,
 ) bool {
+	// --- Step 1: Check whether any anchored path equals or resides inside dirRel ---
 	prefix := dirRel + "/"
 	for p := range anchoredPaths {
 		if p == dirRel || strings.HasPrefix(p, prefix) {
 			return true
 		}
 	}
+
+	// --- Step 2: Check whether dirRel or its base name matches a populated scope ---
 	base := filepath.Base(dirRel)
 	if scopeNames[dirRel] && len(byScope[dirRel]) > 0 {
 		return true

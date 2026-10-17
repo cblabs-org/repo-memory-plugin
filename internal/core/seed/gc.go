@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/seed/gc.go
+ * Description: Garbage-collects stale or placeholder operations from .memory/ops/
+ *              batches, sanitizes file anchor paths, repairs polluted dossier
+ *              scopes, and re-projects dossiers and ATLAS.md.
+ *
+ * Exported Types / Functions:
+ * - GCOptions:           Configures ops directory, dossiers directory, and prune IDs for GC.
+ * - GCStats:             Summarizes batch, operation, anchor, and scope repair counts from GC.
+ * - RunOpsGC():          Scans, prunes, repairs, and optionally re-projects dossier operation logs.
+ * - DefaultStaleEntryIDs: Known-false seeded entry IDs always pruned during ops garbage collection.
+ */
+
 package seed
 
 import (
@@ -24,30 +43,33 @@ var DefaultStaleEntryIDs = []string{
 
 // GCOptions configures an ops garbage collection and dossier re-projection run.
 type GCOptions struct {
-	OpsDir      string
-	DossiersDir string
-	ConfigPath  string
-	PruneIDs    []string
-	DryRun      bool
+	OpsDir      string   // Path to the .memory/ops directory containing JSON batch files.
+	DossiersDir string   // Optional path to .memory root for re-projecting dossiers and ATLAS.md.
+	ConfigPath  string   // Optional path to config.yaml for scope resolution.
+	PruneIDs    []string // Additional entry IDs to prune during garbage collection.
+	DryRun      bool     // When true, computes GCStats without mutating files on disk.
 }
 
 // GCStats summarizes the results of a RunOpsGC execution.
 type GCStats struct {
-	BatchesScanned  int
-	BatchesModified int
-	BatchesDeleted  int
-	OpsRemoved      int
-	AnchorsRemoved  int
-	ScopesRepaired  int
+	BatchesScanned  int // Total JSON op-batch files inspected.
+	BatchesModified int // Non-empty op-batch files rewritten with pruned or repaired entries.
+	BatchesDeleted  int // Op-batch files removed because all operations were pruned.
+	OpsRemoved      int // Individual operations pruned due to stale ID or placeholder text.
+	AnchorsRemoved  int // Syntactically invalid anchor paths stripped from surviving operations.
+	ScopesRepaired  int // Polluted dossier scopes reassigned via ScopeResolver.
 }
 
+// trackedBatch holds an in-memory op batch alongside its file path and dirty flag during GC.
 type trackedBatch struct {
-	path     string
-	batch    ops.OpBatch
-	modified bool
+	path     string      // Filesystem path of the JSON batch file.
+	batch    ops.OpBatch // Decoded operation batch payload.
+	modified bool        // Reports whether any operation in the batch was mutated or removed.
 }
 
+// isPollutedScope reports whether scope is empty or matches a non-module path or artifact name.
 func isPollutedScope(scope string) bool {
+	// --- Step 1: Reject empty, hidden, absolute, or PR-prefixed scope names ---
 	s := strings.TrimSpace(scope)
 	if s == "" {
 		return true
@@ -58,6 +80,8 @@ func isPollutedScope(scope string) bool {
 	if strings.ContainsAny(s, "<>~*?") || strings.Contains(s, "..") {
 		return true
 	}
+
+	// --- Step 2: Reject known root filenames, build directories, and dotted segments ---
 	switch s {
 	case "modernc.org", ".agents", "pending", "Makefile", "Dockerfile", "LICENSE",
 		"bin", "internal", "memory", "repo-memory", "rules", "runs":
@@ -73,7 +97,9 @@ func isPollutedScope(scope string) bool {
 	return false
 }
 
+// extractOpAnchors extracts the string slice stored under fields["anchors"], supporting both []string and []any.
 func extractOpAnchors(fields map[string]any) ([]string, bool) {
+	// --- Step 1: Check for presence of the "anchors" field ---
 	if fields == nil {
 		return nil, false
 	}
@@ -81,6 +107,8 @@ func extractOpAnchors(fields map[string]any) ([]string, bool) {
 	if !exists || raw == nil {
 		return nil, false
 	}
+
+	// --- Step 2: Convert []string or []any into a typed string slice ---
 	switch v := raw.(type) {
 	case []string:
 		return v, true
@@ -102,6 +130,7 @@ func extractOpAnchors(fields map[string]any) ([]string, bool) {
 // dossier scopes via config.ScopeResolver, writes back or deletes empty batches,
 // and optionally re-projects dossiers and ATLAS.md when opts.DossiersDir is set.
 func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
+	// --- Step 1: Validate options and build the set of entry IDs to prune ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -121,6 +150,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 		}
 	}
 
+	// --- Step 2: Discover and sort all JSON batch files under opts.OpsDir ---
 	var batchPaths []string
 	err := filepath.WalkDir(opts.OpsDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -140,7 +170,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 	batches := make([]*trackedBatch, 0, len(batchPaths))
 	var allValidAnchors []string
 
-	// Pass 1: Prune junk/stale ops and sanitize anchors.
+	// --- Step 3: Prune junk/stale ops and sanitize anchors across all batches ---
 	for _, p := range batchPaths {
 		stats.BatchesScanned++
 		data, err := os.ReadFile(p)
@@ -201,7 +231,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 		batches = append(batches, tb)
 	}
 
-	// Pass 2: Repair polluted dossier scopes using ScopeResolver.
+	// --- Step 4: Repair polluted dossier scopes using ScopeResolver ---
 	scopeCfg, err := config.LoadScopeConfig(opts.ConfigPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("loading scope config: %w", err)
@@ -237,7 +267,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 		}
 	}
 
-	// Persist batch updates or delete empty batch files.
+	// --- Step 5: Persist batch updates or delete empty batch files ---
 	for _, tb := range batches {
 		if len(tb.batch.Ops) == 0 {
 			stats.BatchesDeleted++
@@ -264,7 +294,7 @@ func RunOpsGC(ctx context.Context, opts GCOptions) (*GCStats, error) {
 		}
 	}
 
-	// Re-render dossiers and ATLAS.md when DossiersDir is configured.
+	// --- Step 6: Re-render dossiers and ATLAS.md when DossiersDir is configured ---
 	if strings.TrimSpace(opts.DossiersDir) != "" && !opts.DryRun {
 		dossiersSubdir := filepath.Join(opts.DossiersDir, "dossiers")
 		if err := os.RemoveAll(dossiersSubdir); err != nil {

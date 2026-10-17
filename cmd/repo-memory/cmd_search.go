@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_search.go
+ * Description: Implements the `repo-memory search` CLI command, building a
+ *              fresh SQLite FTS5 index from the episode store and querying
+ *              captured episodes and Principal Architect imports.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -15,11 +31,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// searchCmd defines the `repo-memory search` subcommand.
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
 	Short: "Search captured episodes, claims, and memory",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve repository root and repo ID ---
 		query := strings.Join(args, " ")
 
 		repoRoot, err := gitops.FindRepoRoot(".")
@@ -32,13 +50,13 @@ var searchCmd = &cobra.Command{
 			return fmt.Errorf("generating repo id: %w", err)
 		}
 
-		// Build a fresh FTS index from the episode store each time.
+		// --- Step 2: Populate a fresh FTS5 index from the episode store ---
 		// PA imports and captured episodes are both in the same store.
 		dataDir := config.DataDir()
 		store := episode.NewStore(dataDir, repoID)
 
 		dbPath := filepath.Join(dataDir, repoID, "episodes_fts.db")
-		// Remove stale index to rebuild fresh
+		// Remove stale index to rebuild fresh.
 		os.Remove(dbPath)
 
 		idx, err := index.NewIndex(dbPath)
@@ -52,6 +70,7 @@ var searchCmd = &cobra.Command{
 			return fmt.Errorf("populating FTS index: %w", err)
 		}
 
+		// --- Step 3: Execute FTS query and render tabular results ---
 		results, err := idx.SearchEpisodes(ctx, query)
 		if err != nil {
 			return fmt.Errorf("searching episodes: %w", err)

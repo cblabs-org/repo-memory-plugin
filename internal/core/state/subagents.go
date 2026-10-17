@@ -1,3 +1,32 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/state/subagents.go
+ * Description: Manages the SQLite-backed parent-child subagent conversation
+ *              registry at <dataDir>/<repoID>/state/subagents.sqlite.
+ *
+ * Exported Types / Functions:
+ * - SubagentStore:          Manages the SQLite subagent parent-child conversation registry.
+ *
+ *   Lifecycle:
+ *   - OpenSubagentStore():  Opens or creates the subagent registry SQLite store.
+ *   - Close():              Closes the underlying SQLite connection. [io.Closer]
+ *
+ *   Own Public API:
+ *   - Record():             Inserts or updates a child -> parent conversation mapping.
+ *   - IsSubagent():         Reports whether a conversation ID is registered as a child subagent.
+ *   - ListChildren():       Returns all child conversation IDs registered under a parent.
+ *
+ * - SubagentDBPath():       Returns the filesystem path to subagents.sqlite.
+ * - RecordSubagent():       Opens the store, records a child->parent mapping, and closes it.
+ * - IsSubagent():           Checks whether a conversation ID is a registered subagent without creating the DB.
+ * - ListSubagentChildren(): Returns all child conversation IDs for a parent without creating the DB.
+ */
+
 package state
 
 import (
@@ -16,7 +45,7 @@ import (
 // SubagentStore manages the SQLite subagent parent-child conversation registry
 // at <dataDir>/<repoID>/state/subagents.sqlite.
 type SubagentStore struct {
-	db *sql.DB
+	db *sql.DB // Underlying SQLite database connection handle.
 }
 
 // SubagentDBPath returns the path to the subagent registry SQLite database.
@@ -25,7 +54,9 @@ func SubagentDBPath(dataDir, repoID string) string {
 }
 
 // OpenSubagentStore opens or creates the subagent registry SQLite store.
+// The caller must call Close on the returned SubagentStore when finished.
 func OpenSubagentStore(dataDir, repoID string) (*SubagentStore, error) {
+	// --- Step 1: Ensure state directory exists and open SQLite connection with WAL mode ---
 	dbPath := SubagentDBPath(dataDir, repoID)
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, fmt.Errorf("creating subagent state directory: %w", err)
@@ -37,6 +68,7 @@ func OpenSubagentStore(dataDir, repoID string) (*SubagentStore, error) {
 		return nil, fmt.Errorf("opening subagents database: %w", err)
 	}
 
+	// --- Step 2: Initialize the subagents table schema ---
 	s := &SubagentStore{db: db}
 	if err := s.initSchema(); err != nil {
 		db.Close()
@@ -53,6 +85,7 @@ func (s *SubagentStore) Close() error {
 	return s.db.Close()
 }
 
+// initSchema creates the subagents table and parent conversation index if they do not exist.
 func (s *SubagentStore) initSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS subagents (
@@ -71,6 +104,7 @@ func (s *SubagentStore) initSchema() error {
 
 // Record inserts or updates a child -> parent conversation mapping.
 func (s *SubagentStore) Record(ctx context.Context, childConvID, parentConvID, role string) error {
+	// --- Step 1: Validate conversation IDs and upsert relationship row ---
 	childConvID = strings.TrimSpace(childConvID)
 	parentConvID = strings.TrimSpace(parentConvID)
 	if childConvID == "" || parentConvID == "" {
@@ -91,6 +125,7 @@ func (s *SubagentStore) Record(ctx context.Context, childConvID, parentConvID, r
 
 // IsSubagent returns whether convID is registered as a child subagent and its parent conversation ID.
 func (s *SubagentStore) IsSubagent(ctx context.Context, convID string) (bool, string, error) {
+	// --- Step 1: Query parent_conversation_id for the candidate child conversation ---
 	convID = strings.TrimSpace(convID)
 	if convID == "" {
 		return false, "", nil
@@ -111,6 +146,7 @@ func (s *SubagentStore) IsSubagent(ctx context.Context, convID string) (bool, st
 
 // ListChildren returns all child conversation IDs registered under parentConvID.
 func (s *SubagentStore) ListChildren(ctx context.Context, parentConvID string) ([]string, error) {
+	// --- Step 1: Query child conversation IDs ordered by registration time ---
 	parentConvID = strings.TrimSpace(parentConvID)
 	if parentConvID == "" {
 		return []string{}, nil
@@ -124,6 +160,7 @@ func (s *SubagentStore) ListChildren(ctx context.Context, parentConvID string) (
 	}
 	defer rows.Close()
 
+	// --- Step 2: Scan result rows into a slice ---
 	children := make([]string, 0)
 	for rows.Next() {
 		var childID string
@@ -153,6 +190,7 @@ func RecordSubagent(ctx context.Context, dataDir, repoID, childConvID, parentCon
 // IsSubagent checks whether convID is a registered subagent conversation.
 // If the subagents.sqlite file does not exist yet, it returns false, "", nil without creating the file.
 func IsSubagent(ctx context.Context, dataDir, repoID, convID string) (bool, string, error) {
+	// --- Step 1: Check for an existing subagents.sqlite file on disk ---
 	convID = strings.TrimSpace(convID)
 	if convID == "" || dataDir == "" || repoID == "" {
 		return false, "", nil
@@ -164,6 +202,8 @@ func IsSubagent(ctx context.Context, dataDir, repoID, convID string) (bool, stri
 		}
 		return false, "", err
 	}
+
+	// --- Step 2: Open the store and look up the child conversation ---
 	store, err := OpenSubagentStore(dataDir, repoID)
 	if err != nil {
 		return false, "", err
@@ -175,6 +215,7 @@ func IsSubagent(ctx context.Context, dataDir, repoID, convID string) (bool, stri
 // ListSubagentChildren returns all child conversation IDs registered for parentConvID.
 // If the subagents.sqlite file does not exist yet, it returns an empty slice without creating the file.
 func ListSubagentChildren(ctx context.Context, dataDir, repoID, parentConvID string) ([]string, error) {
+	// --- Step 1: Check for an existing subagents.sqlite file on disk ---
 	parentConvID = strings.TrimSpace(parentConvID)
 	if parentConvID == "" || dataDir == "" || repoID == "" {
 		return []string{}, nil
@@ -186,6 +227,8 @@ func ListSubagentChildren(ctx context.Context, dataDir, repoID, parentConvID str
 		}
 		return nil, err
 	}
+
+	// --- Step 2: Open the store and list registered child conversations ---
 	store, err := OpenSubagentStore(dataDir, repoID)
 	if err != nil {
 		return nil, err

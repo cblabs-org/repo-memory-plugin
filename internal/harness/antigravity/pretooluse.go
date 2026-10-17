@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/pretooluse.go
+ * Description: Implements the Antigravity PreToolUse hook handler, enforcing
+ *              fail-open allow defaults for non-enrolled workspaces and returning
+ *              force_ask decisions when an edit targets a file with unacknowledged
+ *              gated invariant/ruled-out entries.
+ *
+ * Exported Types / Functions:
+ * - PreToolUsePayload:  JSON payload delivered to the PreToolUse hook.
+ *   - Normalize():      Populates canonical fields from snake_case and toolCall fallbacks.
+ * - PreToolUseResponse: JSON decision response returned to Antigravity for PreToolUse.
+ * - HandlePreToolUse(): Evaluates file-edit gates and returns a PreToolUseResponse JSON payload.
+ */
+
 package antigravity
 
 import (
@@ -13,23 +33,26 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/index"
 )
 
+// allowResponse is the fail-open default JSON response returned by PreToolUse when no gate fires.
 var allowResponse = []byte(`{"decision":"allow"}`)
 
+// PreToolUsePayload represents the JSON payload delivered to the Antigravity PreToolUse hook.
 type PreToolUsePayload struct {
-	ConversationID      string   `json:"conversationId"`
-	ConversationIDSnake string   `json:"conversation_id"`
-	InvocationNum       int      `json:"invocationNum"`
-	ToolName            string   `json:"toolName"`
+	ConversationID      string `json:"conversationId"`      // Primary camelCase session UUID supplied by the PreToolUse hook.
+	ConversationIDSnake string `json:"conversation_id"`     // Snake_case conversation UUID fallback.
+	InvocationNum       int    `json:"invocationNum"`       // 0-based model invocation index within the turn.
+	ToolName            string `json:"toolName"`            // Identifier of the tool about to execute (e.g. "replace_file_content", "write_to_file").
 	ToolCall            struct {
-		Name string          `json:"name"`
-		Args json.RawMessage `json:"args"`
-	} `json:"toolCall"`
-	TranscriptPath      string   `json:"transcriptPath"`
-	TranscriptPathSnake string   `json:"transcript_path"`
-	WorkspacePaths      []string `json:"workspacePaths"`
-	WorkspacePathsSnake []string `json:"workspace_paths"`
+		Name string          `json:"name"` // Nested tool call name fallback.
+		Args json.RawMessage `json:"args"` // Raw JSON tool arguments.
+	} `json:"toolCall"` // Nested tool call descriptor.
+	TranscriptPath      string   `json:"transcriptPath"`  // CamelCase transcript file path.
+	TranscriptPathSnake string   `json:"transcript_path"` // Snake_case transcript file path fallback.
+	WorkspacePaths      []string `json:"workspacePaths"`  // CamelCase workspace root paths.
+	WorkspacePathsSnake []string `json:"workspace_paths"` // Snake_case workspace root paths fallback.
 }
 
+// Normalize populates canonical fields from snake_case and nested toolCall fallbacks.
 func (p *PreToolUsePayload) Normalize() {
 	if p.ConversationID == "" {
 		p.ConversationID = p.ConversationIDSnake
@@ -45,25 +68,30 @@ func (p *PreToolUsePayload) Normalize() {
 	}
 }
 
+// PreToolUseResponse represents the JSON decision response returned by the PreToolUse hook.
 type PreToolUseResponse struct {
-	Decision string `json:"decision"` // "allow", "deny", "ask", "force_ask"
-	Reason   string `json:"reason,omitempty"`
+	Decision string `json:"decision"`         // Gate decision ("allow", "deny", "ask", or "force_ask").
+	Reason   string `json:"reason,omitempty"` // Human-readable gate explanation when Decision is not "allow".
 }
 
+// toolArgs captures candidate target-file field names across edit tool argument schemas.
 type toolArgs struct {
-	TargetFile      string `json:"TargetFile"`
-	TargetFileCamel string `json:"targetFile"`
-	TargetFileSnake string `json:"target_file"`
-	FilePath        string `json:"filePath"`
-	FilePathSnake   string `json:"file_path"`
-	Path            string `json:"path"`
+	TargetFile      string `json:"TargetFile"`  // Destination path from replace_file_content / write_to_file PascalCase schema.
+	TargetFileCamel string `json:"targetFile"`  // Destination path from camelCase edit tool argument schema.
+	TargetFileSnake string `json:"target_file"` // Destination path from snake_case edit tool argument schema.
+	FilePath        string `json:"filePath"`    // Destination path from generic camelCase file-tool schema.
+	FilePathSnake   string `json:"file_path"`   // Destination path from generic snake_case file-tool schema.
+	Path            string `json:"path"`        // Destination path from edit_file / write_file lowercase schema.
 }
 
+// isEditTool reports whether name is a file-modifying tool subject to PreToolUse gates.
 func isEditTool(name string) bool {
 	return strings.EqualFold(name, "replace_file_content") || strings.EqualFold(name, "write_to_file")
 }
 
+// extractTargetFile extracts the target file path from raw JSON tool arguments.
 func extractTargetFile(argsRaw json.RawMessage) string {
+	// --- Step 1: Unmarshal direct JSON object or double-encoded JSON string ---
 	if len(argsRaw) == 0 {
 		return ""
 	}
@@ -74,6 +102,7 @@ func extractTargetFile(argsRaw json.RawMessage) string {
 			_ = json.Unmarshal([]byte(s), &args)
 		}
 	}
+	// --- Step 2: Return the first non-empty file path field ---
 	for _, p := range []string{args.TargetFile, args.TargetFileCamel, args.TargetFileSnake, args.FilePath, args.FilePathSnake, args.Path} {
 		if strings.TrimSpace(p) != "" {
 			return strings.TrimSpace(p)
@@ -82,12 +111,16 @@ func extractTargetFile(argsRaw json.RawMessage) string {
 	return ""
 }
 
+// HandlePreToolUse evaluates PreToolUse edit gates for file-modifying tools and returns
+// a JSON decision ("allow" or "force_ask").
+//
 // Note on about_to_edit limitation:
 // The about_to_edit moment rarely fires because the model typically decides and edits
 // in the same turn, so PreToolUse for the edit tool call is the first signal.
 // By then the decision is already made and a "you're about to edit X" injection is too late.
 // Note: a future approach might use PostToolUse on file-read as a proxy for "interested in this file."
 func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
+	// --- Step 1: Check environment guards, parse payload, and filter non-edit tools ---
 	if os.Getenv("REPO_MEMORY_DISABLED") == "1" {
 		return allowResponse, nil
 	}
@@ -105,6 +138,7 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		return allowResponse, nil
 	}
 
+	// --- Step 2: Resolve enrolled workspace root, repository ID, and target file ---
 	var hookOpts HookOptions
 	for _, opt := range opts {
 		if opt != nil {
@@ -151,6 +185,7 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		return allowResponse, nil
 	}
 
+	// --- Step 3: Query unacknowledged gate entries for the target file ---
 	idxPath := index.IndexPath(dataDir, repoID)
 	idx, err := index.NewIndex(idxPath)
 	if err != nil {
@@ -182,9 +217,7 @@ func HandlePreToolUse(ctx context.Context, payload []byte, opts ...HookOption) (
 		return allowResponse, nil
 	}
 
-	// Record the gate entries as pending for this file. PostToolUse will
-	// acknowledge them when the edit completes successfully (user approved).
-	// Until then, every PreToolUse for this file returns force_ask.
+	// --- Step 4: Record pending gates in the ledger and return force_ask ---
 	var gateIDs []string
 	for _, ent := range entries {
 		gateIDs = append(gateIDs, ent.Entry.ID)

@@ -1,3 +1,23 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/scrub/scrubber.go
+ * Description: Implements the 4-layer secret, credential, high-entropy token,
+ *              and binary blob scrubber along with payload quarantine storage.
+ *
+ * Exported Types / Functions:
+ * - Context:           Boundary and repository metadata for a Scrub operation.
+ * - Result:            Scrubbed text output and redaction counts by category.
+ * - CustomRule:        Single repo-specific or local custom regex scrubbing rule.
+ * - ScrubRulesConfig:  Schema of .memory/scrub.yaml and scrub.local.yaml.
+ * - Scrub():           Applies the 4-layer secret and blob scrubber to text.
+ * - QuarantinePayload(): Persists an un-scrubbable payload to the quarantine directory.
+ */
+
 package scrub
 
 import (
@@ -16,65 +36,83 @@ import (
 
 // Context provides boundary and repository metadata for a Scrub operation.
 type Context struct {
-	Boundary   string          // e.g. "capture", "note", "sidecar", "publish"
-	RepoID     string
-	RepoRoot   string
-	DataDir    string
-	AllowedIDs map[string]bool // known conversation UUIDs, entry IDs, ULIDs, commit SHAs
+	Boundary   string          // Trust boundary label (e.g. "capture", "note", "sidecar", "publish").
+	RepoID     string          // Stable repository identifier for local rules and quarantine storage.
+	RepoRoot   string          // Absolute path to the repository working tree root.
+	DataDir    string          // Base directory for local plugin state and quarantine payloads.
+	AllowedIDs map[string]bool // Known conversation UUIDs, entry IDs, ULIDs, and commit SHAs to preserve.
 }
 
 // Result contains the scrubbed text and counts of redactions by category.
 type Result struct {
-	Text   string
-	Counts map[string]int
+	Text   string         // Sanitized text after all four scrubbing layers complete.
+	Counts map[string]int // Number of redactions performed keyed by rule category.
 }
 
 // CustomRule defines a single repo-specific or local custom regex scrubbing rule.
 type CustomRule struct {
-	Name    string `yaml:"name" json:"name"`
-	Pattern string `yaml:"pattern" json:"pattern"`
-	Replace string `yaml:"replace" json:"replace"`
+	Name    string `yaml:"name" json:"name"`       // Logical identifier for redaction placeholders and metrics.
+	Pattern string `yaml:"pattern" json:"pattern"` // Regular expression pattern to match sensitive substrings.
+	Replace string `yaml:"replace" json:"replace"` // Replacement text; defaults to «secret:<Name>» when empty.
 }
 
 // ScrubRulesConfig represents the schema of .memory/scrub.yaml and scrub.local.yaml.
 type ScrubRulesConfig struct {
-	Version int          `yaml:"version" json:"version"`
-	Rules   []CustomRule `yaml:"rules" json:"rules"`
+	Version int          `yaml:"version" json:"version"` // Configuration schema version number.
+	Rules   []CustomRule `yaml:"rules" json:"rules"`     // Additive list of custom regex scrubbing rules.
 }
 
 var (
-	// Layer 1 structural regexes.
-	privateKeyBlockRe  = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)
+	// privateKeyBlockRe matches full PEM-encoded private key blocks across lines.
+	privateKeyBlockRe = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----`)
+	// privateKeyHeaderRe matches standalone or unclosed PEM private key headers.
 	privateKeyHeaderRe = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)
-	credURLRe          = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)`)
-	authTokenRe        = regexp.MustCompile(`(?i)\b(authorization:\s*(?:bearer|token|basic)\s+|(?:bearer|token)\s+)([A-Za-z0-9\-._~+/]{20,}=*)`)
-	envSecretRe        = regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|ACCESS_KEY|CLIENT_SECRET)[A-Z0-9_]*\s*[:=]\s*["']?)([^\s"']{8,})(["']?)`)
+	// credURLRe matches user:password credentials embedded in URLs.
+	credURLRe = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)`)
+	// authTokenRe matches Authorization headers and Bearer/Token authentication values.
+	authTokenRe = regexp.MustCompile(`(?i)\b(authorization:\s*(?:bearer|token|basic)\s+|(?:bearer|token)\s+)([A-Za-z0-9\-._~+/]{20,}=*)`)
+	// envSecretRe matches key=value or key: value assignments for secret-named identifiers.
+	envSecretRe = regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|ACCESS_KEY|CLIENT_SECRET)[A-Z0-9_]*\s*[:=]\s*["']?)([^\s"']{8,})(["']?)`)
 
+	// awsAccessKeyRe matches AWS access key IDs (AKIA, ASIA, etc.).
 	awsAccessKeyRe = regexp.MustCompile(`(?:AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}`)
-	githubTokenRe  = regexp.MustCompile(`(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`)
-	slackTokenRe   = regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)
-	gcpAPIKeyRe    = regexp.MustCompile(`AIza[0-9A-Za-z\-_]{35}`)
-	openAIAnthKey  = regexp.MustCompile(`sk-(?:ant-)?[A-Za-z0-9\-_]{20,}`)
+	// githubTokenRe matches classic and fine-grained GitHub personal and app tokens.
+	githubTokenRe = regexp.MustCompile(`(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}`)
+	// slackTokenRe matches Slack bot, user, and workspace tokens.
+	slackTokenRe = regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)
+	// gcpAPIKeyRe matches Google Cloud API keys starting with AIza.
+	gcpAPIKeyRe = regexp.MustCompile(`AIza[0-9A-Za-z\-_]{35}`)
+	// openAIAnthKey matches OpenAI and Anthropic secret API keys.
+	openAIAnthKey = regexp.MustCompile(`sk-(?:ant-)?[A-Za-z0-9\-_]{20,}`)
 
-	// Layer 2 identifier preservation & entropy/hex regexes.
-	uuidRe          = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
-	uuidExactRe     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	entryIDExactRe  = regexp.MustCompile(`^(?:dec|inv|got|fail|rul|pat|pit|fix|not|doc|sem|prc|epi)-[0-9a-zA-Z]+$`)
-	ulidExactRe     = regexp.MustCompile(`^01[0-9A-HJKMNP-TV-Z]{24}$`)
-	secretLabelRe   = regexp.MustCompile(`(?i)(?:^|[^a-z])(secret|token|key|password|passwd|apikey|api_key|bearer|auth)(?:[^a-z]|$)`)
-	hexCandidateRe   = regexp.MustCompile(`\b[0-9a-fA-F]{32,}\b`)
+	// uuidRe matches standard 36-character hyphenated UUIDs anywhere in text.
+	uuidRe = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+	// uuidExactRe matches strings that consist solely of a hyphenated UUID.
+	uuidExactRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	// entryIDExactRe matches canonical repository memory entry IDs.
+	entryIDExactRe = regexp.MustCompile(`^(?:dec|inv|got|fail|rul|pat|pit|fix|not|doc|sem|prc|epi)-[0-9a-zA-Z]+$`)
+	// ulidExactRe matches canonical 26-character Crockford base32 ULIDs.
+	ulidExactRe = regexp.MustCompile(`^01[0-9A-HJKMNP-TV-Z]{24}$`)
+	// secretLabelRe matches secret-related keywords preceding an unallowlisted UUID.
+	secretLabelRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(secret|token|key|password|passwd|apikey|api_key|bearer|auth)(?:[^a-z]|$)`)
+	// hexCandidateRe matches contiguous hexadecimal strings of 32 or more characters.
+	hexCandidateRe = regexp.MustCompile(`\b[0-9a-fA-F]{32,}\b`)
+	// gitContextWordRe matches git terminology indicating a 40-char hex string is a commit or object SHA.
 	gitContextWordRe = regexp.MustCompile(`(?i)\b(?:commit|sha|rev|head|base|cherry-pick|merge|tag|object|blob|tree|parent)\b`)
-	entryPrefixRe    = regexp.MustCompile(`(?i)(?:dec|inv|got|fail|rul|pat|pit|fix|not|doc|sem|prc|epi|note)-$`)
+	// entryPrefixRe matches a memory entry or note prefix immediately before a token.
+	entryPrefixRe = regexp.MustCompile(`(?i)(?:dec|inv|got|fail|rul|pat|pit|fix|not|doc|sem|prc|epi|note)-$`)
 
-	// Layer 4 blob stripping regexes (note: Go regexp caps {n,m} quantifiers at 1000).
-	dataURIBlobRe    = regexp.MustCompile(`data:[a-zA-Z0-9/+.-]+;base64,[A-Za-z0-9+/=]{256,}`)
+	// dataURIBlobRe matches base64 data URIs with payloads of at least 256 characters.
+	dataURIBlobRe = regexp.MustCompile(`data:[a-zA-Z0-9/+.-]+;base64,[A-Za-z0-9+/=]{256,}`)
+	// contiguousBlobRe matches contiguous base64/hex-like blobs of 1024 or more characters (split across two 512+ quantifiers for Go regexp limits).
 	contiguousBlobRe = regexp.MustCompile(`[A-Za-z0-9+/=]{512,}[A-Za-z0-9+/=]{512,}`)
 )
 
+// compiledCustomRule holds a validated and compiled Layer 3 custom regex rule.
 type compiledCustomRule struct {
-	name    string
-	re      *regexp.Regexp
-	replace string
+	name    string         // Rule name used in metrics and default replacement tags.
+	re      *regexp.Regexp // Compiled regular expression for matching sensitive text.
+	replace string         // Replacement string substituted for each match.
 }
 
 // Scrub applies the 4-layer secret and blob scrubber to text under the given Context.
@@ -83,7 +121,9 @@ type compiledCustomRule struct {
 func Scrub(text string, ctx Context) (Result, error) {
 	counts := make(map[string]int)
 
-	// Load and validate Layer 3 custom rules up front so invalid configs always fail closed.
+	// --- Step 1: Load and validate Layer 3 custom rules up front ---
+	// Validating custom configs before checking for empty text guarantees that malformed
+	// or weakened scrub.yaml files always fail closed.
 	customRules, err := loadCustomRules(ctx)
 	if err != nil {
 		return Result{}, err
@@ -95,7 +135,7 @@ func Scrub(text string, ctx Context) (Result, error) {
 
 	out := text
 
-	// Layer 1: Structural rules (always on, cannot be disabled).
+	// --- Step 2: Apply Layer 1 structural and provider-token rules ---
 	out = replaceAndCount(out, privateKeyBlockRe, "«secret:private_key»", counts, "private_key")
 	out = replaceAndCount(out, privateKeyHeaderRe, "«secret:private_key»", counts, "private_key")
 
@@ -124,14 +164,13 @@ func Scrub(text string, ctx Context) (Result, error) {
 		return sub[1] + "«secret:token»"
 	})
 
-	// Known provider token prefixes.
+	// Redact known provider token prefixes and secret environment variable assignments.
 	out = replaceAndCount(out, awsAccessKeyRe, "«secret:aws»", counts, "aws")
 	out = replaceAndCount(out, githubTokenRe, "«secret:github»", counts, "github")
 	out = replaceAndCount(out, slackTokenRe, "«secret:slack»", counts, "slack")
 	out = replaceAndCount(out, gcpAPIKeyRe, "«secret:gcp_api_key»", counts, "gcp_api_key")
 	out = replaceAndCount(out, openAIAnthKey, "«secret:api_key»", counts, "api_key")
 
-	// Env assignments with secret names.
 	out = envSecretRe.ReplaceAllStringFunc(out, func(m string) string {
 		if strings.Contains(m, "«") || strings.Contains(m, "»") {
 			return m
@@ -152,11 +191,11 @@ func Scrub(text string, ctx Context) (Result, error) {
 		return sub[1] + "«secret:env»" + sub[3]
 	})
 
-	// Layer 2: Identifier preservation & Entropy/Hex.
+	// --- Step 3: Apply Layer 2 identifier preservation and high-entropy hex scrubbing ---
 	out = scrubUUIDs(out, ctx, counts)
 	out = scrubHexStrings(out, ctx, counts)
 
-	// Layer 3: Repo-specific custom regex rules.
+	// --- Step 4: Apply Layer 3 repository-specific and local custom regex rules ---
 	for _, rule := range customRules {
 		matches := rule.re.FindAllStringIndex(out, -1)
 		if len(matches) > 0 {
@@ -165,7 +204,7 @@ func Scrub(text string, ctx Context) (Result, error) {
 		}
 	}
 
-	// Layer 4: Blob stripping.
+	// --- Step 5: Apply Layer 4 contiguous binary/base64 blob stripping ---
 	out = replaceAndCount(out, dataURIBlobRe, "«blob:stripped»", counts, "blob")
 	out = replaceAndCount(out, contiguousBlobRe, "«blob:stripped»", counts, "blob")
 
@@ -175,6 +214,7 @@ func Scrub(text string, ctx Context) (Result, error) {
 	}, nil
 }
 
+// replaceAndCount replaces all matches of re in s with repl and increments counts[key] by the match count.
 func replaceAndCount(s string, re *regexp.Regexp, repl string, counts map[string]int, key string) string {
 	matches := re.FindAllStringIndex(s, -1)
 	if len(matches) == 0 {
@@ -184,6 +224,7 @@ func replaceAndCount(s string, re *regexp.Regexp, repl string, counts map[string
 	return re.ReplaceAllString(s, repl)
 }
 
+// isAllowedID reports whether id is present in allowed (case-insensitively).
 func isAllowedID(id string, allowed map[string]bool) bool {
 	if len(allowed) == 0 || id == "" {
 		return false
@@ -194,12 +235,15 @@ func isAllowedID(id string, allowed map[string]bool) bool {
 	return false
 }
 
+// scrubUUIDs redacts UUIDs preceded by secret labels unless the UUID is in ctx.AllowedIDs.
 func scrubUUIDs(s string, ctx Context, counts map[string]int) string {
+	// --- Step 1: Locate all UUID candidates in the input string ---
 	matches := uuidRe.FindAllStringIndex(s, -1)
 	if len(matches) == 0 {
 		return s
 	}
 
+	// --- Step 2: Inspect each UUID's allowlist status and preceding context window ---
 	var b strings.Builder
 	lastIdx := 0
 	for _, loc := range matches {
@@ -232,11 +276,16 @@ func scrubUUIDs(s string, ctx Context, counts map[string]int) string {
 		}
 		lastIdx = end
 	}
+
+	// --- Step 3: Append trailing text after the last match ---
 	b.WriteString(s[lastIdx:])
 	return b.String()
 }
 
+// scrubHexStrings redacts >=32-character hexadecimal tokens unless they are allowlisted IDs,
+// ULIDs, entry ID suffixes, or verified 40-character git commit SHAs.
 func scrubHexStrings(s string, ctx Context, counts map[string]int) string {
+	// --- Step 1: Find all contiguous hex strings of length >= 32 ---
 	matches := hexCandidateRe.FindAllStringIndex(s, -1)
 	if len(matches) == 0 {
 		return s
@@ -244,6 +293,7 @@ func scrubHexStrings(s string, ctx Context, counts map[string]int) string {
 
 	gitVerifiedCache := make(map[string]bool)
 
+	// --- Step 2: Evaluate each hex candidate against identifier and git-SHA preservation rules ---
 	var b strings.Builder
 	lastIdx := 0
 	for _, loc := range matches {
@@ -251,7 +301,7 @@ func scrubHexStrings(s string, ctx Context, counts map[string]int) string {
 		b.WriteString(s[lastIdx:start])
 		candidate := s[start:end]
 
-		// Defer >= 1024-byte contiguous blobs to Layer 4.
+		// Leave >= 1024-byte hex blobs untouched here so Layer 4 replaces them with «blob:...».
 		if len(candidate) >= 1024 {
 			b.WriteString(candidate)
 			lastIdx = end
@@ -271,7 +321,7 @@ func scrubHexStrings(s string, ctx Context, counts map[string]int) string {
 			continue
 		}
 
-		// Preserve 40-char git commit SHAs if in git context on the same line or valid git object in RepoRoot.
+		// --- Step 3: Preserve 40-char git commit SHAs when in git context or verified in RepoRoot ---
 		if len(candidate) == 40 {
 			lineStart := strings.LastIndexByte(s[:start], '\n') + 1
 			lineEnd := strings.IndexByte(s[end:], '\n')
@@ -308,6 +358,7 @@ func scrubHexStrings(s string, ctx Context, counts map[string]int) string {
 	return b.String()
 }
 
+// isGitObject verifies whether sha resolves to a valid git object in repoRoot within a 300ms timeout.
 func isGitObject(repoRoot, sha string) bool {
 	if strings.TrimSpace(repoRoot) == "" || len(sha) != 40 {
 		return false
@@ -319,7 +370,10 @@ func isGitObject(repoRoot, sha string) bool {
 	return cmd.Run() == nil
 }
 
+// loadCustomRules reads, validates, and compiles additive Layer 3 custom regex rules
+// from .memory/scrub.yaml and scrub.local.yaml.
 func loadCustomRules(ctx Context) ([]compiledCustomRule, error) {
+	// --- Step 1: Collect candidate custom rule file paths from RepoRoot and DataDir ---
 	var paths []string
 	if strings.TrimSpace(ctx.RepoRoot) != "" {
 		paths = append(paths, filepath.Join(ctx.RepoRoot, ".memory", "scrub.yaml"))
@@ -332,6 +386,7 @@ func loadCustomRules(ctx Context) ([]compiledCustomRule, error) {
 		}
 	}
 
+	// --- Step 2: Parse each existing YAML file and reject forbidden weakening keys ---
 	var compiled []compiledCustomRule
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
@@ -358,6 +413,7 @@ func loadCustomRules(ctx Context) ([]compiledCustomRule, error) {
 			return nil, fmt.Errorf("unmarshaling scrub rules %s: %w", p, err)
 		}
 
+		// --- Step 3: Compile each custom regex rule and set default replacement placeholders ---
 		for _, r := range cfg.Rules {
 			name := strings.TrimSpace(r.Name)
 			if name == "" {
@@ -385,7 +441,10 @@ func loadCustomRules(ctx Context) ([]compiledCustomRule, error) {
 	return compiled, nil
 }
 
+// checkForbiddenKeys recursively inspects decoded YAML structures and returns an error if any
+// allowlist, disable, or whitelist key is present.
 func checkForbiddenKeys(v any) error {
+	// --- Step 1: Traverse map keys and reject rule-weakening directives ---
 	switch val := v.(type) {
 	case map[string]any:
 		for k, child := range val {
@@ -398,6 +457,7 @@ func checkForbiddenKeys(v any) error {
 				return err
 			}
 		}
+	// --- Step 2: Recursively inspect slice elements ---
 	case []any:
 		for _, item := range val {
 			if err := checkForbiddenKeys(item); err != nil {
@@ -411,6 +471,7 @@ func checkForbiddenKeys(v any) error {
 // QuarantinePayload writes an un-scrubbable payload to <dataDir>/<repoID>/quarantine/<timestamp>-<boundary>.quarantine
 // with permissions 0600 and a header line "# reason: <reason>" followed by raw.
 func QuarantinePayload(dataDir, repoID, boundary, reason string, raw []byte) (string, error) {
+	// --- Step 1: Validate dataDir and sanitize the boundary identifier ---
 	if strings.TrimSpace(dataDir) == "" {
 		return "", errors.New("dataDir is required for quarantine")
 	}
@@ -425,11 +486,13 @@ func QuarantinePayload(dataDir, repoID, boundary, reason string, raw []byte) (st
 		return '_'
 	}, cleanBoundary)
 
+	// --- Step 2: Ensure the restricted (0700) quarantine directory exists ---
 	qDir := filepath.Join(dataDir, repoID, "quarantine")
 	if err := os.MkdirAll(qDir, 0700); err != nil {
 		return "", fmt.Errorf("creating quarantine dir: %w", err)
 	}
 
+	// --- Step 3: Format the quarantine header and write the payload with 0600 permissions ---
 	ts := time.Now().UTC().Format("20060102T150405.000000000Z")
 	filename := fmt.Sprintf("%s-%s.quarantine", ts, cleanBoundary)
 	fullPath := filepath.Join(qDir, filename)

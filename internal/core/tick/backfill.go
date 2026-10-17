@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/backfill.go
+ * Description: Historical backfill execution across transcripts, Principal Architect
+ *              workspace artifacts, markdown documentation seeds, and git revert commits.
+ *
+ * Exported Types / Functions:
+ * - QuotaSnapshot:                 Alias for telemetry.QuotaStatus used in backfill quota checks.
+ * - BackfillOptions:               Configuration parameters for a historical backfill run.
+ * - BackfillResult:                Summary metrics and created artifact IDs from a backfill run.
+ * - RunBackfill():                 Convenience entry point that constructs a PipelineExecutor and runs backfill.
+ * - PipelineExecutor.RunBackfill(): Executes historical backfill on an initialized PipelineExecutor.
+ */
+
 package tick
 
 import (
@@ -31,67 +50,70 @@ type QuotaSnapshot = telemetry.QuotaStatus
 
 // BackfillOptions configures a historical backfill execution.
 type BackfillOptions struct {
-	RepoRoot           string
-	DataDir            string
-	RepoID             string
-	DryRun             bool
-	Force              bool
-	IncludeTranscripts bool
-	IncludeDocs        bool
-	IncludeGit         bool
-	MaxItems           int
-	QuotaChecker       func(context.Context) (*QuotaSnapshot, error)
+	RepoRoot           string                                        // Absolute path to the repository root.
+	DataDir            string                                        // Base memory data directory path.
+	RepoID             string                                        // Registry slug identifying the repository under <data-dir>/<repo-id>.
+	DryRun             bool                                          // When true, computes backfill actions without writing to disk.
+	Force              bool                                          // When true, bypasses spend guard interval and quota floor checks.
+	IncludeTranscripts bool                                          // Whether to backfill transcripts and Principal Architect files.
+	IncludeDocs        bool                                          // Whether to seed markdown documentation files.
+	IncludeGit         bool                                          // Whether to scan git history for revert commits.
+	MaxItems           int                                           // Optional upper bound on total items processed in this run.
+	QuotaChecker       func(context.Context) (*QuotaSnapshot, error) // Optional quota probe callback.
 }
 
 // BackfillResult reports the outcome of a historical backfill run.
 type BackfillResult struct {
-	RepoID             string   `json:"repo_id"`
-	DryRun             bool     `json:"dry_run"`
-	SpendGuardAllowed  bool     `json:"spend_guard_allowed"`
-	SpendGuardReason   string   `json:"spend_guard_reason,omitempty"`
-	EffectiveMaxItems  int      `json:"effective_max_items"`
-	ItemsProcessed     int      `json:"items_processed"`
-	CapturesRequeued   int      `json:"captures_requeued"`
-	PAFilesImported    int      `json:"pa_files_imported"`
-	EpisodesQueued     int      `json:"episodes_queued"`
-	DocsSeeded         int      `json:"docs_seeded"`
-	DocEntriesMutated  int      `json:"doc_entries_mutated"`
-	GitRevertsScanned  int      `json:"git_reverts_scanned"`
-	GitNotesCreated    int      `json:"git_notes_created"`
-	CreatedNoteIDs     []string `json:"created_note_ids,omitempty"`
-	ImportedPAFiles    []string `json:"imported_pa_files,omitempty"`
+	RepoID            string   `json:"repo_id"`                      // Registry slug of the repository that was backfilled.
+	DryRun            bool     `json:"dry_run"`                      // Whether the backfill executed in dry-run mode.
+	SpendGuardAllowed bool     `json:"spend_guard_allowed"`          // Whether spend guards permitted execution.
+	SpendGuardReason  string   `json:"spend_guard_reason,omitempty"` // Reason spend guard blocked execution, if any.
+	EffectiveMaxItems int      `json:"effective_max_items"`          // Effective item cap applied to the backfill run.
+	ItemsProcessed    int      `json:"items_processed"`              // Total items processed across all sources.
+	CapturesRequeued  int      `json:"captures_requeued"`            // Number of historical capture jobs requeued.
+	PAFilesImported   int      `json:"pa_files_imported"`            // Number of Principal Architect files imported as episodes.
+	EpisodesQueued    int      `json:"episodes_queued"`              // Number of uncovered flat episodes queued.
+	DocsSeeded        int      `json:"docs_seeded"`                  // Number of markdown documentation files seeded.
+	DocEntriesMutated int      `json:"doc_entries_mutated"`          // Total doc-seed entries added, amended, or retired.
+	GitRevertsScanned int      `json:"git_reverts_scanned"`          // Number of git revert commits inspected.
+	GitNotesCreated   int      `json:"git_notes_created"`            // Number of inbox notes created from git reverts.
+	CreatedNoteIDs    []string `json:"created_note_ids,omitempty"`   // IDs of git-revert notes created during the run.
+	ImportedPAFiles   []string `json:"imported_pa_files,omitempty"`  // Repository-relative paths of imported PA files.
 }
 
+// backfillPAState tracks previously imported Principal Architect files and queued flat episodes.
 type backfillPAState struct {
-	ImportedFiles  map[string]string `json:"imported_files"`
-	QueuedEpisodes map[string]bool   `json:"queued_episodes"`
+	ImportedFiles  map[string]string `json:"imported_files"`  // Map of repo-relative PA file path to deterministic session ID.
+	QueuedEpisodes map[string]bool   `json:"queued_episodes"` // Set of flat episode IDs already queued for backfill.
 }
 
+// gitRevertNoteDisk represents the on-disk JSON schema for a git-revert backfill note.
 type gitRevertNoteDisk struct {
-	ID         string           `json:"id"`
-	Kind       string           `json:"kind"`
-	Scope      string           `json:"scope"`
-	Statement  string           `json:"statement"`
-	Anchors    []string         `json:"anchors,omitempty"`
-	Source     inbox.NoteSource `json:"source"`
-	HeadCommit string           `json:"head_commit,omitempty"`
-	CreatedAt  string           `json:"created_at"`
-	DedupKey   string           `json:"dedup_key,omitempty"`
-	Items      []inbox.NoteItem `json:"items,omitempty"`
+	ID         string           `json:"id"`                    // SHA-derived note ID ("note-git-revert-<short-sha>") for idempotency.
+	Kind       string           `json:"kind"`                  // Entry kind (e.g. "gotcha").
+	Scope      string           `json:"scope"`                 // Dossier scope slug derived from the reverted commit's touched files.
+	Statement  string           `json:"statement"`             // Concise revert summary statement.
+	Anchors    []string         `json:"anchors,omitempty"`     // Files touched by the revert commit.
+	Source     inbox.NoteSource `json:"source"`                // Note source identifier ("backfill-git").
+	HeadCommit string           `json:"head_commit,omitempty"` // Git commit SHA of the revert.
+	CreatedAt  string           `json:"created_at"`            // Commit timestamp formatted in RFC3339 UTC.
+	DedupKey   string           `json:"dedup_key,omitempty"`   // Deduplication key matching ID.
+	Items      []inbox.NoteItem `json:"items,omitempty"`       // Structured inbox note items.
 }
 
 // RunBackfill executes historical backfill across transcripts/PA artifacts, docs, and git reverts.
 func RunBackfill(ctx context.Context, opts BackfillOptions) (*BackfillResult, error) {
 	epStore := episode.NewStore(opts.DataDir, opts.RepoID)
-	exec := NewPipelineExecutor(opts.DataDir, opts.RepoRoot, opts.RepoID, nil, epStore)
+	executor := NewPipelineExecutor(opts.DataDir, opts.RepoRoot, opts.RepoID, nil, epStore)
 	if opts.QuotaChecker != nil {
-		exec.QuotaChecker = opts.QuotaChecker
+		executor.QuotaChecker = opts.QuotaChecker
 	}
-	return exec.RunBackfill(ctx, opts)
+	return executor.RunBackfill(ctx, opts)
 }
 
 // RunBackfill executes historical backfill on an initialized PipelineExecutor.
 func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions) (*BackfillResult, error) {
+	// --- Step 1: Normalize options and check A5 spend guards ---
 	if opts.RepoRoot == "" {
 		opts.RepoRoot = p.repoRoot
 	}
@@ -134,7 +156,7 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 
 	remaining := effectiveMaxItems
 
-	// 1. Transcripts & Captures
+	// --- Step 2: Backfill transcripts, capture jobs, and Principal Architect artifacts ---
 	if opts.IncludeTranscripts {
 		capturesRequeued := p.requeueCapturesForBackfill(ctx, opts)
 		res.CapturesRequeued = capturesRequeued
@@ -252,7 +274,7 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 		}
 	}
 
-	// 2. Docs
+	// --- Step 3: Seed repository documentation files ---
 	if opts.IncludeDocs && remaining > 0 && opts.RepoRoot != "" {
 		repoCfg, err := config.LoadRepoConfig(opts.RepoRoot)
 		if err != nil {
@@ -291,7 +313,7 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 		}
 	}
 
-	// 3. Git Revert Commits
+	// --- Step 4: Scan git log for revert commits and emit inbox notes ---
 	if opts.IncludeGit && remaining > 0 && opts.RepoRoot != "" {
 		cmd := exec.CommandContext(ctx, "git", "-C", opts.RepoRoot, "log", "--grep=Revert", "--grep=revert", "-i", "--format=%H%x09%s", "-n", "50")
 		if out, err := cmd.Output(); err == nil {
@@ -370,6 +392,7 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 		}
 	}
 
+	// --- Step 5: Record backfill spend run ---
 	if !opts.DryRun && res.ItemsProcessed > 0 {
 		p.RecordSpendRun("backfill", res.ItemsProcessed*100, res.ItemsProcessed*100)
 	}
@@ -377,7 +400,9 @@ func (p *PipelineExecutor) RunBackfill(ctx context.Context, opts BackfillOptions
 	return res, nil
 }
 
+// requeueCapturesForBackfill requeues (or counts in dry-run mode) completed/failed capture jobs across candidate job stores.
 func (p *PipelineExecutor) requeueCapturesForBackfill(ctx context.Context, opts BackfillOptions) int {
+	// --- Step 1: Use the executor's attached store if present ---
 	if p.store != nil {
 		return requeueOrCountStore(ctx, p.store, opts.DryRun)
 	}
@@ -385,6 +410,7 @@ func (p *PipelineExecutor) requeueCapturesForBackfill(ctx context.Context, opts 
 		return 0
 	}
 
+	// --- Step 2: Build candidate SQLite job store paths ---
 	var candidates []string
 	if opts.RepoID != "" {
 		candidates = append(candidates,
@@ -395,6 +421,7 @@ func (p *PipelineExecutor) requeueCapturesForBackfill(ctx context.Context, opts 
 		candidates = append(candidates, filepath.Join(opts.DataDir, "jobs.sqlite"))
 	}
 
+	// --- Step 3: Open each existing candidate store and requeue capture jobs ---
 	total := 0
 	seen := make(map[string]bool)
 	for _, dbPath := range candidates {
@@ -415,7 +442,9 @@ func (p *PipelineExecutor) requeueCapturesForBackfill(ctx context.Context, opts 
 	return total
 }
 
+// requeueOrCountStore requeues completed, failed, or dead capture jobs in store, or counts them when dryRun is true.
 func requeueOrCountStore(ctx context.Context, store *jobs.Store, dryRun bool) int {
+	// --- Step 1: Count eligible capture jobs without mutating state when dryRun is enabled ---
 	if dryRun {
 		list, err := store.List(ctx, jobs.Filter{Kind: jobs.KindCapture})
 		if err != nil {
@@ -429,6 +458,8 @@ func requeueOrCountStore(ctx context.Context, store *jobs.Store, dryRun bool) in
 		}
 		return count
 	}
+
+	// --- Step 2: Requeue all capture jobs in store ---
 	n, err := store.RequeueKind(ctx, jobs.KindCapture)
 	if err != nil {
 		return 0
@@ -436,8 +467,10 @@ func requeueOrCountStore(ctx context.Context, store *jobs.Store, dryRun bool) in
 	return n
 }
 
+// nonAlnumRegex matches sequences of non-alphanumeric ASCII characters for slug sanitization.
 var nonAlnumRegex = regexp.MustCompile(`[^a-z0-9]+`)
 
+// deterministicPASessionID derives a stable session ID from a repo-relative Principal Architect file path.
 func deterministicPASessionID(relSlash string) string {
 	h := sha256.Sum256([]byte(relSlash))
 	shortHash := hex.EncodeToString(h[:])[:12]
@@ -449,6 +482,7 @@ func deterministicPASessionID(relSlash string) string {
 	return fmt.Sprintf("pa-%s-%s", stem, shortHash)
 }
 
+// backfillPAStatePath returns the path to the Principal Architect backfill state file.
 func backfillPAStatePath(dataDir, repoID string) string {
 	if repoID == "" {
 		return filepath.Join(dataDir, "state", "backfill_pa.json")
@@ -456,7 +490,9 @@ func backfillPAStatePath(dataDir, repoID string) string {
 	return filepath.Join(dataDir, repoID, "state", "backfill_pa.json")
 }
 
+// loadBackfillPAState loads the persisted Principal Architect backfill state from disk.
 func loadBackfillPAState(dataDir, repoID string) *backfillPAState {
+	// --- Step 1: Initialize empty state maps ---
 	st := &backfillPAState{
 		ImportedFiles:  make(map[string]string),
 		QueuedEpisodes: make(map[string]bool),
@@ -464,6 +500,8 @@ func loadBackfillPAState(dataDir, repoID string) *backfillPAState {
 	if dataDir == "" {
 		return st
 	}
+
+	// --- Step 2: Read and unmarshal state file if present ---
 	data, err := os.ReadFile(backfillPAStatePath(dataDir, repoID))
 	if err != nil {
 		return st
@@ -478,6 +516,7 @@ func loadBackfillPAState(dataDir, repoID string) *backfillPAState {
 	return st
 }
 
+// saveBackfillPAState writes the Principal Architect backfill state to disk.
 func saveBackfillPAState(dataDir, repoID string, st *backfillPAState) {
 	if dataDir == "" || st == nil {
 		return
@@ -493,6 +532,7 @@ func saveBackfillPAState(dataDir, repoID string, st *backfillPAState) {
 	_ = os.WriteFile(path, data, 0o644)
 }
 
+// flatEpisodeExists reports whether a flat JSON episode file exists for sessionID.
 func flatEpisodeExists(dataDir, repoID, sessionID string) bool {
 	if dataDir == "" {
 		return false
@@ -509,7 +549,9 @@ func flatEpisodeExists(dataDir, repoID, sessionID string) bool {
 	return false
 }
 
+// scanUncoveredFlatEpisodes scans flat JSON episode files that have not yet been processed and marks up to remaining as queued.
 func scanUncoveredFlatEpisodes(dataDir, repoID string, remaining int, dryRun bool, paState *backfillPAState) int {
+	// --- Step 1: Collect flat JSON episode files across candidate directories ---
 	dirs := []string{
 		filepath.Join(dataDir, "repos", repoID, "evidence", "episodes"),
 		filepath.Join(dataDir, repoID, "evidence", "episodes"),
@@ -530,6 +572,7 @@ func scanUncoveredFlatEpisodes(dataDir, repoID string, remaining int, dryRun boo
 	}
 	sort.Strings(files)
 
+	// --- Step 2: Inspect each episode file and queue uncovered sessions up to remaining ---
 	queued := 0
 	for _, f := range files {
 		if remaining <= 0 {
@@ -540,10 +583,10 @@ func scanUncoveredFlatEpisodes(dataDir, repoID string, remaining int, dryRun boo
 			continue
 		}
 		var raw struct {
-			ID        string   `json:"id"`
-			SessionID string   `json:"session_id"`
-			NoteIDs   []string `json:"note_ids"`
-			Processed bool     `json:"processed"`
+			ID        string   `json:"id"`         // Legacy episode identifier.
+			SessionID string   `json:"session_id"` // Session identifier.
+			NoteIDs   []string `json:"note_ids"`   // Linked inbox note identifiers.
+			Processed bool     `json:"processed"`  // Whether the episode was already processed.
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
 			continue
@@ -571,6 +614,7 @@ func scanUncoveredFlatEpisodes(dataDir, repoID string, remaining int, dryRun boo
 	return queued
 }
 
+// isRevertSubject reports whether a git commit subject line represents a revert commit.
 func isRevertSubject(subject string) bool {
 	lower := strings.ToLower(strings.TrimSpace(subject))
 	return strings.HasPrefix(lower, "revert \"") ||
@@ -578,6 +622,7 @@ func isRevertSubject(subject string) bool {
 		strings.HasPrefix(lower, "revert(")
 }
 
+// gitRevertNoteExists reports whether a git-revert inbox note with noteID already exists on disk.
 func gitRevertNoteExists(dataDir, repoID, noteID string) bool {
 	if dataDir == "" {
 		return false
@@ -594,12 +639,16 @@ func gitRevertNoteExists(dataDir, repoID, noteID string) bool {
 	return false
 }
 
+// gitCommitTouchedFiles returns the sorted list of repository-relative file paths modified by commit sha.
 func gitCommitTouchedFiles(ctx context.Context, repoRoot, sha string) []string {
+	// --- Step 1: Query git diff-tree for files modified in sha ---
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "diff-tree", "--no-commit-id", "--name-only", "-r", sha)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
 	}
+
+	// --- Step 2: Normalize and sort touched file paths ---
 	var files []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		f := filepath.ToSlash(strings.TrimSpace(line))
@@ -611,6 +660,7 @@ func gitCommitTouchedFiles(ctx context.Context, repoRoot, sha string) []string {
 	return files
 }
 
+// inferScopeFromTouchedFiles derives a module scope string from the first touched file's parent directory.
 func inferScopeFromTouchedFiles(touchedFiles []string) string {
 	if len(touchedFiles) == 0 {
 		return "repo"
@@ -623,7 +673,9 @@ func inferScopeFromTouchedFiles(touchedFiles []string) string {
 	return dir
 }
 
+// writeGitRevertNote persists a gitRevertNoteDisk JSON payload to the repository's evidence notes directory.
 func writeGitRevertNote(dataDir, repoID, noteID string, payload gitRevertNoteDisk) error {
+	// --- Step 1: Validate dataDir and serialize payload ---
 	if dataDir == "" {
 		return fmt.Errorf("dataDir is required")
 	}
@@ -632,6 +684,7 @@ func writeGitRevertNote(dataDir, repoID, noteID string, payload gitRevertNoteDis
 		return err
 	}
 
+	// --- Step 2: Write note to primary evidence/notes directory ---
 	primaryDir := filepath.Join(dataDir, repoID, "evidence", "notes")
 	if err := os.MkdirAll(primaryDir, 0o755); err != nil {
 		return err
@@ -641,7 +694,7 @@ func writeGitRevertNote(dataDir, repoID, noteID string, payload gitRevertNoteDis
 		return err
 	}
 
-	// Also mirror into <dataDir>/repos/<repoID>/evidence/notes if <dataDir>/repos exists.
+	// --- Step 3: Mirror into <dataDir>/repos/<repoID>/evidence/notes if <dataDir>/repos exists ---
 	reposBase := filepath.Join(dataDir, "repos")
 	if info, err := os.Stat(reposBase); err == nil && info.IsDir() && repoID != "" {
 		altDir := filepath.Join(reposBase, repoID, "evidence", "notes")

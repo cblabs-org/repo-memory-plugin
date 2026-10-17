@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/inbox/free_harvest.go
+ * Description: Implements Stage 1b deterministic zero-token harvesting of
+ *              anchored candidate notes from episode checkpoints and conversation
+ *              markdown artifacts.
+ *
+ * Exported Types / Functions:
+ * - HarvestCheckpointsAndArtifacts(): Extracts deduplicated candidate inbox notes from checkpoints and artifacts.
+ */
+
 package inbox
 
 import (
@@ -17,13 +33,18 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/seed"
 )
 
+// maxFreeHarvestItemsPerNote bounds the number of candidate NoteItems extracted into a single harvested note.
 const maxFreeHarvestItemsPerNote = 6
 
 var (
-	harvestBacktickRe       = regexp.MustCompile("`([^`]+)`")
+	// harvestBacktickRe extracts inline backtick-quoted code spans for anchor candidate inspection.
+	harvestBacktickRe = regexp.MustCompile("`([^`]+)`")
+	// harvestNumberedBulletRe matches numbered markdown list items (e.g. "1. " or "2) ").
 	harvestNumberedBulletRe = regexp.MustCompile(`^\d+[.)]\s+(.*)$`)
-	harvestBoldPrefixRe     = regexp.MustCompile(`^\*\*([^*]{3,80})\*\*\s*[:—-]\s*(.+)$`)
-	harvestPathTokenRe      = regexp.MustCompile(`(?:^|[\s(\[,'"])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+(?:[#:][A-Za-z0-9_.-]+)?|[A-Za-z0-9_-]+\.(?:go|md|yaml|yml|json|toml|sh|txt|mod|sum|sql|py|js|ts|c|h|cpp|rs|proto|mk)(?:[#:][A-Za-z0-9_.-]+)?)`)
+	// harvestBoldPrefixRe matches a leading bold title prefix followed by a colon or dash separator.
+	harvestBoldPrefixRe = regexp.MustCompile(`^\*\*([^*]{3,80})\*\*\s*[:—-]\s*(.+)$`)
+	// harvestPathTokenRe matches unquoted repository-like file paths and known source file extensions in prose.
+	harvestPathTokenRe = regexp.MustCompile(`(?:^|[\s(\[,'"])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+(?:[#:][A-Za-z0-9_.-]+)?|[A-Za-z0-9_-]+\.(?:go|md|yaml|yml|json|toml|sh|txt|mod|sum|sql|py|js|ts|c|h|cpp|rs|proto|mk)(?:[#:][A-Za-z0-9_.-]+)?)`)
 )
 
 // HarvestCheckpointsAndArtifacts implements Stage 1b deterministic zero-token harvest
@@ -37,6 +58,7 @@ func HarvestCheckpointsAndArtifacts(
 	epStore *episode.Store,
 	inboxStore *Store,
 ) (int, error) {
+	// --- Step 1: Initialize default context and stores when omitted by caller ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -49,7 +71,7 @@ func HarvestCheckpointsAndArtifacts(
 
 	notesCreated := 0
 
-	// Part A: Harvest Episode CHECKPOINT Summaries (source: "checkpoint")
+	// --- Step 2: Harvest Episode CHECKPOINT Summaries (source: "checkpoint") ---
 	if epStore != nil {
 		n, err := harvestEpisodeCheckpoints(ctx, repoRoot, epStore, inboxStore)
 		if err != nil {
@@ -58,7 +80,7 @@ func HarvestCheckpointsAndArtifacts(
 		notesCreated += n
 	}
 
-	// Part B: Harvest Conversation Artifacts (source: "artifact")
+	// --- Step 3: Harvest Conversation Artifacts (source: "artifact") ---
 	if dataDir != "" && repoID != "" {
 		n, err := harvestConversationArtifacts(ctx, dataDir, repoID, repoRoot, inboxStore)
 		if err != nil {
@@ -70,13 +92,16 @@ func HarvestCheckpointsAndArtifacts(
 	return notesCreated, nil
 }
 
+// isValidRepoAnchor reports whether cand has valid anchor syntax and resolves to an existing path in repoRoot.
 func isValidRepoAnchor(repoRoot, cand string) bool {
+	// --- Step 1: Validate anchor syntax and strip trailing slashes ---
 	cand = strings.TrimSpace(cand)
 	cand = strings.TrimSuffix(cand, "/")
 	if cand == "" || !seed.IsValidAnchorPathSyntax(cand) {
 		return false
 	}
 
+	// --- Step 2: Strip optional #symbol or :line suffixes to isolate the file path ---
 	pathPart := cand
 	if idx := strings.IndexAny(pathPart, "#:"); idx >= 0 {
 		pathPart = strings.TrimSuffix(pathPart[:idx], "/")
@@ -86,6 +111,7 @@ func isValidRepoAnchor(repoRoot, cand string) bool {
 		return false
 	}
 
+	// --- Step 3: Verify filesystem existence under repoRoot when provided ---
 	if repoRoot != "" {
 		fullPath := filepath.Join(repoRoot, filepath.FromSlash(pathPart))
 		if _, err := os.Stat(fullPath); err != nil {
@@ -95,12 +121,15 @@ func isValidRepoAnchor(repoRoot, cand string) bool {
 	return true
 }
 
+// harvestEpisodeCheckpoints scans stored episode headers for checkpoint sections and writes
+// deduplicated checkpoint notes for bullets anchored to valid repository paths.
 func harvestEpisodeCheckpoints(
 	ctx context.Context,
 	repoRoot string,
 	epStore *episode.Store,
 	inboxStore *Store,
 ) (int, error) {
+	// --- Step 1: Load all episode headers from the episode store ---
 	headers, err := epStore.ListHeaders()
 	if err != nil {
 		return 0, err
@@ -121,6 +150,7 @@ func harvestEpisodeCheckpoints(
 			continue
 		}
 
+		// --- Step 2: Compute a content hash across target checkpoint sections for idempotency ---
 		var hashBuf strings.Builder
 		for _, sec := range sectionOrder {
 			txt := strings.TrimSpace(h.Checkpoints[sec])
@@ -147,6 +177,7 @@ func harvestEpisodeCheckpoints(
 			continue
 		}
 
+		// --- Step 3: Extract anchored candidate items from markdown bullets in each section ---
 		fallbackAnchors := extractCandidateAnchors(repoRoot, h.Checkpoints["Files and Code"])
 
 		var items []NoteItem
@@ -201,6 +232,7 @@ func harvestEpisodeCheckpoints(
 			continue
 		}
 
+		// --- Step 4: Persist the harvested checkpoint note to the inbox store ---
 		note := &Note{
 			Source:         SourceCheckpoint,
 			ConversationID: h.SessionID,
@@ -220,11 +252,14 @@ func harvestEpisodeCheckpoints(
 	return notesCreated, nil
 }
 
+// harvestConversationArtifacts walks <dataDir>/<repoID>/evidence/artifacts/<convID>/ for markdown
+// artifacts and writes deduplicated candidate notes for items anchored to repository paths.
 func harvestConversationArtifacts(
 	ctx context.Context,
 	dataDir, repoID, repoRoot string,
 	inboxStore *Store,
 ) (int, error) {
+	// --- Step 1: Enumerate conversation directories under evidence/artifacts ---
 	artifactsRoot := filepath.Join(dataDir, repoID, "evidence", "artifacts")
 	convEntries, err := os.ReadDir(artifactsRoot)
 	if err != nil {
@@ -235,7 +270,7 @@ func harvestConversationArtifacts(
 	}
 
 	sort.Slice(convEntries, func(i, j int) bool {
-		return convEntries[i].Name() < convEntries[j].Name()
+		return convEntries[i].Name() < convEntries[i].Name()
 	})
 
 	notesCreated := 0
@@ -251,6 +286,7 @@ func harvestConversationArtifacts(
 			continue
 		}
 
+		// --- Step 2: Collect eligible regular .md files within the conversation directory ---
 		convDir := filepath.Join(artifactsRoot, convID)
 		var mdFiles []string
 		walkErr := filepath.WalkDir(convDir, func(path string, d os.DirEntry, err error) error {
@@ -286,6 +322,7 @@ func harvestConversationArtifacts(
 
 		sort.Strings(mdFiles)
 
+		// --- Step 3: Check SHA-256 deduplication key and extract anchored items per file ---
 		for _, fullPath := range mdFiles {
 			if err := ctx.Err(); err != nil {
 				return notesCreated, err
@@ -326,6 +363,7 @@ func harvestConversationArtifacts(
 				items = items[:maxFreeHarvestItemsPerNote]
 			}
 
+			// --- Step 4: Write the harvested artifact note to the inbox store ---
 			note := &Note{
 				Source:         SourceArtifact,
 				ConversationID: convID,
@@ -342,10 +380,13 @@ func harvestConversationArtifacts(
 	return notesCreated, nil
 }
 
+// extractItemsFromArtifact extracts up to maxFreeHarvestItemsPerNote anchored candidate items
+// from a markdown artifact using structured doc parsing with a bullet-level fallback.
 func extractItemsFromArtifact(repoRoot, slashRel, content, evidenceRef string) []NoteItem {
 	var items []NoteItem
 	seenTitle := make(map[string]bool)
 
+	// --- Step 1: Attempt structured extraction via seed.ParseDocToOps ---
 	docOps := seed.ParseDocToOps(
 		slashRel,
 		content,
@@ -355,6 +396,7 @@ func extractItemsFromArtifact(repoRoot, slashRel, content, evidenceRef string) [
 		func(p string) bool { return isValidRepoAnchor(repoRoot, p) },
 	)
 
+	// --- Step 2: Filter and convert structured ops that have valid repository anchors ---
 	for _, op := range docOps {
 		text, _ := op.Fields["text"].(string)
 		text = strings.TrimSpace(text)
@@ -433,7 +475,7 @@ func extractItemsFromArtifact(repoRoot, slashRel, content, evidenceRef string) [
 		return items
 	}
 
-	// Fallback to anchored bullet extractor for free-form artifacts where ParseDocToOps returned 0 items.
+	// --- Step 3: Fall back to anchored markdown bullet extraction when structured ops yield 0 items ---
 	bullets := extractMarkdownBullets(content)
 	for _, bullet := range bullets {
 		bullet = strings.TrimSpace(bullet)
@@ -462,6 +504,7 @@ func extractItemsFromArtifact(repoRoot, slashRel, content, evidenceRef string) [
 	return items
 }
 
+// buildNoteItemFromBullet constructs a NoteItem from a markdown bullet, its verified anchors, and an evidence reference.
 func buildNoteItemFromBullet(repoRoot, bullet string, anchors []string, evidenceRef string) NoteItem {
 	entryType := classifyBulletType(bullet)
 	title, why, do := splitBulletFields(bullet, entryType)
@@ -476,7 +519,9 @@ func buildNoteItemFromBullet(repoRoot, bullet string, anchors []string, evidence
 	}
 }
 
+// classifyBulletType infers a dossier EntryType from lexical cues in a bullet string.
 func classifyBulletType(bullet string) dossiers.EntryType {
+	// --- Step 1: Check for ruled-out and invariant cues ---
 	lower := strings.ToLower(bullet)
 
 	for _, kw := range []string{"ruled out", "failed", "did not work", "abandoned", "avoid"} {
@@ -489,6 +534,8 @@ func classifyBulletType(bullet string) dossiers.EntryType {
 			return dossiers.EntryTypeInvariant
 		}
 	}
+
+	// --- Step 2: Check for failure-signature and gotcha cues, defaulting to decision ---
 	for _, kw := range []string{"error", "panic", "symptom", "fix:"} {
 		if strings.Contains(lower, kw) {
 			return dossiers.EntryTypeFailureSignature
@@ -502,7 +549,10 @@ func classifyBulletType(bullet string) dossiers.EntryType {
 	return dossiers.EntryTypeDecision
 }
 
+// isQualifyingWorkAccomplishedBullet reports whether a bullet from "Work Accomplished" contains
+// durable architectural, invariant, failure, or decision cues rather than routine status narration.
 func isQualifyingWorkAccomplishedBullet(bullet string) bool {
+	// --- Step 1: Normalize bullet text and scan for durable engineering cue words ---
 	lower := strings.ToLower(bullet)
 	cues := []string{
 		"ruled out", "failed", "did not work", "abandoned", "avoid",
@@ -511,6 +561,8 @@ func isQualifyingWorkAccomplishedBullet(bullet string) bool {
 		"gotcha", "caveat", "quirk", "note:",
 		"decided", "decision", "chose", "because", "instead of", "rather than",
 	}
+
+	// --- Step 2: Return true on the first matching cue ---
 	for _, cue := range cues {
 		if strings.Contains(lower, cue) {
 			return true
@@ -519,7 +571,10 @@ func isQualifyingWorkAccomplishedBullet(bullet string) bool {
 	return false
 }
 
+// hasModuleRuleOrDecisionCue reports whether a bullet carries rule, contract, or decision keywords
+// sufficient to inherit fallback file anchors from the checkpoint's "Files and Code" section.
 func hasModuleRuleOrDecisionCue(bullet string) bool {
+	// --- Step 1: Normalize bullet text and define qualifying rule/decision cues ---
 	lower := strings.ToLower(bullet)
 	cues := []string{
 		"ruled out", "failed", "did not work", "abandoned", "avoid",
@@ -529,6 +584,8 @@ func hasModuleRuleOrDecisionCue(bullet string) bool {
 		"decided", "decision", "chose", "because", "instead of", "rather than",
 		"require", "requires", "enforces", "contract", "convention",
 	}
+
+	// --- Step 2: Check whether any cue appears in the bullet ---
 	for _, cue := range cues {
 		if strings.Contains(lower, cue) {
 			return true
@@ -537,7 +594,10 @@ func hasModuleRuleOrDecisionCue(bullet string) bool {
 	return false
 }
 
+// splitBulletFields decomposes a raw markdown bullet into Title, Why, and Do strings based on
+// bold prefixes, punctuation separators, and entry type requirements.
 func splitBulletFields(bullet string, entryType dossiers.EntryType) (title, why, do string) {
+	// --- Step 1: Collapse whitespace and handle empty input ---
 	cleaned := strings.Join(strings.Fields(strings.TrimSpace(bullet)), " ")
 	if cleaned == "" {
 		return "", "", ""
@@ -547,6 +607,7 @@ func splitBulletFields(bullet string, entryType dossiers.EntryType) (title, why,
 	rawTitle := cleaned
 	var bodyAfterPrefix string
 
+	// --- Step 2: Extract a concise title prefix from bold spans or punctuation separators ---
 	if m := harvestBoldPrefixRe.FindStringSubmatch(cleaned); len(m) == 3 {
 		rawTitle = strings.TrimSpace(m[1])
 		bodyAfterPrefix = strings.TrimSpace(m[2])
@@ -566,6 +627,7 @@ func splitBulletFields(bullet string, entryType dossiers.EntryType) (title, why,
 	}
 	title = rawTitle
 
+	// --- Step 3: Populate the actionable Do field for procedural and rule-bearing entry types ---
 	switch entryType {
 	case dossiers.EntryTypeRuledOut,
 		dossiers.EntryTypeFailureSignature,
@@ -582,7 +644,9 @@ func splitBulletFields(bullet string, entryType dossiers.EntryType) (title, why,
 	return title, why, do
 }
 
+// extractMarkdownBullets parses top-level and indented markdown list items while ignoring fenced code blocks.
 func extractMarkdownBullets(text string) []string {
+	// --- Step 1: Split text into lines and track fenced code block state ---
 	lines := strings.Split(strings.TrimPrefix(text, "\uFEFF"), "\n")
 	var bullets []string
 	inCodeFence := false
@@ -599,6 +663,7 @@ func extractMarkdownBullets(text string) []string {
 			continue
 		}
 
+		// --- Step 2: Parse the start of a bullet item and join indented continuation lines ---
 		bulletText, ok := parseSingleBulletLine(trimmed)
 		if !ok {
 			continue
@@ -625,6 +690,7 @@ func extractMarkdownBullets(text string) []string {
 			}
 		}
 
+		// --- Step 3: Collapse internal whitespace and append non-empty bullet text ---
 		bulletText = strings.Join(strings.Fields(bulletText), " ")
 		if bulletText != "" {
 			bullets = append(bullets, bulletText)
@@ -634,7 +700,9 @@ func extractMarkdownBullets(text string) []string {
 	return bullets
 }
 
+// parseSingleBulletLine strips unordered (-, *, +), checkbox ([ ], [x]), or numbered list prefixes from a line.
 func parseSingleBulletLine(trimmed string) (string, bool) {
+	// --- Step 1: Check unordered list markers and strip optional task-list checkboxes ---
 	for _, pfx := range []string{"- ", "* ", "+ "} {
 		if strings.HasPrefix(trimmed, pfx) {
 			rest := strings.TrimSpace(strings.TrimPrefix(trimmed, pfx))
@@ -644,6 +712,7 @@ func parseSingleBulletLine(trimmed string) (string, bool) {
 			return rest, rest != ""
 		}
 	}
+	// --- Step 2: Check numbered list markers ---
 	if m := harvestNumberedBulletRe.FindStringSubmatch(trimmed); len(m) == 2 {
 		rest := strings.TrimSpace(m[1])
 		return rest, rest != ""
@@ -651,7 +720,9 @@ func parseSingleBulletLine(trimmed string) (string, bool) {
 	return "", false
 }
 
+// extractCandidateAnchors extracts deduplicated, filesystem-verified repository anchors from backtick spans and path tokens in text.
 func extractCandidateAnchors(repoRoot, text string) []string {
+	// --- Step 1: Define normalization and validation helper for candidate tokens ---
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -676,6 +747,7 @@ func extractCandidateAnchors(repoRoot, text string) []string {
 		}
 	}
 
+	// --- Step 2: Inspect backtick-quoted spans and their whitespace-delimited tokens ---
 	for _, m := range harvestBacktickRe.FindAllStringSubmatch(text, -1) {
 		if len(m) < 2 {
 			continue
@@ -689,6 +761,7 @@ func extractCandidateAnchors(repoRoot, text string) []string {
 		}
 	}
 
+	// --- Step 3: Inspect unquoted path-like tokens in the text ---
 	for _, m := range harvestPathTokenRe.FindAllStringSubmatch(text, -1) {
 		if len(m) >= 2 {
 			addIfValid(m[1])
@@ -698,6 +771,7 @@ func extractCandidateAnchors(repoRoot, text string) []string {
 	return anchors
 }
 
+// nonEmpty returns the first non-whitespace string in vals, or "" if all are empty.
 func nonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {

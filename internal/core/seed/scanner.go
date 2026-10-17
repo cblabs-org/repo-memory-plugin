@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -11,13 +11,13 @@
  *              repository paths against Git trees, and writes deduplicated seed ops.
  *
  * Exported Types / Functions:
- * - SeedOptions:                  Configures repository root, time-cut commit, and ops output directory.
- * - ParsedWorkorder:              Holds a parsed completion report alongside its path and Git commit time.
- * - ScanWorkorders():             Discovers WORKORDER.md files containing completion reports.
+ * - SeedOptions:                    Configures repository root, time-cut commit, and ops output directory.
+ * - ParsedWorkorder:                Holds a parsed completion report alongside its path and Git commit time.
+ * - ScanWorkorders():               Discovers WORKORDER.md files containing completion reports.
  * - ScanProjectsWithDistillation(): Discovers PROJECT.md files containing architectural distillation blocks.
- * - ScanAndParse():               Scans, parses, and validates WORKORDER.md and PROJECT.md reports.
- * - SeedFromWorkorders():         End-to-end scan, parse, and op-log emission for a PA directory.
- * - SeedFromParsed():             Writes deduplicated seed ops for pre-parsed completion reports.
+ * - ScanAndParse():                 Scans, parses, and validates WORKORDER.md and PROJECT.md reports.
+ * - SeedFromWorkorders():           End-to-end scan, parse, and op-log emission for a PA directory.
+ * - SeedFromParsed():               Writes deduplicated seed ops for pre-parsed completion reports.
  */
 
 package seed
@@ -52,6 +52,7 @@ type ParsedWorkorder struct {
 
 // ScanWorkorders walks paDir and returns all WORKORDER.md files containing a completion report.
 func ScanWorkorders(paDir string) ([]string, error) {
+	// --- Step 1: Walk paDir and collect WORKORDER.md files with completion blocks ---
 	var files []string
 	err := filepath.Walk(paDir, func(filePath string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -78,6 +79,7 @@ func ScanWorkorders(paDir string) ([]string, error) {
 // ScanProjectsWithDistillation walks paDir and returns PROJECT.md files that contain
 // Part III architectural distillation blocks ("Key Architectural Decisions").
 func ScanProjectsWithDistillation(paDir string) ([]string, error) {
+	// --- Step 1: Walk paDir and collect PROJECT.md files containing architectural decisions ---
 	var files []string
 	err := filepath.Walk(paDir, func(filePath string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {

@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/main.go
+ * Description: Entry point and root Cobra command registration for the
+ *              repo-memory CLI, hook runner, background tick daemon, and MCP server.
+ *
+ * Exported Types / Functions:
+ * - Version: Build-time version string injected via -ldflags.
+ */
+
+// The repo-memory command provides the CLI, hook runner, background tick daemon, and MCP server for repository memory.
 package main
 
 import (
@@ -7,8 +23,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version holds the build-time version string (overridden via -ldflags "-X main.Version=...").
 var Version = "dev"
 
+// rootCmd is the top-level Cobra command for the `repo-memory` binary.
 var rootCmd = &cobra.Command{
 	Use:     "repo-memory",
 	Short:   "Repository-level memory for coding agents",
@@ -23,6 +41,7 @@ func main() {
 }
 
 func init() {
+	// --- Step 1: Register lifecycle, hook, daemon, and MCP subcommands ---
 	rootCmd.AddCommand(hookCmd)
 	rootCmd.AddCommand(enrollCmd)
 	rootCmd.AddCommand(unenrollCmd)
@@ -32,6 +51,8 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
+
+	// --- Step 2: Register query, diagnostic, and maintenance subcommands ---
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -41,6 +62,8 @@ func init() {
 	rootCmd.AddCommand(evalCmd)
 	rootCmd.AddCommand(snapshotCmd)
 	rootCmd.AddCommand(usageCmd)
+
+	// --- Step 3: Register seeding, op-log, consolidation, and projection subcommands ---
 	rootCmd.AddCommand(seedCmd)
 	rootCmd.AddCommand(seedDocsCmd)
 	rootCmd.AddCommand(opsCmd)

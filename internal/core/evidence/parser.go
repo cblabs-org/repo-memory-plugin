@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/evidence/parser.go
+ * Description: Opens and parses raw Antigravity JSONL transcripts (single file,
+ *              chunked directory, or .system_generated/logs layout) into
+ *              normalized harness steps and checkpoint sections.
+ *
+ * Exported Types / Functions:
+ * - ParsedTranscript:      Holds normalized steps, checkpoints, timestamps, and byte/char counts.
+ * - OpenTranscript():      Opens a transcript reader from a file path or conversation directory.
+ * - ParseTranscript():     Opens and parses a transcript from disk.
+ * - ParseTranscriptStream(): Parses a transcript JSONL stream from an io.Reader.
+ */
+
 package evidence
 
 import (
@@ -17,39 +36,43 @@ import (
 
 // ParsedTranscript represents the parsed steps and extracted metadata from a transcript.
 type ParsedTranscript struct {
-	Steps         []harness.Step
-	Checkpoints   map[string]string
-	Started       time.Time
-	Ended         time.Time
-	RawBytes      int64
-	RawChars      int64
-	StepCount     int
-	HasCheckpoint bool
+	Steps         []harness.Step    // Normalized chronological step sequence.
+	Checkpoints   map[string]string // Extracted checkpoint section map keyed by section name.
+	Started       time.Time         // Earliest step timestamp observed in the stream.
+	Ended         time.Time         // Latest step timestamp observed in the stream.
+	RawBytes      int64             // Total raw byte count scanned from the JSONL stream.
+	RawChars      int64             // Total character count across content, thinking, and tool calls.
+	StepCount     int               // Number of valid JSON step lines parsed.
+	HasCheckpoint bool              // True if a checkpoint marker or checkpoint step was encountered.
 }
 
+// rawStep models a single JSONL line from an Antigravity conversation transcript.
 type rawStep struct {
-	StepIndex       int             `json:"step_index"`
-	Source          string          `json:"source"`
-	Type            string          `json:"type"`
-	Status          string          `json:"status"`
-	CreatedAt       string          `json:"created_at"`
-	Content         string          `json:"content"`
-	Thinking        string          `json:"thinking"`
-	ToolCalls       json.RawMessage `json:"tool_calls"`
-	Media           json.RawMessage `json:"media"`
-	TruncatedFields []string        `json:"truncated_fields"`
+	StepIndex       int             `json:"step_index"`       // Zero-based trajectory step index.
+	Source          string          `json:"source"`           // Step origin (e.g., USER_EXPLICIT, MODEL, SYSTEM).
+	Type            string          `json:"type"`             // Step category (e.g., USER_INPUT, PLANNER_RESPONSE).
+	Status          string          `json:"status"`           // Execution status (e.g., DONE, ERROR).
+	CreatedAt       string          `json:"created_at"`       // ISO-8601 creation timestamp string.
+	Content         string          `json:"content"`          // Primary text payload or tool output content.
+	Thinking        string          `json:"thinking"`         // Internal model reasoning text.
+	ToolCalls       json.RawMessage `json:"tool_calls"`       // Raw JSON array of tool call invocations.
+	Media           json.RawMessage `json:"media"`            // Raw JSON array of attached media descriptors.
+	TruncatedFields []string        `json:"truncated_fields"` // Names of fields truncated in compact transcripts.
 }
 
+// toolCallItem represents a single tool invocation inside rawStep.ToolCalls.
 type toolCallItem struct {
-	Name string         `json:"name"`
-	Args map[string]any `json:"args"`
+	Name string         `json:"name"` // Invoked tool name (e.g., run_command, view_file).
+	Args map[string]any `json:"args"` // Unstructured JSON key-value parameters passed to the tool invocation.
 }
 
+// multiReadCloser concatenates multiple io.Reader chunks and closes all underlying handles.
 type multiReadCloser struct {
-	io.Reader
-	closers []io.Closer
+	io.Reader             // Concatenated reader across all chunk files.
+	closers   []io.Closer // Underlying file handles to close when reading finishes.
 }
 
+// Close closes every underlying chunk file handle and returns the first error encountered.
 func (m *multiReadCloser) Close() error {
 	var firstErr error
 	for _, c := range m.closers {
@@ -61,7 +84,9 @@ func (m *multiReadCloser) Close() error {
 }
 
 // OpenTranscript opens a transcript stream from either a file path or conversation directory.
+// The caller must call Close on the returned io.ReadCloser when finished.
 func OpenTranscript(pathOrDir string) (io.ReadCloser, error) {
+	// --- Step 1: Stat target path and open directly if it is a regular file ---
 	fi, err := os.Stat(pathOrDir)
 	if err != nil {
 		return nil, fmt.Errorf("stat transcript path %s: %w", pathOrDir, err)
@@ -71,19 +96,19 @@ func OpenTranscript(pathOrDir string) (io.ReadCloser, error) {
 		return os.Open(pathOrDir)
 	}
 
-	// If directory has .system_generated/logs subpath
+	// --- Step 2: Descend into .system_generated/logs if present ---
 	sysLogs := filepath.Join(pathOrDir, ".system_generated", "logs")
 	if sysStat, err := os.Stat(sysLogs); err == nil && sysStat.IsDir() {
 		return OpenTranscript(sysLogs)
 	}
 
-	// 1. Monolithic transcript_full.jsonl
+	// --- Step 3: Prefer monolithic transcript_full.jsonl when available ---
 	fullPath := filepath.Join(pathOrDir, "transcript_full.jsonl")
 	if f, err := os.Open(fullPath); err == nil {
 		return f, nil
 	}
 
-	// 2. Chunks under chunks/transcript_full/
+	// --- Step 4: Fall back to ordered chunk files under chunks/transcript_full/ ---
 	chunksDir := filepath.Join(pathOrDir, "chunks", "transcript_full")
 	if entries, err := os.ReadDir(chunksDir); err == nil {
 		var chunkFiles []string
@@ -114,7 +139,7 @@ func OpenTranscript(pathOrDir string) (io.ReadCloser, error) {
 		}
 	}
 
-	// 3. Compact transcript.jsonl fallback
+	// --- Step 5: Fall back to compact transcript.jsonl ---
 	compactPath := filepath.Join(pathOrDir, "transcript.jsonl")
 	if f, err := os.Open(compactPath); err == nil {
 		return f, nil
@@ -136,9 +161,10 @@ func ParseTranscript(pathOrDir string) (*ParsedTranscript, error) {
 
 // ParseTranscriptStream parses a transcript from an io.Reader stream.
 func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
+	// --- Step 1: Configure buffered scanner with a 50 MB line ceiling ---
 	scanner := bufio.NewScanner(r)
 	buf := make([]byte, 1024*1024)
-	scanner.Buffer(buf, 1024*1024*50) // up to 50MB per line
+	scanner.Buffer(buf, 1024*1024*50) // Up to 50 MB per line.
 
 	parsed := &ParsedTranscript{
 		Checkpoints: make(map[string]string),
@@ -146,6 +172,7 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 
 	prevHadToolCall := false
 
+	// --- Step 2: Scan JSONL lines, accumulate footprint stats, and normalize steps ---
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		parsed.RawBytes += int64(len(line)) + 1
@@ -170,7 +197,7 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 		tcLen := int64(len(rs.ToolCalls))
 		parsed.RawChars += cLen + thLen + tcLen
 
-		// Parse timestamps
+		// Update session start and end bounds from step timestamp.
 		if rs.CreatedAt != "" {
 			t, err := parseTimestamp(rs.CreatedAt)
 			if err == nil && !t.IsZero() {
@@ -183,7 +210,7 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 			}
 		}
 
-		// Check if checkpoint step
+		// Detect and extract checkpoint sections when present.
 		isCheckpointStep := rs.Type == "CHECKPOINT" ||
 			(rs.Source == "SYSTEM" && (strings.Contains(rs.Content, "User Knowledge") ||
 				strings.Contains(rs.Content, "Model Knowledge") ||
@@ -198,7 +225,7 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 			}
 		}
 
-		// Determine tool output
+		// Identify whether the step carries tool execution output.
 		isToolOutput := false
 		if prevHadToolCall && (rs.Type == "GENERIC" || rs.Type == "TOOL_OUTPUT" || rs.Type == "COMMAND_OUTPUT") {
 			isToolOutput = true
@@ -212,6 +239,7 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 		prevHadToolCall = len(rs.ToolCalls) > 0
 	}
 
+	// --- Step 3: Check for stream read errors before returning ---
 	if err := scanner.Err(); err != nil {
 		if !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("reading transcript stream: %w", err)
@@ -221,7 +249,9 @@ func ParseTranscriptStream(r io.Reader) (*ParsedTranscript, error) {
 	return parsed, nil
 }
 
+// parseTimestamp parses RFC3339 or ISO-8601 date/time strings into UTC time.Time values.
 func parseTimestamp(val string) (time.Time, error) {
+	// --- Step 1: Trim and try standard RFC3339 layouts ---
 	val = strings.TrimSpace(val)
 	if val == "" {
 		return time.Time{}, nil
@@ -232,6 +262,8 @@ func parseTimestamp(val string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, val); err == nil {
 		return t.UTC(), nil
 	}
+
+	// --- Step 2: Fall back to timezone-less date/time layouts ---
 	for _, layout := range []string{
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
@@ -244,7 +276,9 @@ func parseTimestamp(val string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unrecognized time: %s", val)
 }
 
+// normalizeStep converts a raw transcript step into a canonical harness.Step.
 func normalizeStep(rs rawStep, isToolOutput, isCheckpoint bool) harness.Step {
+	// --- Step 1: Handle checkpoint steps directly as note steps ---
 	step := harness.Step{
 		Index: rs.StepIndex,
 	}
@@ -255,6 +289,7 @@ func normalizeStep(rs rawStep, isToolOutput, isCheckpoint bool) harness.Step {
 		return step
 	}
 
+	// --- Step 2: Classify tool calls by tool name ---
 	if len(rs.ToolCalls) > 0 {
 		var calls []toolCallItem
 		if err := json.Unmarshal(rs.ToolCalls, &calls); err == nil && len(calls) > 0 {
@@ -284,6 +319,7 @@ func normalizeStep(rs rawStep, isToolOutput, isCheckpoint bool) harness.Step {
 		}
 	}
 
+	// --- Step 3: Classify tool outputs, user prompts, reasoning, and agent text ---
 	if isToolOutput {
 		step.Kind = harness.StepKindCommand
 		step.Excerpt = rs.Content

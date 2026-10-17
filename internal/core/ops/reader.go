@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/ops/reader.go
+ * Description: Reads, unmarshals, and validates individual OpBatch JSON files
+ *              from the operation log directory.
+ *
+ * Exported Types / Functions:
+ * - Reader: Reads and validates OpBatch files from an op-log base directory.
+ *   - NewReader():  Constructs a Reader rooted at baseDir.
+ *   - WithGitDir(): Sets the git repository directory used for commit timestamp resolution.
+ *   - ReadBatch():  Reads, unmarshals, and validates a single OpBatch JSON file.
+ */
+
 package ops
 
 import (
@@ -10,8 +28,8 @@ import (
 
 // Reader reads and validates OpBatch files from the ops log directory.
 type Reader struct {
-	baseDir string
-	gitDir  string
+	baseDir string // Root directory containing monthly op-log subdirectories.
+	gitDir  string // Optional git working tree path used to resolve commit timestamps.
 }
 
 // NewReader creates a new Reader for the specified base directory.
@@ -31,6 +49,7 @@ func (r *Reader) WithGitDir(gitDir string) *Reader {
 // If path is not absolute and does not exist relative to the working directory,
 // it is checked relative to r.baseDir.
 func (r *Reader) ReadBatch(path string) (*OpBatch, error) {
+	// --- Step 1: Resolve path relative to the working directory or r.baseDir ---
 	targetPath := path
 	if !filepath.IsAbs(targetPath) {
 		if _, err := os.Stat(targetPath); errors.Is(err, os.ErrNotExist) && r.baseDir != "" {
@@ -38,6 +57,7 @@ func (r *Reader) ReadBatch(path string) (*OpBatch, error) {
 		}
 	}
 
+	// --- Step 2: Read and unmarshal the OpBatch JSON payload ---
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
 		return nil, fmt.Errorf("read batch file: %w", err)
@@ -48,6 +68,7 @@ func (r *Reader) ReadBatch(path string) (*OpBatch, error) {
 		return nil, fmt.Errorf("unmarshal batch json: %w", err)
 	}
 
+	// --- Step 3: Validate the unmarshaled batch before returning ---
 	if err := ValidateBatch(batch); err != nil {
 		return nil, fmt.Errorf("invalid batch in %s: %w", targetPath, err)
 	}

@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -29,6 +29,7 @@ import (
 
 var unenrollPurgeFlag bool // When true, deletes <data-dir>/<repo-id>/ during unenroll.
 
+// unenrollCmd defines the `repo-memory unenroll` (alias `leave`) subcommand.
 var unenrollCmd = &cobra.Command{
 	Use:     "unenroll [path]",
 	Short:   "Remove a repository from memory tracking",

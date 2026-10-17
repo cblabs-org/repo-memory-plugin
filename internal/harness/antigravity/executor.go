@@ -1,3 +1,28 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/executor.go
+ * Description: Implements the headless Antigravity CLI (agy) Housekeeper and
+ *              MultiTurnHousekeeper for executing single-turn and warm multi-turn
+ *              stream-json LLM housekeeping stages.
+ *
+ * Exported Types / Functions:
+ * - Housekeeper: Executes single-turn and multi-turn LLM pipeline stages via agy.
+ *
+ *   Lifecycle:
+ *   - NewHousekeeper(): Constructs a Housekeeper configured with dataDir, repoID, model, and timeout.
+ *
+ *   Housekeeper (harness.Housekeeper):
+ *   - Run(): Executes a single pipeline stage invocation via agy --output-format stream-json.
+ *
+ *   MultiTurnHousekeeper (harness.MultiTurnHousekeeper):
+ *   - RunMultiTurn(): Executes multiple sequential prompts in a single warm stream-json session.
+ */
+
 package antigravity
 
 import (
@@ -13,13 +38,15 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/harness"
 )
 
+// Housekeeper executes single-turn and warm multi-turn LLM pipeline stages via the agy CLI.
 type Housekeeper struct {
-	DataDir string
-	RepoID  string
-	Model   string
-	Timeout string
+	DataDir string // Root data directory under which isolated runs/<RepoID> directories are created.
+	RepoID  string // Enrolled repository identifier used to scope the agy project and run directory.
+	Model   string // Model identifier passed to agy --model.
+	Timeout string // Print timeout duration string passed to agy --print-timeout.
 }
 
+// NewHousekeeper constructs a Housekeeper for dataDir and repoID, applying default model and timeout values when empty.
 func NewHousekeeper(dataDir, repoID, model, timeout string) *Housekeeper {
 	if model == "" {
 		model = "Gemini 3.8 Flash (High)"
@@ -35,34 +62,40 @@ func NewHousekeeper(dataDir, repoID, model, timeout string) *Housekeeper {
 	}
 }
 
-// Ensure it implements the interface
+// _ verifies at compile time that Housekeeper satisfies harness.Housekeeper.
 var _ harness.Housekeeper = (*Housekeeper)(nil)
+
+// _ verifies at compile time that Housekeeper satisfies harness.MultiTurnHousekeeper.
 var _ harness.MultiTurnHousekeeper = (*Housekeeper)(nil)
 
+// streamInputUserEvent represents a single user turn event written to stdin in stream-json mode.
 type streamInputUserEvent struct {
-	Event   string `json:"event"`
+	Event   string `json:"event"` // Event type identifier (always "user").
 	Message struct {
-		Content string `json:"content"`
-	} `json:"message"`
+		Content string `json:"content"` // Prompt text for the turn.
+	} `json:"message"` // Envelope containing the user turn prompt text sent to agy stdin.
 }
 
-
+// streamResult represents a decoded JSON event emitted on stdout by agy in stream-json mode.
 type streamResult struct {
-	Event  string `json:"event"`
+	Event  string `json:"event"` // Stream event type (e.g., "result").
 	Result struct {
-		Status   string `json:"status"`
-		Response string `json:"response"`
-		Error    string `json:"error"`
+		Status   string `json:"status"`   // Execution status (e.g., "OK" or "ERROR").
+		Response string `json:"response"` // Model response text for the turn.
+		Error    string `json:"error"`    // Error description when Status is "ERROR".
 		Usage    struct {
-			InputTokens     int `json:"input_tokens"`
-			OutputTokens    int `json:"output_tokens"`
-			ThinkingTokens  int `json:"thinking_tokens"`
-			CacheReadTokens int `json:"cache_read_tokens"`
-		} `json:"usage"`
-	} `json:"result"`
+			InputTokens     int `json:"input_tokens"`      // Cumulative input tokens consumed.
+			OutputTokens    int `json:"output_tokens"`     // Cumulative output tokens generated.
+			ThinkingTokens  int `json:"thinking_tokens"`   // Cumulative thinking tokens consumed.
+			CacheReadTokens int `json:"cache_read_tokens"` // Cumulative cache-read tokens.
+		} `json:"usage"` // Token usage metrics reported for the turn.
+	} `json:"result"` // Nested result payload when Event is "result".
 }
 
+// Run executes a single pipeline stage via the agy CLI and returns its output payload and token usage.
+// It returns harness.ErrQuotaExhausted (discoverable via errors.Is) if agy exits with code 3.
 func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
+	// --- Step 1: Prepare isolated working directory and format stage prompt ---
 	workDir := filepath.Join(h.DataDir, "runs", h.RepoID)
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return harness.Result{}, fmt.Errorf("failed to create work dir: %w", err)
@@ -101,6 +134,7 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		prompt = fmt.Sprintf("You are executing the %s pipeline stage. DO NOT call any tools. %s\n\nInput:\n%s", stage, schemaGuide, string(inputBytes))
 	}
 
+	// --- Step 2: Configure and execute the agy subprocess ---
 	args := []string{
 		"-p", prompt,
 		"--model", h.Model,
@@ -130,6 +164,7 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		return harness.Result{}, fmt.Errorf("agy execution failed: %v\nStderr: %s", err, stderr.String())
 	}
 
+	// --- Step 3: Decode stream-json output and extract the result payload and usage ---
 	var result harness.Result
 	decoder := json.NewDecoder(&stdout)
 	for decoder.More() {
@@ -168,7 +203,11 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 	return result, nil
 }
 
+// RunMultiTurn executes prompts sequentially in a single warm stream-json agy session
+// and returns per-turn results with delta token usage.
+// If the multi-turn agy process exits with code 3, RunMultiTurn returns harness.ErrQuotaExhausted.
 func (h *Housekeeper) RunMultiTurn(ctx context.Context, stage harness.Stage, prompts []string) ([]harness.Result, error) {
+	// --- Step 1: Validate prompts and encode stream-json user events into stdin buffer ---
 	if len(prompts) == 0 {
 		return nil, nil
 	}
@@ -193,6 +232,7 @@ func (h *Housekeeper) RunMultiTurn(ctx context.Context, stage harness.Stage, pro
 		stdinBuf.WriteByte('\n')
 	}
 
+	// --- Step 2: Configure and run the multi-turn agy subprocess ---
 	args := []string{
 		"-p", "",
 		"--input-format", "stream-json",
@@ -223,6 +263,7 @@ func (h *Housekeeper) RunMultiTurn(ctx context.Context, stage harness.Stage, pro
 		return nil, fmt.Errorf("agy multi-turn execution failed: %v\nStderr: %s", err, stderr.String())
 	}
 
+	// --- Step 3: Decode per-turn result events and compute incremental token usage ---
 	var results []harness.Result
 	var prevUsage harness.Usage
 

@@ -1,3 +1,25 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/delivery/workorder_brief.go
+ * Description: Constructs deterministic, token-bounded repository memory briefs
+ *              for Principal Architect workorders by extracting candidate file
+ *              paths from WORKORDER.md, resolving module scopes, ranking active
+ *              dossier entries, summarizing unconsolidated notes, and rendering
+ *              bounded Markdown output.
+ *
+ * Exported Types / Functions:
+ * - DefaultBriefMaxTokens:   Default token ceiling for Principal Architect workorder briefs.
+ * - WorkorderBrief:          Deterministic, token-bounded memory brief for a workorder.
+ * - BriefNoteSummary:        Compact summary of an unconsolidated note relevant to a workorder brief.
+ * - ExtractWorkorderPaths(): Deterministically extracts repository-relative paths from WORKORDER.md content.
+ * - BuildWorkorderBrief():   Constructs a token-bounded WorkorderBrief from a WORKORDER.md file and/or scopes.
+ */
+
 package delivery
 
 import (
@@ -24,34 +46,37 @@ const DefaultBriefMaxTokens = 600
 
 // WorkorderBrief is a deterministic, token-bounded memory brief for a Principal Architect workorder.
 type WorkorderBrief struct {
-	WorkorderPath       string             `json:"workorder_path,omitempty"`
-	ExtractedFiles      []string           `json:"extracted_files"`
-	ResolvedScopes      []string           `json:"resolved_scopes"`
-	StatusLine          string             `json:"status_line"`
-	CoverageGaps        []string           `json:"coverage_gaps"`
-	Entries             []RankedEntry      `json:"entries"`
-	UnconsolidatedNotes []BriefNoteSummary `json:"unconsolidated_notes"`
-	TokenCount          int                `json:"token_count"`
-	BriefMarkdown       string             `json:"brief_markdown"`
+	WorkorderPath       string             `json:"workorder_path,omitempty"` // Path to the source WORKORDER.md file, if provided.
+	ExtractedFiles      []string           `json:"extracted_files"`          // Repository-relative file and directory paths extracted from the workorder.
+	ResolvedScopes      []string           `json:"resolved_scopes"`          // Dossier scopes resolved from explicit scopes and extracted paths.
+	StatusLine          string             `json:"status_line"`              // Single-line summary of index freshness, unconsolidated notes, and suspect entries.
+	CoverageGaps        []string           `json:"coverage_gaps"`            // Warnings for primary scopes lacking dossiers or having suspect entries.
+	Entries             []RankedEntry      `json:"entries"`                  // Ranked dossier entries selected within the token budget.
+	UnconsolidatedNotes []BriefNoteSummary `json:"unconsolidated_notes"`     // Unconsolidated notes matching the resolved scopes within the token budget.
+	TokenCount          int                `json:"token_count"`              // Estimated token count of BriefMarkdown.
+	BriefMarkdown       string             `json:"brief_markdown"`           // Rendered Markdown representation of the workorder brief.
 }
 
 // BriefNoteSummary is a compact representation of an unconsolidated note relevant to a workorder brief.
 type BriefNoteSummary struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`
-	Scope     string `json:"scope"`
-	Statement string `json:"statement"`
-	CreatedAt string `json:"created_at,omitempty"`
+	ID        string `json:"id"`                   // Unique note identifier or filename stem.
+	Kind      string `json:"kind"`                 // Cognitive kind or note type label.
+	Scope     string `json:"scope"`                // Target module dossier scope for the note.
+	Statement string `json:"statement"`            // Single-line summary statement of the note.
+	CreatedAt string `json:"created_at,omitempty"` // Optional ISO-8601 creation timestamp string.
 }
 
 var (
+	// backtickRegex matches inline code spans (`...`) on a single line.
 	backtickRegex = regexp.MustCompile("`([^`\\n]+)`")
-	mdLinkRegex   = regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)
+	// mdLinkRegex matches Markdown link targets ([label](target)).
+	mdLinkRegex = regexp.MustCompile(`\[[^\]]+\]\(([^)\s]+)\)`)
 )
 
 // ExtractWorkorderPaths deterministically extracts repository-relative file and directory paths
 // from WORKORDER.md markdown content, prioritizing Permitted Mutable Files and Forbidden Files sections.
 func ExtractWorkorderPaths(markdown string) []string {
+	// --- Step 1: Scan Markdown lines and partition candidates by section priority ---
 	lines := strings.Split(markdown, "\n")
 
 	var priorityCandidates []string
@@ -85,6 +110,7 @@ func ExtractWorkorderPaths(markdown string) []string {
 		}
 	}
 
+	// --- Step 2: Normalize and deduplicate candidate paths while preserving priority order ---
 	allCandidates := append(priorityCandidates, generalCandidates...)
 	seen := make(map[string]bool, len(allCandidates))
 	out := make([]string, 0, len(allCandidates))
@@ -99,7 +125,10 @@ func ExtractWorkorderPaths(markdown string) []string {
 	return out
 }
 
+// extractLinePathCandidates extracts raw path candidates from inline code spans,
+// Markdown links, and plain bullet items on a single line.
 func extractLinePathCandidates(line string) []string {
+	// --- Step 1: Extract candidates from backtick spans and Markdown links ---
 	var out []string
 	for _, m := range backtickRegex.FindAllStringSubmatch(line, -1) {
 		if len(m) > 1 {
@@ -111,7 +140,8 @@ func extractLinePathCandidates(line string) []string {
 			out = append(out, m[1])
 		}
 	}
-	// Also handle plain bullet lines like "- internal/core/foo.go (NEW)"
+
+	// --- Step 2: Extract leading token from plain bullet lines (e.g. "- internal/core/foo.go (NEW)") ---
 	trimmed := strings.TrimSpace(line)
 	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 		rest := strings.TrimSpace(trimmed[2:])
@@ -125,6 +155,7 @@ func extractLinePathCandidates(line string) []string {
 	return out
 }
 
+// recognizedExtensions lists file extensions accepted as repository file paths in workorders.
 var recognizedExtensions = map[string]bool{
 	".go":    true,
 	".md":    true,
@@ -146,6 +177,7 @@ var recognizedExtensions = map[string]bool{
 	".css":   true,
 }
 
+// recognizedTopFiles lists extensionless or top-level repository filenames accepted in workorders.
 var recognizedTopFiles = map[string]bool{
 	"Makefile":   true,
 	"Dockerfile": true,
@@ -157,14 +189,17 @@ var recognizedTopFiles = map[string]bool{
 	"SPEC.md":    true,
 }
 
+// normalizeWorkorderCandidatePath cleans a raw path token from a workorder and
+// returns a normalized repository-relative path, or "" if the token is not a valid repo path.
 func normalizeWorkorderCandidatePath(raw string) string {
+	// --- Step 1: Strip file:// prefixes, URL schemes, and line-number fragments ---
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return ""
 	}
 	if strings.HasPrefix(s, "file://") {
 		s = strings.TrimPrefix(s, "file://")
-		// Extract repo-relative tail if recognizable
+		// Extract repo-relative tail if recognizable.
 		for _, marker := range []string{"/internal/", "/cmd/", "/pkg/", "/docs/", "/.memory/", "/skills/", "/hooks/"} {
 			if idx := strings.Index(s, marker); idx >= 0 {
 				s = s[idx+1:]
@@ -185,7 +220,8 @@ func normalizeWorkorderCandidatePath(raw string) string {
 	if s == "" {
 		return ""
 	}
-	// Reject strings with spaces, flags, wildcards, placeholders, or ellipsis
+
+	// --- Step 2: Reject shell flags, wildcards, placeholders, and parent-traversal segments ---
 	if strings.ContainsAny(s, " \t\n\r*?<>{}|$;\"'") {
 		return ""
 	}
@@ -204,6 +240,7 @@ func normalizeWorkorderCandidatePath(raw string) string {
 		return ""
 	}
 
+	// --- Step 3: Validate against external module domains, recognized extensions, and top-level directories ---
 	firstSeg := s
 	if slash := strings.IndexByte(s, '/'); slash >= 0 {
 		firstSeg = s[:slash]
@@ -225,7 +262,7 @@ func normalizeWorkorderCandidatePath(raw string) string {
 		return s
 	}
 
-	// Allow multi-segment repository directory paths (e.g. internal/core/delivery, cmd/repo-memory)
+	// Allow multi-segment repository directory paths (e.g. internal/core/delivery, cmd/repo-memory).
 	if strings.Contains(s, "/") {
 		switch firstSeg {
 		case "internal", "cmd", "pkg", "docs", "skills", "hooks", "scripts", "test", "tests", ".memory", ".agents":
@@ -243,6 +280,7 @@ func BuildWorkorderBrief(
 	repoRoot, dataDir, repoID, workorderPath, explicitScope string,
 	maxTokens int,
 ) (*WorkorderBrief, error) {
+	// --- Step 1: Normalize defaults and extract candidate file paths from WORKORDER.md ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -263,12 +301,14 @@ func BuildWorkorderBrief(
 		extractedFiles = []string{}
 	}
 
+	// --- Step 2: Load active entries, resolve scopes, and filter unconsolidated notes ---
 	allActiveEntries, dossierFileScopes := loadActiveEntriesForBrief(ctx, idx, repoRoot, dataDir, repoID)
 	resolvedScopes, primaryScopes := resolveBriefScopes(explicitScope, extractedFiles, allActiveEntries, dossierFileScopes)
 
 	allUnconsolidatedNotes := loadUnconsolidatedBriefNotes(dataDir, repoID, repoRoot)
 	matchedNotes := filterNotesForScopes(allUnconsolidatedNotes, resolvedScopes, extractedFiles)
 
+	// --- Step 3: Compute status line, coverage gaps, and ranked entries ---
 	statusLine := buildBriefStatusLine(ctx, idx, repoRoot, dataDir, repoID, len(allUnconsolidatedNotes), allActiveEntries)
 	coverageGaps := computeBriefCoverageGaps(primaryScopes, allActiveEntries, dossierFileScopes, allUnconsolidatedNotes)
 
@@ -284,6 +324,7 @@ func BuildWorkorderBrief(
 		UnconsolidatedNotes: matchedNotes,
 	}
 
+	// --- Step 4: Fit entries and notes into the token ceiling and render Markdown ---
 	selectedEntries, selectedNotes, markdown := buildBoundedBriefMarkdown(brief, repoRoot, maxTokens)
 	brief.Entries = selectedEntries
 	brief.UnconsolidatedNotes = selectedNotes
@@ -293,6 +334,7 @@ func BuildWorkorderBrief(
 	return brief, nil
 }
 
+// readWorkorderFile reads workorderPath directly or relative to repoRoot.
 func readWorkorderFile(repoRoot, workorderPath string) (string, error) {
 	if data, err := os.ReadFile(workorderPath); err == nil {
 		return string(data), nil
@@ -306,12 +348,15 @@ func readWorkorderFile(repoRoot, workorderPath string) (string, error) {
 	return "", fmt.Errorf("reading workorder file %s: %w", workorderPath, os.ErrNotExist)
 }
 
+// resolveBriefScopes derives resolved and primary dossier scopes from explicit
+// comma-separated scopes and extracted file paths.
 func resolveBriefScopes(
 	explicitScope string,
 	extractedFiles []string,
 	activeEntries []dossiers.Entry,
 	dossierFileScopes map[string]bool,
 ) (resolved []string, primary []string) {
+	// --- Step 1: Initialize scope accumulators and add explicit scopes ---
 	seenResolved := make(map[string]bool)
 	seenPrimary := make(map[string]bool)
 
@@ -339,7 +384,8 @@ func resolveBriefScopes(
 		}
 	}
 
-	// Check if there are non-.agents files so .agents/WORKORDER.md doesn't pollute primary code scopes
+	// --- Step 2: Index known dossier scopes and check whether non-.agents code files exist ---
+	// Check if there are non-.agents files so .agents/WORKORDER.md doesn't pollute primary code scopes.
 	hasCodeFiles := false
 	for _, f := range extractedFiles {
 		if !strings.HasPrefix(f, ".agents/") {
@@ -358,6 +404,7 @@ func resolveBriefScopes(
 		}
 	}
 
+	// --- Step 3: Map extracted file paths and their ancestor directories to scopes ---
 	for _, f := range extractedFiles {
 		if hasCodeFiles && strings.HasPrefix(f, ".agents/") {
 			continue
@@ -369,7 +416,7 @@ func resolveBriefScopes(
 		}
 		if dir != "." && dir != "" {
 			addPrimary(dir)
-			// Also add ancestor directories to resolved scopes
+			// Also add ancestor directories to resolved scopes.
 			curr := dir
 			for {
 				parent := filepath.ToSlash(filepath.Dir(curr))
@@ -382,7 +429,7 @@ func resolveBriefScopes(
 				}
 				curr = parent
 			}
-			// If base name matches a known dossier scope (e.g. "delivery" for "internal/core/delivery"), add it to resolved
+			// If base name matches a known dossier scope (e.g. "delivery" for "internal/core/delivery"), add it to resolved.
 			base := filepath.Base(dir)
 			if knownDossierScopes[base] {
 				addResolved(base)
@@ -401,6 +448,7 @@ func resolveBriefScopes(
 	return resolved, primary
 }
 
+// normalizeScopeName normalizes a dossier scope identifier to slash-separated relative form.
 func normalizeScopeName(s string) string {
 	s = filepath.ToSlash(strings.TrimSpace(s))
 	s = strings.TrimPrefix(s, "./")
@@ -411,11 +459,14 @@ func normalizeScopeName(s string) string {
 	return s
 }
 
+// loadActiveEntriesForBrief loads active (non-retired, non-superseded) dossier
+// entries from the SQLite index, op-log directories, and rendered dossier files.
 func loadActiveEntriesForBrief(
 	ctx context.Context,
 	idx *index.Index,
 	repoRoot, dataDir, repoID string,
 ) ([]dossiers.Entry, map[string]bool) {
+	// --- Step 1: Set up deduplicating entry map and load entries from the SQLite index ---
 	byID := make(map[string]dossiers.Entry)
 	var orderedIDs []string
 	dossierScopes := make(map[string]bool)
@@ -446,7 +497,7 @@ func loadActiveEntriesForBrief(
 		}
 	}
 
-	// 2. From op-logs (.memory/ops, .memory/local/ops, user-dossiers/ops)
+	// --- Step 2: Project active entries from shared, local, and user op-log directories ---
 	var opsDirs []string
 	if strings.TrimSpace(repoRoot) != "" {
 		opsDirs = append(opsDirs, filepath.Join(repoRoot, ".memory", "ops"))
@@ -491,10 +542,10 @@ func loadActiveEntriesForBrief(
 		}
 	}
 
-	// 3. Fallback/augment from .memory/dossiers/ markdown or JSON files
+	// --- Step 3: Augment with entries parsed from .memory/dossiers/ Markdown or JSON files ---
 	if strings.TrimSpace(repoRoot) != "" {
 		dossiersDir := filepath.Join(repoRoot, ".memory", "dossiers")
-		_ = filepath.WalkDir(dossiersDir, func(path string, d os.DirEntry, err error) error {
+		_ = filepath.WalkDir(dossiersDir, func(filePath string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil
 			}
@@ -502,7 +553,7 @@ func loadActiveEntriesForBrief(
 			if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".history.md") {
 				return nil
 			}
-			rel, relErr := filepath.Rel(dossiersDir, path)
+			rel, relErr := filepath.Rel(dossiersDir, filePath)
 			scopeFromPath := ""
 			if relErr == nil {
 				scopeFromPath = normalizeScopeName(strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel)))
@@ -511,7 +562,7 @@ func loadActiveEntriesForBrief(
 			if scopeFromPath != "" {
 				dossierScopes[scopeFromPath] = true
 			}
-			parsedEntries, fileScope := parseDossierFileEntries(path, scopeFromPath)
+			parsedEntries, fileScope := parseDossierFileEntries(filePath, scopeFromPath)
 			if fileScope != "" {
 				dossierScopes[normalizeScopeName(fileScope)] = true
 			}
@@ -527,6 +578,7 @@ func loadActiveEntriesForBrief(
 		})
 	}
 
+	// --- Step 4: Collect active entries in deterministic insertion order ---
 	out := make([]dossiers.Entry, 0, len(byID))
 	for _, id := range orderedIDs {
 		if e, ok := byID[id]; ok {
@@ -536,13 +588,16 @@ func loadActiveEntriesForBrief(
 	return out, dossierScopes
 }
 
-func parseDossierFileEntries(path, defaultScope string) ([]dossiers.Entry, string) {
-	data, err := os.ReadFile(path)
+// parseDossierFileEntries parses dossier entries and the resolved scope name
+// from a rendered Markdown or JSON dossier file at filePath.
+func parseDossierFileEntries(filePath, defaultScope string) ([]dossiers.Entry, string) {
+	// --- Step 1: Read file content and handle JSON dossier format if applicable ---
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, defaultScope
 	}
 	content := string(data)
-	if strings.HasSuffix(strings.ToLower(path), ".json") {
+	if strings.HasSuffix(strings.ToLower(filePath), ".json") {
 		var entries []dossiers.Entry
 		if err := json.Unmarshal(data, &entries); err == nil && len(entries) > 0 {
 			for i := range entries {
@@ -554,6 +609,7 @@ func parseDossierFileEntries(path, defaultScope string) ([]dossiers.Entry, strin
 		}
 	}
 
+	// --- Step 2: Extract scope from frontmatter or top-level Markdown heading ---
 	scope := defaultScope
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -573,6 +629,7 @@ func parseDossierFileEntries(path, defaultScope string) ([]dossiers.Entry, strin
 		}
 	}
 
+	// --- Step 3: Parse Markdown entry headings, metadata lines, and body text ---
 	var entries []dossiers.Entry
 	var current *dossiers.Entry
 	var bodyLines []string
@@ -660,8 +717,13 @@ func parseDossierFileEntries(path, defaultScope string) ([]dossiers.Entry, strin
 	return entries, scope
 }
 
+// inferEntryTypeFromID infers a dossiers.EntryType from a conventional entry ID prefix
+// when disk markdown sections do not explicitly encode the entry's sub-type.
 func inferEntryTypeFromID(id string) dossiers.EntryType {
+	// --- Step 1: Normalize entry ID prefix for case-insensitive matching ---
 	lower := strings.ToLower(strings.TrimSpace(id))
+
+	// --- Step 2: Map conventional ID prefix to its canonical dossiers.EntryType ---
 	switch {
 	case strings.HasPrefix(lower, "inv-"):
 		return dossiers.EntryTypeInvariant
@@ -688,7 +750,10 @@ func inferEntryTypeFromID(id string) dossiers.EntryType {
 	}
 }
 
+// loadUnconsolidatedBriefNotes loads and deduplicates unconsolidated notes from
+// dataDir evidence directories and the repository .memory/inbox directory.
 func loadUnconsolidatedBriefNotes(dataDir, repoID, repoRoot string) []BriefNoteSummary {
+	// --- Step 1: Collect candidate note directories ---
 	var dirs []string
 	if dataDir != "" && repoID != "" {
 		dirs = append(dirs,
@@ -700,6 +765,7 @@ func loadUnconsolidatedBriefNotes(dataDir, repoID, repoRoot string) []BriefNoteS
 		dirs = append(dirs, filepath.Join(repoRoot, ".memory", "inbox"))
 	}
 
+	// --- Step 2: Parse and deduplicate JSON note files across directories ---
 	seen := make(map[string]bool)
 	var out []BriefNoteSummary
 
@@ -725,6 +791,7 @@ func loadUnconsolidatedBriefNotes(dataDir, repoID, repoRoot string) []BriefNoteS
 		}
 	}
 
+	// --- Step 3: Sort unconsolidated notes chronologically by CreatedAt then ID ---
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].CreatedAt != out[j].CreatedAt {
 			return out[i].CreatedAt < out[j].CreatedAt
@@ -734,31 +801,33 @@ func loadUnconsolidatedBriefNotes(dataDir, repoID, repoRoot string) []BriefNoteS
 	return out
 }
 
-func parseBriefNotesFromFile(path string) []BriefNoteSummary {
-	data, err := os.ReadFile(path)
+// parseBriefNotesFromFile parses unconsolidated BriefNoteSummary items from a JSON note file at filePath.
+func parseBriefNotesFromFile(filePath string) []BriefNoteSummary {
+	// --- Step 1: Unmarshal JSON note payload and skip already-consolidated notes ---
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil
 	}
 	var raw struct {
-		ID             string   `json:"id"`
-		Kind           string   `json:"kind"`
-		Type           string   `json:"type"`
-		Scope          string   `json:"scope"`
-		Statement      string   `json:"statement"`
-		Title          string   `json:"title"`
-		CreatedAt      any      `json:"created_at"`
-		Consolidated   bool     `json:"consolidated"`
-		ConsolidatedAt string   `json:"consolidated_at"`
-		SupersededBy   string   `json:"superseded_by"`
-		Anchors        []string `json:"anchors"`
+		ID             string   `json:"id"`              // Note ID.
+		Kind           string   `json:"kind"`            // Cognitive kind.
+		Type           string   `json:"type"`            // Entry type.
+		Scope          string   `json:"scope"`           // Target dossier scope.
+		Statement      string   `json:"statement"`       // Primary note statement.
+		Title          string   `json:"title"`           // Fallback note title.
+		CreatedAt      any      `json:"created_at"`      // Timestamp value.
+		Consolidated   bool     `json:"consolidated"`    // True if already consolidated.
+		ConsolidatedAt string   `json:"consolidated_at"` // Consolidation timestamp.
+		SupersededBy   string   `json:"superseded_by"`   // Superseding entry ID.
+		Anchors        []string `json:"anchors"`         // Associated file/symbol anchors.
 		Items          []struct {
-			Type    string   `json:"type"`
-			Title   string   `json:"title"`
-			Why     string   `json:"why"`
-			Do      string   `json:"do"`
-			Scope   string   `json:"scope"`
-			Anchors []string `json:"anchors"`
-		} `json:"items"`
+			Type    string   `json:"type"`    // Item type.
+			Title   string   `json:"title"`   // Item title.
+			Why     string   `json:"why"`     // Item rationale.
+			Do      string   `json:"do"`      // Item action.
+			Scope   string   `json:"scope"`   // Item scope.
+			Anchors []string `json:"anchors"` // Item anchors.
+		} `json:"items"` // Multi-item batch entries.
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil
@@ -769,13 +838,14 @@ func parseBriefNotesFromFile(path string) []BriefNoteSummary {
 
 	id := strings.TrimSpace(raw.ID)
 	if id == "" {
-		id = strings.TrimSuffix(filepath.Base(path), ".json")
+		id = strings.TrimSuffix(filepath.Base(filePath), ".json")
 	}
 	createdAtStr := ""
 	if s, ok := raw.CreatedAt.(string); ok {
 		createdAtStr = strings.TrimSpace(s)
 	}
 
+	// --- Step 2: Extract summaries from multi-item note payloads if present ---
 	if len(raw.Items) > 0 {
 		var res []BriefNoteSummary
 		for _, it := range raw.Items {
@@ -811,6 +881,7 @@ func parseBriefNotesFromFile(path string) []BriefNoteSummary {
 		return res
 	}
 
+	// --- Step 3: Extract summary from a single-note payload ---
 	kind := strings.TrimSpace(raw.Kind)
 	if kind == "" {
 		kind = strings.TrimSpace(raw.Type)
@@ -840,6 +911,7 @@ func parseBriefNotesFromFile(path string) []BriefNoteSummary {
 	}
 }
 
+// filterNotesForScopes filters unconsolidated notes to those overlapping resolvedScopes or extractedFiles.
 func filterNotesForScopes(notes []BriefNoteSummary, resolvedScopes, extractedFiles []string) []BriefNoteSummary {
 	if len(notes) == 0 {
 		return []BriefNoteSummary{}
@@ -857,11 +929,15 @@ func filterNotesForScopes(notes []BriefNoteSummary, resolvedScopes, extractedFil
 	return out
 }
 
+// scopeOverlapsTargets reports whether scope matches or is an ancestor/descendant of resolvedScopes or extractedFiles.
 func scopeOverlapsTargets(scope string, resolvedScopes, extractedFiles []string) bool {
+	// --- Step 1: Treat repo-wide default scopes as overlapping all targets ---
 	s := normalizeScopeName(scope)
 	if s == "" || s == "repo" || s == "general" || s == "_default" {
 		return true
 	}
+
+	// --- Step 2: Check prefix or exact overlap against extracted files and resolved scopes ---
 	for _, f := range extractedFiles {
 		nf := normalizeScopeName(f)
 		if nf == s || strings.HasPrefix(nf, s+"/") || strings.HasPrefix(s, nf+"/") {
@@ -883,6 +959,7 @@ func scopeOverlapsTargets(scope string, resolvedScopes, extractedFiles []string)
 	return false
 }
 
+// buildBriefStatusLine formats the single-line index freshness and health header for a workorder brief.
 func buildBriefStatusLine(
 	ctx context.Context,
 	idx *index.Index,
@@ -890,6 +967,7 @@ func buildBriefStatusLine(
 	unconsolidatedCount int,
 	activeEntries []dossiers.Entry,
 ) string {
+	// --- Step 1: Count suspect entries and read optional freshness.json state ---
 	suspectCount := 0
 	for _, e := range activeEntries {
 		if e.StaleSuspect || strings.EqualFold(strings.TrimSpace(e.Verified), "suspect") {
@@ -898,13 +976,13 @@ func buildBriefStatusLine(
 	}
 
 	var st struct {
-		UnconsolidatedNotes int    `json:"unconsolidated_notes"`
-		IndexCurrentToOpLog *bool  `json:"index_current_to_oplog"`
-		IndexHeadSHA        string `json:"index_head_sha"`
-		HeadSHA             string `json:"head_sha"`
-		LastCommit          string `json:"last_commit"`
-		SuspectEntries      int    `json:"suspect_entries"`
-		UpdatedAt           string `json:"updated_at"`
+		UnconsolidatedNotes int    `json:"unconsolidated_notes"`   // Unconsolidated note count from freshness state.
+		IndexCurrentToOpLog *bool  `json:"index_current_to_oplog"` // Whether the SQLite index is caught up with the op-log.
+		IndexHeadSHA        string `json:"index_head_sha"`         // Git HEAD SHA recorded at index build time.
+		HeadSHA             string `json:"head_sha"`               // Fallback HEAD SHA field.
+		LastCommit          string `json:"last_commit"`            // Fallback last-commit SHA field.
+		SuspectEntries      int    `json:"suspect_entries"`        // Suspect entry count from freshness state.
+		UpdatedAt           string `json:"updated_at"`             // Timestamp of freshness state update.
 	}
 	freshnessFound := false
 	if dataDir != "" && repoID != "" {
@@ -928,6 +1006,7 @@ func buildBriefStatusLine(
 		suspectCount = st.SuspectEntries
 	}
 
+	// --- Step 2: Resolve short git HEAD SHA and format index status label ---
 	headSHA := strings.TrimSpace(st.IndexHeadSHA)
 	if headSHA == "" {
 		headSHA = strings.TrimSpace(st.HeadSHA)
@@ -967,12 +1046,15 @@ func buildBriefStatusLine(
 		indexStatus, unconsolidatedCount, suspectCount)
 }
 
+// computeBriefCoverageGaps returns up to 3 coverage gap warnings for primaryScopes
+// that have no dossier or contain suspect entries.
 func computeBriefCoverageGaps(
 	primaryScopes []string,
 	activeEntries []dossiers.Entry,
 	dossierFileScopes map[string]bool,
 	allUnconsolidatedNotes []BriefNoteSummary,
 ) []string {
+	// --- Step 1: Evaluate each primary scope for dossier presence and suspect entries ---
 	var gaps []string
 	seenScope := make(map[string]bool)
 
@@ -983,7 +1065,7 @@ func computeBriefCoverageGaps(
 		}
 		seenScope[scope] = true
 
-		// Count active entries and suspect entries covering this scope
+		// Count active entries and suspect entries covering this scope.
 		activeInScope := 0
 		suspectInScope := 0
 		for _, e := range activeEntries {
@@ -995,6 +1077,7 @@ func computeBriefCoverageGaps(
 			}
 		}
 
+		// --- Step 2: Emit gap warning when a scope lacks a dossier or has suspect entries ---
 		hasDossier := activeInScope > 0 || dossierFileScopes[scope] || dossierFileScopes[filepath.Base(scope)]
 		if !hasDossier {
 			pendingNotes := 0
@@ -1019,6 +1102,8 @@ func computeBriefCoverageGaps(
 	return gaps
 }
 
+// rankEntriesForBrief filters and ranks active entries for a workorder brief using
+// target anchors, FTS5 BM25 scores, scope boosts, and Principal Architect type priorities.
 func rankEntriesForBrief(
 	ctx context.Context,
 	idx *index.Index,
@@ -1029,7 +1114,7 @@ func rankEntriesForBrief(
 		return []RankedEntry{}
 	}
 
-	// Build target anchors from extractedFiles and resolvedScopes
+	// --- Step 1: Build deduplicated target anchors and optional FTS5 BM25 score map ---
 	var targetAnchors []string
 	seenAnchor := make(map[string]bool)
 	addAnchor := func(a string) {
@@ -1047,7 +1132,6 @@ func rankEntriesForBrief(
 		addAnchor(s)
 	}
 
-	// Optional FTS BM25 query from scope/file tokens
 	ftsScores := make(map[string]float64)
 	if idx != nil {
 		if ftsQuery := buildBriefFTSQuery(extractedFiles, resolvedScopes); ftsQuery != "" {
@@ -1059,6 +1143,7 @@ func rankEntriesForBrief(
 		}
 	}
 
+	// --- Step 2: Filter to entries matching resolved scopes, extracted files, or FTS hits ---
 	var matched []dossiers.Entry
 	for _, e := range allActiveEntries {
 		if entryMatchesScopeOrFile(e, resolvedScopes, extractedFiles) || ftsScores[e.ID] > 0 {
@@ -1069,10 +1154,11 @@ func rankEntriesForBrief(
 		matched = allActiveEntries
 	}
 
+	// --- Step 3: Compute base rankings and apply workorder-specific scope and type boosts ---
 	ranked := RankEntries(matched, targetAnchors, ftsScores)
 	for i := range ranked {
 		e := ranked[i].Entry
-		// Boost entries whose DossierScope directly matches a resolved scope
+		// Boost entries whose DossierScope directly matches a resolved scope.
 		for _, rs := range resolvedScopes {
 			if strings.EqualFold(e.DossierScope, rs) || strings.EqualFold(e.DossierScope, filepath.Base(rs)) {
 				ranked[i].Score += 300
@@ -1082,7 +1168,7 @@ func rankEntriesForBrief(
 				break
 			}
 		}
-		// Boost priority PA types: invariant, gotcha, verification/procedure, architecture/interface, recent_change/decision
+		// Boost priority PA types: invariant, gotcha, verification/procedure, architecture/interface, recent_change/decision.
 		switch strings.ToLower(string(e.Type)) {
 		case "invariant", "contract", "convention":
 			ranked[i].Score += 90
@@ -1097,6 +1183,7 @@ func rankEntriesForBrief(
 		}
 	}
 
+	// --- Step 4: Sort deterministically by descending score then ascending entry ID ---
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].Score != ranked[j].Score {
 			return ranked[i].Score > ranked[j].Score
@@ -1106,7 +1193,10 @@ func rankEntriesForBrief(
 	return ranked
 }
 
+// entryMatchesScopeOrFile reports whether entry e matches any of resolvedScopes or extractedFiles
+// via its DossierScope or its file/symbol Anchors.
 func entryMatchesScopeOrFile(e dossiers.Entry, resolvedScopes, extractedFiles []string) bool {
+	// --- Step 1: Check whether the entry's DossierScope matches any resolved scope ---
 	eScope := normalizeScopeName(e.DossierScope)
 	for _, rs := range resolvedScopes {
 		nrs := normalizeScopeName(rs)
@@ -1121,6 +1211,7 @@ func entryMatchesScopeOrFile(e dossiers.Entry, resolvedScopes, extractedFiles []
 		}
 	}
 
+	// --- Step 2: Check whether any of the entry's anchors match extracted files or resolved scopes ---
 	for _, rawAnchor := range e.Anchors {
 		a := stripBriefAnchor(rawAnchor)
 		if a == "" {
@@ -1142,7 +1233,10 @@ func entryMatchesScopeOrFile(e dossiers.Entry, resolvedScopes, extractedFiles []
 	return false
 }
 
+// buildBriefFTSQuery constructs a bounded OR-joined FTS5 query from path segments
+// in resolvedScopes and filename stems in extractedFiles.
 func buildBriefFTSQuery(extractedFiles, resolvedScopes []string) string {
+	// --- Step 1: Define token sanitizer excluding generic directory names ---
 	seen := make(map[string]bool)
 	var terms []string
 	addToken := func(tok string) {
@@ -1163,6 +1257,7 @@ func buildBriefFTSQuery(extractedFiles, resolvedScopes []string) string {
 		terms = append(terms, lower)
 	}
 
+	// --- Step 2: Collect tokens from scopes and file basenames and join with OR ---
 	for _, s := range resolvedScopes {
 		for _, part := range strings.Split(s, "/") {
 			addToken(part)
@@ -1181,15 +1276,18 @@ func buildBriefFTSQuery(extractedFiles, resolvedScopes []string) string {
 	return strings.Join(terms, " OR ")
 }
 
+// buildBoundedBriefMarkdown progressively tightens entry counts, note counts, and
+// per-line character limits until the rendered Markdown fits within maxTokens.
 func buildBoundedBriefMarkdown(
 	brief *WorkorderBrief,
 	repoRoot string,
 	maxTokens int,
 ) ([]RankedEntry, []BriefNoteSummary, string) {
+	// --- Step 1: Define progressive compaction tiers ---
 	type budgetAttempt struct {
-		maxEntries   int
-		maxNotes     int
-		maxTextChars int
+		maxEntries   int // Maximum number of ranked entries to include.
+		maxNotes     int // Maximum number of unconsolidated notes to include.
+		maxTextChars int // Maximum character length for a single entry or note line.
 	}
 	attempts := []budgetAttempt{
 		{12, 8, 220},
@@ -1203,6 +1301,7 @@ func buildBoundedBriefMarkdown(
 		{0, 0, 36},
 	}
 
+	// --- Step 2: Try each compaction tier until the rendered Markdown fits maxTokens ---
 	for _, att := range attempts {
 		eCount := len(brief.Entries)
 		if eCount > att.maxEntries {
@@ -1230,6 +1329,7 @@ func buildBoundedBriefMarkdown(
 		}
 	}
 
+	// --- Step 3: Fall back to minimal header-only rendering truncated to maxBytes ---
 	md := renderWorkorderBriefMarkdown(repoRoot, brief.StatusLine, nil, brief.ResolvedScopes, nil, len(brief.Entries), nil, len(brief.UnconsolidatedNotes), 32)
 	maxBytes := maxTokens * 4
 	if maxBytes > 0 && len(md) > maxBytes {
@@ -1238,6 +1338,8 @@ func buildBoundedBriefMarkdown(
 	return []RankedEntry{}, []BriefNoteSummary{}, md
 }
 
+// renderWorkorderBriefMarkdown renders the workorder brief status header,
+// coverage gaps, resolved scopes, ranked dossier entries, and unconsolidated notes.
 func renderWorkorderBriefMarkdown(
 	repoRoot string,
 	statusLine string,
@@ -1249,6 +1351,7 @@ func renderWorkorderBriefMarkdown(
 	omittedNotes int,
 	maxTextChars int,
 ) string {
+	// --- Step 1: Write status line, coverage gap warnings, and resolved scopes ---
 	var b strings.Builder
 
 	if strings.TrimSpace(statusLine) != "" {
@@ -1271,6 +1374,7 @@ func renderWorkorderBriefMarkdown(
 		b.WriteString("Scopes: (none)\n")
 	}
 
+	// --- Step 2: Render relevant dossier entries and omitted-entry count ---
 	b.WriteString("\n### Relevant Dossier Entries\n")
 	if len(entries) == 0 {
 		if omittedEntries > 0 {
@@ -1287,6 +1391,7 @@ func renderWorkorderBriefMarkdown(
 		}
 	}
 
+	// --- Step 3: Render unconsolidated notes and omitted-note count ---
 	if len(notes) > 0 || omittedNotes > 0 {
 		b.WriteString("\n### Unconsolidated Notes\n")
 		for _, n := range notes {
@@ -1305,7 +1410,10 @@ func renderWorkorderBriefMarkdown(
 	return strings.TrimSpace(b.String()) + "\n"
 }
 
+// formatBriefEntryLine formats a single dossier entry bullet line for a workorder brief,
+// substituting a skill pointer when a procedural entry has graduated to a skill.
 func formatBriefEntryLine(e dossiers.Entry, repoRoot string, maxTextChars int) string {
+	// --- Step 1: Resolve scope and type labels and check for graduated skills ---
 	scopeLabel := strings.TrimSpace(e.DossierScope)
 	if scopeLabel == "" {
 		scopeLabel = "repo"
@@ -1323,6 +1431,8 @@ func formatBriefEntryLine(e dossiers.Entry, repoRoot string, maxTextChars int) s
 			return fmt.Sprintf("- [%s] (%s, %s) skill %s covers this procedure: %s", e.ID, kindLabel, scopeLabel, slug, skills.EntryTitleLine(e))
 		}
 	}
+
+	// --- Step 2: Format single-line statement with optional provenance suffix ---
 	stmt := compactSingleLine(e.Text, maxTextChars)
 	prov := formatEntryProvenance(e)
 	if prov != "" {
@@ -1331,13 +1441,17 @@ func formatBriefEntryLine(e dossiers.Entry, repoRoot string, maxTextChars int) s
 	return fmt.Sprintf("- [%s] (%s, %s) %s", e.ID, kindLabel, scopeLabel, stmt)
 }
 
+// formatEntryProvenance formats verification status, evidence count, or source metadata for an entry.
 func formatEntryProvenance(e dossiers.Entry) string {
+	// --- Step 1: Collect verification status ---
 	var parts []string
 	if v := strings.TrimSpace(e.Verified); v != "" {
 		parts = append(parts, "verified "+v)
 	} else if e.StaleSuspect {
 		parts = append(parts, "suspect")
 	}
+
+	// --- Step 2: Append primary evidence reference, source, or update date ---
 	if len(e.Evidence) > 0 {
 		ev := strings.TrimSpace(e.Evidence[0])
 		if len(e.Evidence) > 1 {
@@ -1352,6 +1466,7 @@ func formatEntryProvenance(e dossiers.Entry) string {
 	return strings.Join(parts, ", ")
 }
 
+// compactSingleLine collapses whitespace in s into single spaces and truncates to maxChars.
 func compactSingleLine(s string, maxChars int) string {
 	collapsed := strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 	if maxChars > 10 && len(collapsed) > maxChars {
@@ -1360,6 +1475,7 @@ func compactSingleLine(s string, maxChars int) string {
 	return collapsed
 }
 
+// firstLineBrief returns the first non-empty trimmed line of s.
 func firstLineBrief(s string) string {
 	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
@@ -1369,6 +1485,7 @@ func firstLineBrief(s string) string {
 	return ""
 }
 
+// stripBriefAnchor strips `#symbol` and `:L123` suffixes from an anchor string and normalizes it.
 func stripBriefAnchor(anchor string) string {
 	a := strings.TrimSpace(anchor)
 	if idx := strings.IndexByte(a, '#'); idx >= 0 {

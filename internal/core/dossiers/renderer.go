@@ -54,8 +54,8 @@ func renderDossierInternal(d *Dossier, entries []Entry, isHistory bool) string {
 
 	// --- Step 2: Partition entries into canonical v2.2 section groups ---
 	groups := []struct {
-		title string
-		types []EntryType
+		title string      // Section H2 heading title.
+		types []EntryType // Entry types belonging to this section.
 	}{
 		{"Invariants & contracts", []EntryType{EntryTypeInvariant, EntryTypeContract, EntryTypeConvention}},
 		{"Ruled out, failure signatures and gotchas", []EntryType{EntryTypeRuledOut, EntryTypeFailureSignature, EntryTypeGotcha, EntryTypeExternalBehaviour}},
@@ -133,18 +133,20 @@ func renderEntry(b *strings.Builder, e Entry) {
 // op amendments do not churn .memory/ATLAS.md or invalidate the system-prompt
 // KV cache prefix when ATLAS.md is included via GEMINI.md.
 func RenderAtlas(atlas *Atlas) string {
+	// --- Step 1: Write the Markdown table header ---
 	var b strings.Builder
 	b.WriteString("# Atlas\n\n")
 	b.WriteString("| Scope | Kind | Entries | Last Updated |\n")
 	b.WriteString("|---|---|---|---|\n")
 
-	// Sort dossiers deterministically by scope.
+	// --- Step 2: Sort dossiers deterministically by scope ---
 	sorted := make([]AtlasEntry, len(atlas.Dossiers))
 	copy(sorted, atlas.Dossiers)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Scope < sorted[j].Scope
 	})
 
+	// --- Step 3: Format each dossier row with UTC date granularity ---
 	for _, d := range sorted {
 		dateStr := d.LastUpdated.UTC().Format("2006-01-02")
 		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s |\n", d.Scope, d.Kind, d.EntryCount, dateStr))

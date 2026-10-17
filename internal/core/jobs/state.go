@@ -1,3 +1,20 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/jobs/state.go
+ * Description: Implements the job lifecycle state machine transition validator
+ *               and exponential retry backoff calculator.
+ *
+ * Exported Types / Functions:
+ * - ValidateTransition(): Validates whether a state transition from -> to is legal.
+ * - CanTransition():      Reports whether transitioning from -> to is permitted.
+ * - DefaultBackoff():     Computes exponential retry backoff duration capped at 15 minutes.
+ */
+
 package jobs
 
 import (
@@ -7,11 +24,13 @@ import (
 )
 
 // ValidateTransition checks if transitioning from one state to another is permitted.
+// It returns ErrInvalidTransition (wrapped) when the source, target, or transition edge is disallowed.
 // State machine according to SPEC §4.3:
 // queued -> running -> done, or failed -> retried with backoff -> dead after N attempts.
 // Reports: submitted(conversation_id) -> done when conversation goes idle.
 // Recovery: running -> queued (lease reclaim).
 func ValidateTransition(from, to State) error {
+	// --- Step 1: Validate that both source and target states are known enum values ---
 	if !from.Valid() {
 		return fmt.Errorf("%w: unknown source state %q", ErrInvalidTransition, from)
 	}
@@ -22,6 +41,7 @@ func ValidateTransition(from, to State) error {
 		return nil
 	}
 
+	// --- Step 2: Check permitted state-machine edges ---
 	switch from {
 	case StateQueued:
 		// A queued job can be leased (running).

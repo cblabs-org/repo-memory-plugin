@@ -1,3 +1,18 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/claudecode/copier.go
+ * Description: Scans ~/.claude/projects/ for enrolled repositories and copies
+ *              their raw .jsonl transcripts into <data-dir>/<repo-id>/raw/claude-code/.
+ *
+ * Exported Types / Functions:
+ * - CopyTranscripts(): Copies modified Claude Code transcripts for enrolled repositories.
+ */
+
 package claudecode
 
 import (
@@ -12,6 +27,7 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/tick"
 )
 
+// init registers CopyTranscripts with the background tick runner.
 func init() {
 	tick.RegisterCopier(CopyTranscripts)
 }
@@ -19,6 +35,7 @@ func init() {
 // CopyTranscripts scans ~/.claude/projects/ for enrolled repositories and copies their transcripts
 // raw (without parsing) into <data-dir>/<repo-id>/raw/claude-code/, respecting read-only source permissions.
 func CopyTranscripts(ctx context.Context, memoryDataDir string, enrolledRepos map[string]config.RegistryEntry) error {
+	// --- Step 1: Locate ~/.claude/projects and list project subdirectories ---
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("getting user home dir: %w", err)
@@ -33,7 +50,7 @@ func CopyTranscripts(ctx context.Context, memoryDataDir string, enrolledRepos ma
 		return fmt.Errorf("reading claude projects dir %s: %w", claudeProjectsDir, err)
 	}
 
-	// Map sanitized project directory names to enrolled repo IDs and roots
+	// --- Step 2: Match sanitized project directory names to enrolled repositories ---
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -57,8 +74,7 @@ func CopyTranscripts(ctx context.Context, memoryDataDir string, enrolledRepos ma
 
 		destRawDir := filepath.Join(memoryDataDir, matchedRepoID, "raw", "claude-code")
 
-		// Walk project directory to copy all .jsonl transcript files (including subagents/*.jsonl),
-		// skipping memory/ and respecting read-only source permissions.
+		// --- Step 3: Walk matched project directory and copy updated .jsonl transcripts ---
 		err = filepath.Walk(projPath, func(path string, info os.FileInfo, walkErr error) error {
 			if walkErr != nil {
 				return nil // skip inaccessible files
@@ -97,6 +113,7 @@ func CopyTranscripts(ctx context.Context, memoryDataDir string, enrolledRepos ma
 	return nil
 }
 
+// projectDirNameForRoot converts a repository root path into Claude Code's hyphen-sanitized project directory name.
 func projectDirNameForRoot(rootPath string) string {
 	cleaned := filepath.Clean(rootPath)
 	sanitized := strings.Map(func(r rune) rune {
@@ -111,6 +128,7 @@ func projectDirNameForRoot(rootPath string) string {
 	return sanitized
 }
 
+// shouldCopy reports whether src should be copied to dst based on existence, size, or modification time.
 func shouldCopy(src, dst string) bool {
 	srcFi, err := os.Stat(src)
 	if err != nil {
@@ -124,7 +142,9 @@ func shouldCopy(src, dst string) bool {
 	return srcFi.Size() != dstFi.Size() || srcFi.ModTime().After(dstFi.ModTime())
 }
 
+// copyRawFile copies src to dst and syncs the destination file to disk.
 func copyRawFile(src, dst string) error {
+	// --- Step 1: Open read-only source file and ensure destination directory exists ---
 	srcFile, err := os.Open(src) // Read only
 	if err != nil {
 		return fmt.Errorf("opening source file: %w", err)
@@ -135,6 +155,7 @@ func copyRawFile(src, dst string) error {
 		return fmt.Errorf("creating destination directory: %w", err)
 	}
 
+	// --- Step 2: Copy bytes into truncated destination file and sync to disk ---
 	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("opening destination file: %w", err)

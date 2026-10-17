@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/fallback.go
+ * Description: Stage 1c Sidecar Fallback distillation (SPEC §6.3.3). Scans idle or
+ *              subagent episodes with uncovered milestone steps past the conversation
+ *              mark, scrubs and distills them via the Housekeeper harness, validates
+ *              the output, writes sidecar inbox notes, and advances conversation marks.
+ *
+ * Exported Types / Functions:
+ * - DefaultFallbackIdleThreshold:           Default idle threshold (2h) before fallback processes a conversation.
+ * - MinFallbackQuotaFraction:               Minimum remaining model quota fraction required for fallback.
+ * - PipelineExecutor.RunSidecarFallback():  Executes Stage 1c sidecar fallback across eligible episodes.
+ */
+
 package tick
 
 import (
@@ -30,6 +49,7 @@ const (
 	MinFallbackQuotaFraction = 0.25
 )
 
+// now returns the current UTC timestamp using p.Now if configured or time.Now().
 func (p *PipelineExecutor) now() time.Time {
 	if p.Now != nil {
 		return p.Now().UTC()
@@ -37,6 +57,7 @@ func (p *PipelineExecutor) now() time.Time {
 	return time.Now().UTC()
 }
 
+// fallbackIdleThreshold returns p.FallbackIdleThreshold when positive, or DefaultFallbackIdleThreshold.
 func (p *PipelineExecutor) fallbackIdleThreshold() time.Duration {
 	if p.FallbackIdleThreshold > 0 {
 		return p.FallbackIdleThreshold
@@ -44,6 +65,7 @@ func (p *PipelineExecutor) fallbackIdleThreshold() time.Duration {
 	return DefaultFallbackIdleThreshold
 }
 
+// checkQuotaHeadroom verifies that remaining model quota meets the configured spend guard quota floor.
 func (p *PipelineExecutor) checkQuotaHeadroom(ctx context.Context) bool {
 	return p.checkQuotaWithFloor(ctx, p.effectiveSpendConfig().QuotaFloor)
 }
@@ -54,6 +76,7 @@ func (p *PipelineExecutor) checkQuotaHeadroom(ctx context.Context) bool {
 // their session records, invokes Housekeeper (StageDistill / repo-memory-distiller), validates
 // the output, writes source: "sidecar" inbox notes, and advances the conversation mark.
 func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) {
+	// --- Step 1: Validate housekeeper, turn_notes mode, and episode store ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -86,6 +109,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 		return 0, nil
 	}
 
+	// --- Step 2: Open optional subagent store and evaluate A5 spend guards ---
 	var subStore *state.SubagentStore
 	if p.dataDir != "" && p.repoID != "" {
 		dbPath := state.SubagentDBPath(p.dataDir, p.repoID)
@@ -109,6 +133,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 		return 0, nil
 	}
 
+	// --- Step 3: Iterate over episodes and filter by mark, eligibility, and milestone gates ---
 	for _, ep := range episodes {
 		if err := ctx.Err(); err != nil {
 			if distilledCount > 0 {
@@ -180,6 +205,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 			break
 		}
 
+		// --- Step 4: Prepare session container, scrub secrets, and invoke Housekeeper distiller ---
 		artifacts := loadConversationArtifactsMap(p.dataDir, p.repoID, convID)
 		prepared, err := prepare.PrepareSession(convID, ep.Header.Checkpoints, uncovered, artifacts)
 		if err != nil {
@@ -217,6 +243,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 		totalEstimatedTokens += estTokens
 		totalActualTokens += res.Usage.InputTokens + res.Usage.OutputTokens
 
+		// --- Step 5: Validate distiller output, scrub fields, write inbox note, and advance mark ---
 		items, valErr := prepare.ValidateDistillerOutput(res.Payload, prepared)
 		if valErr != nil {
 			_, _ = scrub.QuarantinePayload(p.dataDir, p.repoID, "sidecar-output", valErr.Error(), []byte(res.Payload))
@@ -328,6 +355,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 		_ = state.SaveMark(p.dataDir, p.repoID, mark)
 	}
 
+	// --- Step 6: Record spend guard telemetry if any episodes were distilled ---
 	if distilledCount > 0 {
 		p.RecordSpendRun("fallback", totalEstimatedTokens, totalActualTokens)
 	}
@@ -335,6 +363,7 @@ func (p *PipelineExecutor) RunSidecarFallback(ctx context.Context) (int, error) 
 	return notesWritten, nil
 }
 
+// stepsAfterMark returns the slice of steps occurring after markStepIndex (or all steps >= 0 when isInitialMark is true).
 func stepsAfterMark(steps []harness.Step, markStepIndex int, isInitialMark bool) []harness.Step {
 	var out []harness.Step
 	for _, s := range steps {
@@ -349,10 +378,14 @@ func stepsAfterMark(steps []harness.Step, markStepIndex int, isInitialMark bool)
 	return out
 }
 
+// stepBounds returns the minimum and maximum step indices in uncovered, or defaultStart when uncovered is empty.
 func stepBounds(uncovered []harness.Step, defaultStart int) (firstStep, lastStep int) {
+	// --- Step 1: Handle empty slice fallback ---
 	if len(uncovered) == 0 {
 		return defaultStart, defaultStart
 	}
+
+	// --- Step 2: Scan uncovered steps for minimum and maximum index ---
 	firstStep = uncovered[0].Index
 	lastStep = uncovered[0].Index
 	for _, s := range uncovered[1:] {
@@ -366,7 +399,9 @@ func stepBounds(uncovered []harness.Step, defaultStart int) (firstStep, lastStep
 	return firstStep, lastStep
 }
 
+// extractLastStepTimestamp extracts the latest step timestamp from uncovered RawData, falling back to ended or currentTS.
 func extractLastStepTimestamp(uncovered []harness.Step, ended time.Time, currentTS string) string {
+	// --- Step 1: Search uncovered steps in reverse order for a raw timestamp field ---
 	for i := len(uncovered) - 1; i >= 0; i-- {
 		raw := uncovered[i].RawData
 		if len(raw) == 0 {
@@ -378,12 +413,15 @@ func extractLastStepTimestamp(uncovered []harness.Step, ended time.Time, current
 			}
 		}
 	}
+
+	// --- Step 2: Fall back to episode Ended timestamp or existing mark timestamp ---
 	if !ended.IsZero() {
 		return ended.UTC().Format(time.RFC3339)
 	}
 	return currentTS
 }
 
+// isEligibleForFallback reports whether an episode satisfies the mode, subagent, or idle-duration rules for Stage 1c fallback.
 func isEligibleForFallback(
 	mode string,
 	isSubagent bool,
@@ -392,9 +430,12 @@ func isEligibleForFallback(
 	now time.Time,
 	idleThreshold time.Duration,
 ) bool {
+	// --- Step 1: Immediately allow fallback-only mode or subagent sessions ---
 	if mode == "fallback-only" || isSubagent {
 		return true
 	}
+
+	// --- Step 2: Check pending continuation or request step against idleThreshold ---
 	if mark != nil && (mark.PendingContinuation || mark.PendingRequestStep > 0) {
 		if !ended.IsZero() && now.Sub(ended) >= idleThreshold {
 			return true
@@ -403,13 +444,18 @@ func isEligibleForFallback(
 			return true
 		}
 	}
+
+	// --- Step 3: Check whether the episode ended at least idleThreshold ago ---
 	if !ended.IsZero() && now.Sub(ended) >= idleThreshold {
 		return true
 	}
 	return false
 }
 
+// hasUncoveredMilestone reports whether uncovered steps contain at least one milestone event
+// (commit/push/PR, >= 2 file edits + build/test, WORKORDER/PROJECT update, or error resolved after >= 15 steps).
 func hasUncoveredMilestone(uncovered []harness.Step, allSteps []harness.Step, hdr episode.Header, isInitialMark bool) bool {
+	// --- Step 1: Check header commits on initial mark ---
 	if isInitialMark && len(hdr.Commits) > 0 {
 		for _, c := range hdr.Commits {
 			if strings.TrimSpace(c) != "" {
@@ -421,6 +467,7 @@ func hasUncoveredMilestone(uncovered []harness.Step, allSteps []harness.Step, hd
 	distinctEdits := make(map[string]bool)
 	hasTestOrBuild := false
 
+	// --- Step 2: Scan uncovered steps for commits, edits, test/build runs, and PA updates ---
 	for _, s := range uncovered {
 		// 1 & 2. Commit, branch push, or PR creation/merge.
 		if strings.TrimSpace(s.Commit) != "" {
@@ -469,7 +516,7 @@ func hasUncoveredMilestone(uncovered []harness.Step, allSteps []harness.Step, hd
 		return true
 	}
 
-	// 4. Error resolved after >= 15 steps.
+	// --- Step 3: Check for error resolution spanning at least 15 steps ---
 	firstFailStepIdx := -1
 	for _, s := range allSteps {
 		if isEpisodeStepFailed(s) {
@@ -488,10 +535,14 @@ func hasUncoveredMilestone(uncovered []harness.Step, allSteps []harness.Step, hd
 	return false
 }
 
+// isEpisodeTestOrBuildStep reports whether step s represents a test or build execution.
 func isEpisodeTestOrBuildStep(s harness.Step) bool {
+	// --- Step 1: Check explicit test step kind ---
 	if s.Kind == harness.StepKindTest {
 		return true
 	}
+
+	// --- Step 2: Match known build and test command patterns ---
 	combined := strings.ToLower(s.Command + " " + s.Action + " " + s.Suite)
 	for _, pat := range []string{
 		"go test",
@@ -514,7 +565,9 @@ func isEpisodeTestOrBuildStep(s harness.Step) bool {
 	return false
 }
 
+// isEpisodeStepFailed reports whether command or test step s failed based on exit code, counts, outcome, or output markers.
 func isEpisodeStepFailed(s harness.Step) bool {
+	// --- Step 1: Check step kind, exit code, and failure count ---
 	if s.Kind != harness.StepKindCommand && s.Kind != harness.StepKindTest {
 		return false
 	}
@@ -524,6 +577,8 @@ func isEpisodeStepFailed(s harness.Step) bool {
 	if s.Failed > 0 {
 		return true
 	}
+
+	// --- Step 2: Check normalized outcome label and failure text markers ---
 	outcome := strings.ToLower(strings.TrimSpace(s.Outcome))
 	if outcome == "error" || outcome == "failed" || outcome == "fail" {
 		return true
@@ -543,13 +598,17 @@ func isEpisodeStepFailed(s harness.Step) bool {
 	return false
 }
 
+// isEpisodeStepSucceeded reports whether command or test step s succeeded.
 func isEpisodeStepSucceeded(s harness.Step) bool {
+	// --- Step 1: Reject non-command/test steps and steps that failed ---
 	if s.Kind != harness.StepKindCommand && s.Kind != harness.StepKindTest {
 		return false
 	}
 	if isEpisodeStepFailed(s) {
 		return false
 	}
+
+	// --- Step 2: Check zero exit code, pass counts, or success outcome ---
 	if s.ExitCode != nil && *s.ExitCode == 0 {
 		return true
 	}
@@ -563,7 +622,9 @@ func isEpisodeStepSucceeded(s harness.Step) bool {
 	return isEpisodeTestOrBuildStep(s)
 }
 
+// loadConversationArtifactsMap reads markdown artifacts stored under the conversation's evidence directory.
 func loadConversationArtifactsMap(dataDir, repoID, convID string) map[string]string {
+	// --- Step 1: Validate inputs and check conversation artifact directory ---
 	if dataDir == "" || repoID == "" || convID == "" {
 		return nil
 	}
@@ -573,6 +634,7 @@ func loadConversationArtifactsMap(dataDir, repoID, convID string) map[string]str
 		return nil
 	}
 
+	// --- Step 2: Walk directory for user-authored markdown files ---
 	var mdFiles []string
 	_ = filepath.WalkDir(convDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -600,6 +662,7 @@ func loadConversationArtifactsMap(dataDir, repoID, convID string) map[string]str
 		return nil
 	}
 
+	// --- Step 3: Read and key non-empty markdown contents by relative slash path ---
 	sort.Strings(mdFiles)
 	out := make(map[string]string, len(mdFiles))
 	for _, fullPath := range mdFiles {
@@ -618,7 +681,9 @@ func loadConversationArtifactsMap(dataDir, repoID, convID string) map[string]str
 	return out
 }
 
+// buildAllowedIDs constructs the set of known session, episode, and commit identifiers exempt from high-entropy scrubbing.
 func buildAllowedIDs(convID string, ep *episode.Episode) map[string]bool {
+	// --- Step 1: Initialize allowlist helper and add conversation ID ---
 	allowed := map[string]bool{}
 	add := func(id string) {
 		if trimmed := strings.TrimSpace(id); trimmed != "" {
@@ -626,6 +691,8 @@ func buildAllowedIDs(convID string, ep *episode.Episode) map[string]bool {
 		}
 	}
 	add(convID)
+
+	// --- Step 2: Add episode header and step commit identifiers ---
 	if ep != nil {
 		add(ep.Header.EpisodeID)
 		add(ep.Header.SessionID)
@@ -641,6 +708,7 @@ func buildAllowedIDs(convID string, ep *episode.Episode) map[string]bool {
 	return allowed
 }
 
+// scrubFieldText runs scrub.Scrub on a non-empty note item field string.
 func scrubFieldText(val string, ctx scrub.Context) (string, error) {
 	if val == "" {
 		return "", nil
@@ -652,7 +720,9 @@ func scrubFieldText(val string, ctx scrub.Context) (string, error) {
 	return res.Text, nil
 }
 
+// collectEpisodeExposures aggregates deduplicated ExposureRecords from the episode header, steps, and delivery ledger.
 func collectEpisodeExposures(dataDir, repoID, convID string, ep *episode.Episode) []delivery.ExposureRecord {
+	// --- Step 1: Set up deduplicating accumulator ---
 	var out []delivery.ExposureRecord
 	seen := make(map[string]bool)
 
@@ -669,6 +739,7 @@ func collectEpisodeExposures(dataDir, repoID, convID string, ep *episode.Episode
 		}
 	}
 
+	// --- Step 2: Collect exposures recorded on episode header and exposure steps ---
 	if ep != nil {
 		for _, id := range ep.Header.Exposures {
 			addExp(delivery.ExposureRecord{EntryID: id})
@@ -703,6 +774,7 @@ func collectEpisodeExposures(dataDir, repoID, convID string, ep *episode.Episode
 		}
 	}
 
+	// --- Step 3: Merge exposures from on-disk conversation delivery ledger ---
 	if dataDir != "" && repoID != "" && convID != "" {
 		ledgerPath := filepath.Join(dataDir, repoID, "ledgers", state.SanitizeConversationID(convID)+".json")
 		if data, err := os.ReadFile(ledgerPath); err == nil {
@@ -718,6 +790,7 @@ func collectEpisodeExposures(dataDir, repoID, convID string, ep *episode.Episode
 	return out
 }
 
+// firstNonEmptyStr returns the first non-whitespace string from vals, or "".
 func firstNonEmptyStr(vals ...string) string {
 	for _, v := range vals {
 		if trimmed := strings.TrimSpace(v); trimmed != "" {

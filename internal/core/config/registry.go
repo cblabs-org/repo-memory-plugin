@@ -1,3 +1,33 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/registry.go
+ * Description: Enrolled repository registry (<data-dir>/registry.json) persistence,
+ *              mtime-based in-memory caching, symlink-aware workspace lookup,
+ *              and subdirectory resolution.
+ *
+ * Exported Types / Functions:
+ * - RegistryEntry:              Metadata for an enrolled workspace in <data-dir>/registry.json.
+ *
+ *   json.Unmarshaler:
+ *   - UnmarshalJSON():          Decodes both snake_case and legacy PascalCase JSON keys.
+ *
+ * - Registry:                   Map of workspace root paths to RegistryEntry values.
+ * - RegistryPath():             Returns the path to registry.json inside the data directory.
+ * - IsEnrolled():               Reports whether a repository root is enrolled via fast marker or registry.
+ * - LoadRegistry():             Reads and caches <data-dir>/registry.json by modification time.
+ * - SaveRegistry():             Atomically persists the Registry to <data-dir>/registry.json.
+ * - AddToRegistry():            Registers one or more workspace paths for a repoID and rootPath.
+ * - SetCreatedInstructionFile(): Updates CreatedInstructionFile on registry entries matching repoRoot.
+ * - RemoveFromRegistry():       Deletes all registry entries matching repoRoot and returns removed RepoIDs.
+ * - FindRegistryEntry():        Resolves a workspace or subdirectory path to its enrolled RegistryEntry.
+ * - IsSubdir():                 Reports whether child is a strict subdirectory of parent.
+ */
+
 package config
 
 import (
@@ -12,25 +42,28 @@ import (
 
 // RegistryEntry represents an enrolled repository entry in <data-dir>/registry.json.
 type RegistryEntry struct {
-	RepoID                 string `json:"repo_id"`
-	RootPath               string `json:"root_path"`
-	Enabled                *bool  `json:"enabled,omitempty"`
-	CreatedInstructionFile bool   `json:"created_instruction_file,omitempty"`
+	RepoID                 string `json:"repo_id"`                            // Stable slug derived from git origin remote or root path hash.
+	RootPath               string `json:"root_path"`                          // Primary filesystem root path of the enrolled repository.
+	Enabled                *bool  `json:"enabled,omitempty"`                  // Optional per-entry enable/disable override.
+	CreatedInstructionFile bool   `json:"created_instruction_file,omitempty"` // Whether enrolment created GEMINI.md from scratch.
 }
 
 // UnmarshalJSON supports both snake_case (repo_id, root_path) and PascalCase (RepoID, RootPath).
 func (e *RegistryEntry) UnmarshalJSON(data []byte) error {
+	// --- Step 1: Decode JSON into an alias struct with legacy PascalCase fallback fields ---
 	type Alias RegistryEntry
 	var aux struct {
-		Alias
-		AltRepoID                 string `json:"RepoID"`
-		AltRootPath               string `json:"RootPath"`
-		AltEnabled                *bool  `json:"Enabled"`
-		AltCreatedInstructionFile *bool  `json:"CreatedInstructionFile"`
+		Alias                                   // Embedded alias for standard snake_case fields.
+		AltRepoID                 string `json:"RepoID"`                 // Legacy PascalCase RepoID field.
+		AltRootPath               string `json:"RootPath"`               // Legacy PascalCase RootPath field.
+		AltEnabled                *bool  `json:"Enabled"`                // Legacy PascalCase Enabled field.
+		AltCreatedInstructionFile *bool  `json:"CreatedInstructionFile"` // Legacy PascalCase CreatedInstructionFile field.
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
+
+	// --- Step 2: Populate RegistryEntry fields and apply PascalCase fallbacks ---
 	*e = RegistryEntry(aux.Alias)
 	if e.RepoID == "" && aux.AltRepoID != "" {
 		e.RepoID = aux.AltRepoID
@@ -59,10 +92,10 @@ func RegistryPath(dataDir string) string {
 }
 
 var (
-	registryCacheMu     sync.RWMutex
-	cachedRegistry      Registry
-	cachedRegistryPath  string
-	cachedRegistryMtime time.Time
+	registryCacheMu     sync.RWMutex // Guards in-memory cached registry state.
+	cachedRegistry      Registry     // Last parsed Registry snapshot.
+	cachedRegistryPath  string       // Filesystem path of the cached registry.json.
+	cachedRegistryMtime time.Time    // Modification time of registry.json when cached.
 )
 
 // IsEnrolled reports whether repoRoot is enrolled in repo-memory.
@@ -80,6 +113,7 @@ func IsEnrolled(repoRoot string) bool {
 // If the file does not exist or is empty, an empty Registry is returned without error.
 // Parsed results are cached by file modification time.
 func LoadRegistry(dataDir string) (Registry, error) {
+	// --- Step 1: Stat registry.json and handle non-existent file ---
 	path := RegistryPath(dataDir)
 
 	fi, err := os.Stat(path)
@@ -95,6 +129,7 @@ func LoadRegistry(dataDir string) (Registry, error) {
 		return nil, fmt.Errorf("reading registry %s: %w", path, err)
 	}
 
+	// --- Step 2: Return a shallow copy if the cached mtime matches ---
 	registryCacheMu.RLock()
 	if cachedRegistry != nil && cachedRegistryPath == path && cachedRegistryMtime.Equal(fi.ModTime()) {
 		regCopy := make(Registry, len(cachedRegistry))
@@ -106,6 +141,7 @@ func LoadRegistry(dataDir string) (Registry, error) {
 	}
 	registryCacheMu.RUnlock()
 
+	// --- Step 3: Read and unmarshal registry.json from disk ---
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading registry %s: %w", path, err)
@@ -123,6 +159,7 @@ func LoadRegistry(dataDir string) (Registry, error) {
 		reg = make(Registry)
 	}
 
+	// --- Step 4: Update the in-memory cache and return a defensive copy ---
 	registryCacheMu.Lock()
 	cachedRegistry = reg
 	cachedRegistryPath = path
@@ -138,6 +175,7 @@ func LoadRegistry(dataDir string) (Registry, error) {
 
 // SaveRegistry writes the Registry to <data-dir>/registry.json atomically.
 func SaveRegistry(dataDir string, reg Registry) error {
+	// --- Step 1: Ensure data directory exists and marshal Registry as indented JSON ---
 	if dataDir == "" {
 		dataDir = DataDir()
 	}
@@ -151,6 +189,7 @@ func SaveRegistry(dataDir string, reg Registry) error {
 		return fmt.Errorf("marshaling registry: %w", err)
 	}
 
+	// --- Step 2: Atomically write temporary file and rename over registry.json ---
 	tmpFile := filepath.Join(dataDir, fmt.Sprintf("registry-%d.tmp", os.Getpid()))
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("writing temporary registry %s: %w", tmpFile, err)
@@ -161,6 +200,7 @@ func SaveRegistry(dataDir string, reg Registry) error {
 		return fmt.Errorf("renaming registry file to %s: %w", path, err)
 	}
 
+	// --- Step 3: Invalidate the in-memory registry cache ---
 	registryCacheMu.Lock()
 	cachedRegistry = nil
 	registryCacheMu.Unlock()
@@ -170,6 +210,7 @@ func SaveRegistry(dataDir string, reg Registry) error {
 
 // AddToRegistry records workspace paths mapping to the given repoID and rootPath.
 func AddToRegistry(dataDir string, workspacePaths []string, repoID, rootPath string) error {
+	// --- Step 1: Load existing registry and preserve flags from prior registration ---
 	reg, err := LoadRegistry(dataDir)
 	if err != nil {
 		return err
@@ -192,7 +233,7 @@ func AddToRegistry(dataDir string, workspacePaths []string, repoID, rootPath str
 		}
 	}
 
-	// Always ensure root path is registered
+	// --- Step 2: Register canonical and symlink-resolved paths for root and workspaces ---
 	reg[cleanRoot] = entry
 	if evalRoot != "" && evalRoot != cleanRoot {
 		reg[evalRoot] = entry
@@ -211,6 +252,7 @@ func AddToRegistry(dataDir string, workspacePaths []string, repoID, rootPath str
 
 // SetCreatedInstructionFile updates CreatedInstructionFile on registry entries matching repoRoot.
 func SetCreatedInstructionFile(dataDir, repoRoot string, created bool) error {
+	// --- Step 1: Load registry and normalize target root path ---
 	reg, err := LoadRegistry(dataDir)
 	if err != nil {
 		return err
@@ -219,6 +261,7 @@ func SetCreatedInstructionFile(dataDir, repoRoot string, created bool) error {
 	cleanRoot := filepath.Clean(repoRoot)
 	evalRoot, _ := filepath.EvalSymlinks(cleanRoot)
 
+	// --- Step 2: Match entries by direct or symlink-evaluated root path and update flag ---
 	updated := false
 	for k, entry := range reg {
 		kClean := filepath.Clean(k)
@@ -251,6 +294,7 @@ func SetCreatedInstructionFile(dataDir, repoRoot string, created bool) error {
 // RemoveFromRegistry removes any entries matching repoRoot (or its worktrees) from registry.json.
 // Returns the list of distinct RepoIDs removed.
 func RemoveFromRegistry(dataDir, repoRoot string) ([]string, error) {
+	// --- Step 1: Load registry and normalize target root path ---
 	reg, err := LoadRegistry(dataDir)
 	if err != nil {
 		return nil, err
@@ -262,6 +306,7 @@ func RemoveFromRegistry(dataDir, repoRoot string) ([]string, error) {
 	var removedIDs []string
 	seen := make(map[string]bool)
 
+	// --- Step 2: Delete all entries matching repoRoot directly or via symlinks ---
 	for k, entry := range reg {
 		kClean := filepath.Clean(k)
 		kEval, _ := filepath.EvalSymlinks(kClean)
@@ -286,6 +331,7 @@ func RemoveFromRegistry(dataDir, repoRoot string) ([]string, error) {
 		}
 	}
 
+	// --- Step 3: Persist updated registry ---
 	if err := SaveRegistry(dataDir, reg); err != nil {
 		return nil, err
 	}
@@ -296,6 +342,7 @@ func RemoveFromRegistry(dataDir, repoRoot string) ([]string, error) {
 // FindRegistryEntry looks up a workspace path in the registry.
 // Returns (*RegistryEntry, true, nil) if found, (nil, false, nil) if not enrolled.
 func FindRegistryEntry(dataDir, workspacePath string) (*RegistryEntry, bool, error) {
+	// --- Step 1: Load registry and check direct path match ---
 	reg, err := LoadRegistry(dataDir)
 	if err != nil {
 		return nil, false, err
@@ -303,12 +350,11 @@ func FindRegistryEntry(dataDir, workspacePath string) (*RegistryEntry, bool, err
 
 	cleanPath := filepath.Clean(workspacePath)
 
-	// 1. Direct match
 	if entry, ok := reg[cleanPath]; ok {
 		return &entry, true, nil
 	}
 
-	// 2. Symlink-evaluated match
+	// --- Step 2: Check symlink-evaluated path match ---
 	evalPath, err := filepath.EvalSymlinks(cleanPath)
 	if err == nil && evalPath != cleanPath {
 		if entry, ok := reg[evalPath]; ok {
@@ -316,7 +362,7 @@ func FindRegistryEntry(dataDir, workspacePath string) (*RegistryEntry, bool, err
 		}
 	}
 
-	// 3. Subdirectory match (workspace is inside an enrolled repository root/worktree)
+	// --- Step 3: Check whether workspacePath is a subdirectory of any registered root ---
 	for regPath, entry := range reg {
 		if isSubdir(cleanPath, regPath) {
 			return &entry, true, nil
@@ -338,6 +384,7 @@ func IsSubdir(child, parent string) bool {
 	return rel != "." && !strings.HasPrefix(rel, "..") && !strings.HasPrefix(rel, "/") && !strings.HasPrefix(rel, `\`)
 }
 
+// isSubdir delegates to IsSubdir for package-internal callers.
 func isSubdir(child, parent string) bool {
 	return IsSubdir(child, parent)
 }

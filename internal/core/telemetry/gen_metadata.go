@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/telemetry/gen_metadata.go
+ * Description: Reads and parses per-turn token usage telemetry from Antigravity
+ *              gen_metadata files.
+ *
+ * Exported Types / Functions:
+ * - TurnMetadata:       Captures token metrics for a single IDE turn.
+ * - GenMetadata:        Captures aggregate and per-turn token usage for IDE sessions.
+ * - ReadGenMetadata():  Reads and parses gen_metadata from disk if present.
+ * - ParseGenMetadata(): Parses raw JSON bytes into a GenMetadata summary.
+ */
+
 package telemetry
 
 import (
@@ -9,34 +27,36 @@ import (
 
 // TurnMetadata captures token metrics for a single IDE turn.
 type TurnMetadata struct {
-	TurnID              string `json:"turn_id,omitempty"`
-	TurnIndex           int    `json:"turn_index,omitempty"`
-	UncachedInputTokens int    `json:"uncached_input_tokens,omitempty"`
-	CachedInputTokens   int    `json:"cached_input_tokens,omitempty"`
-	OutputTokens        int    `json:"output_tokens,omitempty"`
-	TotalTokens         int    `json:"total_tokens,omitempty"`
+	TurnID              string `json:"turn_id,omitempty"`               // Optional unique identifier for the turn.
+	TurnIndex           int    `json:"turn_index,omitempty"`            // Zero-based index of the turn within the session.
+	UncachedInputTokens int    `json:"uncached_input_tokens,omitempty"` // Input tokens billed without context caching.
+	CachedInputTokens   int    `json:"cached_input_tokens,omitempty"`   // Input tokens served from context cache.
+	OutputTokens        int    `json:"output_tokens,omitempty"`         // Generated completion tokens for the turn.
+	TotalTokens         int    `json:"total_tokens,omitempty"`          // Combined input and output tokens for the turn.
 }
 
 // GenMetadata captures per-turn token usage for IDE sessions.
 type GenMetadata struct {
-	UncachedInputTokens int            `json:"uncached_input_tokens,omitempty"`
-	CachedInputTokens   int            `json:"cached_input_tokens,omitempty"`
-	OutputTokens        int            `json:"output_tokens,omitempty"`
-	TotalTokens         int            `json:"total_tokens,omitempty"`
-	Turns               []TurnMetadata `json:"turns,omitempty"`
+	UncachedInputTokens int            `json:"uncached_input_tokens,omitempty"` // Aggregate uncached input tokens across turns.
+	CachedInputTokens   int            `json:"cached_input_tokens,omitempty"`   // Aggregate cached input tokens across turns.
+	OutputTokens        int            `json:"output_tokens,omitempty"`         // Aggregate output tokens across turns.
+	TotalTokens         int            `json:"total_tokens,omitempty"`          // Total tokens consumed across the session.
+	Turns               []TurnMetadata `json:"turns,omitempty"`                 // Per-turn token usage breakdown.
 }
 
 // ReadGenMetadata reads per-turn token usage from the Antigravity gen_metadata file.
 // If dataDir is empty, it checks ~/.gemini/antigravity.
 // If the file does not exist, it returns nil, nil without error.
 //
-// Experimental: undocumented Antigravity internal, may change without notice
+// Experimental: undocumented Antigravity internal, may change without notice.
 func ReadGenMetadata(dataDir string) (*GenMetadata, error) {
+	// --- Step 1: Resolve the candidate gen_metadata file path ---
 	targetPath := resolveGenMetadataPath(dataDir)
 	if targetPath == "" {
 		return nil, nil
 	}
 
+	// --- Step 2: Read and parse the JSON metadata file ---
 	data, err := os.ReadFile(targetPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -55,14 +75,14 @@ func ReadGenMetadata(dataDir string) (*GenMetadata, error) {
 
 // ParseGenMetadata parses the raw JSON bytes of gen_metadata.
 func ParseGenMetadata(data []byte) (*GenMetadata, error) {
-	// Try parsing as GenMetadata object first
+	// --- Step 1: Try parsing as a top-level GenMetadata object ---
 	var meta GenMetadata
 	if err := json.Unmarshal(data, &meta); err == nil && (meta.UncachedInputTokens > 0 || meta.CachedInputTokens > 0 || meta.OutputTokens > 0 || len(meta.Turns) > 0) {
 		aggregateIfNeeded(&meta)
 		return &meta, nil
 	}
 
-	// Try parsing as a slice of TurnMetadata
+	// --- Step 2: Try parsing as a JSON array of TurnMetadata records ---
 	var turns []TurnMetadata
 	if err := json.Unmarshal(data, &turns); err == nil && len(turns) > 0 {
 		meta = GenMetadata{
@@ -72,7 +92,7 @@ func ParseGenMetadata(data []byte) (*GenMetadata, error) {
 		return &meta, nil
 	}
 
-	// Try generic unmarshal to check if it's valid JSON object
+	// --- Step 3: Fall back to generic JSON object validation ---
 	var generic map[string]any
 	if err := json.Unmarshal(data, &generic); err == nil {
 		aggregateIfNeeded(&meta)
@@ -82,6 +102,7 @@ func ParseGenMetadata(data []byte) (*GenMetadata, error) {
 	return nil, fmt.Errorf("unrecognized gen_metadata JSON format")
 }
 
+// aggregateIfNeeded computes top-level token totals from meta.Turns when top-level counters are zero.
 func aggregateIfNeeded(meta *GenMetadata) {
 	if meta.UncachedInputTokens == 0 && meta.CachedInputTokens == 0 && meta.OutputTokens == 0 && len(meta.Turns) > 0 {
 		for _, t := range meta.Turns {
@@ -95,7 +116,9 @@ func aggregateIfNeeded(meta *GenMetadata) {
 	}
 }
 
+// resolveGenMetadataPath locates gen_metadata.json or gen_metadata inside dataDir (or ~/.gemini/antigravity).
 func resolveGenMetadataPath(dataDir string) string {
+	// --- Step 1: Default to ~/.gemini/antigravity when dataDir is empty ---
 	if dataDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -104,7 +127,7 @@ func resolveGenMetadataPath(dataDir string) string {
 		dataDir = filepath.Join(home, ".gemini", "antigravity")
 	}
 
-	// Check if dataDir itself is an existing file
+	// --- Step 2: Probe direct file path and known gen_metadata filenames ---
 	if fi, err := os.Stat(dataDir); err == nil && !fi.IsDir() {
 		return dataDir
 	}

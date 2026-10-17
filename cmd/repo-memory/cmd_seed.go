@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -43,10 +43,12 @@ var (
 	seedDryRun       bool   // Whether to preview seeded ops without writing to disk.
 )
 
+// seedCmd defines the `repo-memory seed` subcommand.
 var seedCmd = &cobra.Command{
 	Use:   "seed",
 	Short: "Seed memory ops from Principal Architect completion reports",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve repository root and relative path helper ---
 		repoRoot, err := gitops.FindRepoRoot(seedRepoDir)
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
@@ -79,6 +81,7 @@ var seedCmd = &cobra.Command{
 			return inRepo
 		}
 
+		// --- Step 2: Resolve candidate PA workspace, ops, and config paths ---
 		var paDirs []string
 		if cmd.Flags().Changed("pa-dir") {
 			paDirs = []string{resolve(seedPaDir, true)}
@@ -92,6 +95,7 @@ var seedCmd = &cobra.Command{
 		resolvedOpsDir := resolve(seedOpsDir, cmd.Flags().Changed("ops-dir"))
 		resolvedConfigPath := resolve(seedConfigPath, cmd.Flags().Changed("config"))
 
+		// --- Step 3: Execute Principal Architect workspace seeding ---
 		_, err = SeedPAWorkspace(
 			cmd.Context(),
 			repoRoot,

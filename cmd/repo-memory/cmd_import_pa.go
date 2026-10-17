@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -35,10 +35,12 @@ import (
 
 var importPARepoDir string // Target repository root path for `repo-memory import-pa --repo`.
 
+// importPACmd defines the `repo-memory import-pa` subcommand.
 var importPACmd = &cobra.Command{
 	Use:   "import-pa [dir]",
 	Short: "Import Principal Architect files as episodes",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve repository root and repository ID ---
 		repoRoot, err := gitops.FindRepoRoot(importPARepoDir)
 		if err != nil {
 			return fmt.Errorf("finding repo root: %w", err)
@@ -54,6 +56,7 @@ var importPACmd = &cobra.Command{
 			customDir = args[0]
 		}
 
+		// --- Step 2: Import PA workspace artifacts and print summary ---
 		importedCount, err := ImportPAWorkspace(repoRoot, config.DataDir(), repoID, customDir, true)
 		if err != nil {
 			return err
@@ -72,6 +75,7 @@ func init() {
 // and .agents/skills/principal-architect-workspace) and imports PA markdown artifacts
 // as episodes in dataDir.
 func ImportPAWorkspace(repoRoot, dataDir, repoID, customDir string, verbose bool) (int, error) {
+	// --- Step 1: Open episode store, SQLite index, and resolve scan directories ---
 	store := episode.NewStore(dataDir, repoID)
 	dbPath := index.IndexPath(dataDir, repoID)
 	_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
@@ -108,6 +112,7 @@ func ImportPAWorkspace(repoRoot, dataDir, repoID, customDir string, verbose bool
 		}
 	}
 
+	// --- Step 2: Walk PA directories and import matching markdown files as episodes ---
 	importedCount := 0
 	for _, scanRoot := range dirs {
 		walkErr := filepath.Walk(scanRoot, func(filePath string, info os.FileInfo, err error) error {

@@ -1,3 +1,38 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/mcpserver/tools.go
+ * Description: Implements the v2 MCP pull and note tools (memory_brief, memory_why,
+ *              memory_history, memory_search, memory_note, and memory_status),
+ *              including live A6 freshness headers, unconsolidated inbox note
+ *              surfacing, and scope gap reporting.
+ *
+ * Exported Types / Functions:
+ * - FormatFreshnessLine():   Formats the 1-line A6 freshness header for MCP tool responses.
+ * - MemoryBriefRequest:      Input parameters for the memory_brief tool.
+ * - MemoryBriefResponse:     Output payload for the memory_brief tool.
+ * - MemoryWhyRequest:        Input parameters for the memory_why tool.
+ * - MemoryWhyResponse:       Output payload for the memory_why tool.
+ * - MemoryHistoryRequest:    Input parameters for the memory_history tool.
+ * - MemoryHistoryResponse:   Output payload for the memory_history tool.
+ * - MemorySearchRequest:     Input parameters for the memory_search tool.
+ * - MemorySearchResponse:    Output payload for the memory_search tool.
+ * - MemoryNoteRequest:       Input parameters for the memory_note tool.
+ * - MemoryNoteResponse:      Output payload for the memory_note tool.
+ * - MemoryStatusRequest:     Input parameters for the memory_status tool.
+ * - MemoryStatusResponse:    Output payload for the memory_status tool.
+ * - Server.HandleMemoryBrief():   Returns active entries, unconsolidated notes, and gaps for a scope.
+ * - Server.HandleMemoryWhy():     Returns full provenance and history for an entry or unconsolidated note.
+ * - Server.HandleMemoryHistory(): Returns retired and superseded entries for a scope.
+ * - Server.HandleMemorySearch():  Executes FTS5 keyword search across entries and unconsolidated notes.
+ * - Server.HandleMemoryNote():    Records an agent-authored entry to ops, index, inbox, and mark state.
+ * - Server.HandleMemoryStatus():  Returns active/retired entry counts by cognitive kind and inbox counts.
+ */
+
 package mcpserver
 
 import (
@@ -27,6 +62,7 @@ func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, 
 	return tick.FormatFreshnessLine(ctx, dataDir, repoID, repoRoot, idx, inboxStore)
 }
 
+// resolveInboxStore returns s.inboxStore or lazily constructs one when dataDir and repoID are configured.
 func (s *Server) resolveInboxStore() *inbox.Store {
 	if s.inboxStore != nil {
 		return s.inboxStore
@@ -37,6 +73,7 @@ func (s *Server) resolveInboxStore() *inbox.Store {
 	return nil
 }
 
+// gapThreshold returns the repository's configured coverage gap threshold or coverage.DefaultGapThreshold.
 func (s *Server) gapThreshold() float64 {
 	if s.repoRoot != "" {
 		if cfg, err := config.LoadRepoConfig(s.repoRoot); err == nil && cfg.Gaps.Threshold > 0 {
@@ -46,12 +83,15 @@ func (s *Server) gapThreshold() float64 {
 	return coverage.DefaultGapThreshold
 }
 
+// matchedNoteItem pairs an unconsolidated inbox Note with one of its matching NoteItems.
 type matchedNoteItem struct {
-	note *inbox.Note
-	item inbox.NoteItem
+	note *inbox.Note    // Parent unconsolidated inbox note.
+	item inbox.NoteItem // Matched note item within note.Items.
 }
 
+// noteItemMatchesScope reports whether item's explicit scope or anchor paths match scope.
 func noteItemMatchesScope(item inbox.NoteItem, scope string) bool {
+	// --- Step 1: Compare explicit item scope against target scope ---
 	target := strings.ToLower(strings.TrimSpace(scope))
 	if target == "" {
 		return false
@@ -59,6 +99,7 @@ func noteItemMatchesScope(item inbox.NoteItem, scope string) bool {
 	if strings.ToLower(strings.TrimSpace(item.Scope)) == target {
 		return true
 	}
+	// --- Step 2: Check whether any normalized item anchor path matches target scope ---
 	for _, a := range item.Anchors {
 		clean := strings.ToLower(strings.TrimSpace(a))
 		if idx := strings.Index(clean, "#"); idx >= 0 {
@@ -79,6 +120,7 @@ func noteItemMatchesScope(item inbox.NoteItem, scope string) bool {
 	return false
 }
 
+// formatNoteItemWhyDo formats a concise "Why / Do" summary string for an unconsolidated note item.
 func formatNoteItemWhyDo(item inbox.NoteItem) string {
 	why := strings.TrimSpace(item.Why)
 	do := strings.TrimSpace(item.Do)
@@ -94,6 +136,7 @@ func formatNoteItemWhyDo(item inbox.NoteItem) string {
 	return strings.TrimSpace(item.Evidence)
 }
 
+// formatNoteBranch returns note.Branch or "main" when unset.
 func formatNoteBranch(note *inbox.Note) string {
 	if note != nil && strings.TrimSpace(note.Branch) != "" {
 		return strings.TrimSpace(note.Branch)
@@ -103,60 +146,60 @@ func formatNoteBranch(note *inbox.Note) string {
 
 // MemoryBriefRequest represents the input to the memory.brief tool.
 type MemoryBriefRequest struct {
-	Scope string `json:"scope"`
+	Scope string `json:"scope"` // Target dossier scope name or alias.
 }
 
 // MemoryBriefResponse represents the output of the memory.brief tool.
 type MemoryBriefResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted brief summary for the requested scope.
 }
 
 // MemoryWhyRequest represents the input to the memory.why tool.
 type MemoryWhyRequest struct {
-	EntryID string `json:"entryId"`
+	EntryID string `json:"entryId"` // Entry ID, note ID, or anchor/title query to inspect.
 }
 
 // MemoryWhyResponse represents the output of the memory.why tool.
 type MemoryWhyResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted provenance and history details for the entry.
 }
 
 // MemoryHistoryRequest represents the input to the memory.history tool.
 type MemoryHistoryRequest struct {
-	Scope string `json:"scope"`
+	Scope string `json:"scope"` // Dossier scope slug or alias whose retired and superseded entries should be listed.
 }
 
 // MemoryHistoryResponse represents the output of the memory.history tool.
 type MemoryHistoryResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted list of retired and superseded entries.
 }
 
 // MemorySearchRequest represents the input to the memory.search tool.
 type MemorySearchRequest struct {
-	Query string `json:"query"`
+	Query string `json:"query"` // FTS5 keyword search query string.
 }
 
 // MemorySearchResponse represents the output of the memory.search tool.
 type MemorySearchResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted search results across active entries and inbox notes.
 }
 
 // MemoryNoteRequest represents the input to the memory.note tool.
 type MemoryNoteRequest struct {
-	Scope          string   `json:"scope"`
-	Text           string   `json:"text"`
-	Type           string   `json:"type,omitempty"`
-	Title          string   `json:"title,omitempty"`
-	Why            string   `json:"why,omitempty"`
-	Do             string   `json:"do,omitempty"`
-	Anchors        []string `json:"anchors,omitempty"`
-	ConversationID string   `json:"conversationId,omitempty"`
-	StepIndex      int      `json:"stepIndex,omitempty"`
+	Scope          string   `json:"scope"`                    // Target dossier scope for the note.
+	Text           string   `json:"text"`                     // Primary note text content.
+	Type           string   `json:"type,omitempty"`           // Entry type (defaults to "decision").
+	Title          string   `json:"title,omitempty"`          // Optional short summary title.
+	Why            string   `json:"why,omitempty"`            // Optional rationale or root cause.
+	Do             string   `json:"do,omitempty"`             // Optional actionable rule or remediation.
+	Anchors        []string `json:"anchors,omitempty"`        // Optional repository-relative path anchors.
+	ConversationID string   `json:"conversationId,omitempty"` // Optional conversation UUID for mark updates.
+	StepIndex      int      `json:"stepIndex,omitempty"`      // Optional transcript step index of the note.
 }
 
 // MemoryNoteResponse represents the output of the memory.note tool.
 type MemoryNoteResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Confirmation string containing the assigned entry ID.
 }
 
 // MemoryStatusRequest represents the input to the memory_status tool.
@@ -164,9 +207,10 @@ type MemoryStatusRequest struct{}
 
 // MemoryStatusResponse represents the output of the memory_status tool.
 type MemoryStatusResponse struct {
-	Result string `json:"result"`
+	Result string `json:"result"` // Formatted repository memory status summary.
 }
 
+// validEntryTypes defines the set of entry types accepted by HandleMemoryNote.
 var validEntryTypes = map[dossiers.EntryType]bool{
 	dossiers.EntryTypeInvariant:         true,
 	dossiers.EntryTypeContract:          true,
@@ -184,6 +228,7 @@ var validEntryTypes = map[dossiers.EntryType]bool{
 
 // HandleMemoryBrief implements the memory.brief tool handler.
 func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) (MemoryBriefResponse, error) {
+	// --- Step 1: Validate scope and resolve alias if direct lookup returns no entries ---
 	scope := strings.TrimSpace(req.Scope)
 	if scope == "" {
 		return MemoryBriefResponse{}, errors.New("scope is required")
@@ -205,6 +250,7 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 		}
 	}
 
+	// --- Step 2: Filter out retired entries and record pull exposures in the ledger ---
 	var active []dossiers.Entry
 	for _, e := range entries {
 		if e.Retired {
@@ -222,6 +268,7 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 		}
 	}
 
+	// --- Step 3: Collect unconsolidated inbox notes matching the scope ---
 	inboxStore := s.resolveInboxStore()
 	var matchedNotes []matchedNoteItem
 	if inboxStore != nil {
@@ -239,6 +286,7 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 		}
 	}
 
+	// --- Step 4: Format freshness header, active entries, unconsolidated notes, and coverage gaps ---
 	var b strings.Builder
 	b.WriteString(FormatFreshnessLine(ctx, s.dataDir, s.repoID, s.repoRoot, s.idx, inboxStore))
 	b.WriteString("\n")
@@ -275,6 +323,7 @@ func (s *Server) HandleMemoryBrief(ctx context.Context, req MemoryBriefRequest) 
 
 // HandleMemoryWhy implements the memory.why tool handler.
 func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (MemoryWhyResponse, error) {
+	// --- Step 1: Look up entry in the index or fall back to unconsolidated inbox notes ---
 	entryID := strings.TrimSpace(req.EntryID)
 	if entryID == "" {
 		return MemoryWhyResponse{}, errors.New("entryId is required")
@@ -293,6 +342,7 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 		return MemoryWhyResponse{}, fmt.Errorf("getting entry %s: %w", entryID, err)
 	}
 
+	// --- Step 2: Load entry history and record pull exposure ---
 	history, err := s.idx.GetHistory(ctx, entryID)
 	if err != nil {
 		history = nil
@@ -302,6 +352,7 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 		s.ledger.RecordPull(entry.ID)
 	}
 
+	// --- Step 3: Format entry metadata, anchors, evidence, and retirement history ---
 	var b strings.Builder
 	b.WriteString(freshnessLine + "\n")
 	b.WriteString(fmt.Sprintf("Entry: %s\n", entry.ID))
@@ -364,7 +415,9 @@ func (s *Server) HandleMemoryWhy(ctx context.Context, req MemoryWhyRequest) (Mem
 	return MemoryWhyResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
 }
 
+// findUnconsolidatedNoteWhy searches unconsolidated inbox notes by ID, title, or anchor and formats a why response.
 func findUnconsolidatedNoteWhy(inboxStore *inbox.Store, target string, freshnessLine string) (string, bool) {
+	// --- Step 1: Load unconsolidated notes and match against note ID, item title, or anchor ---
 	unconsolidated, err := inboxStore.ListUnconsolidated()
 	if err != nil || len(unconsolidated) == 0 {
 		return "", false
@@ -386,6 +439,7 @@ func findUnconsolidatedNoteWhy(inboxStore *inbox.Store, target string, freshness
 					}
 				}
 			}
+			// --- Step 2: Format the matched unconsolidated note item details ---
 			if itemMatch {
 				var b strings.Builder
 				b.WriteString(freshnessLine + "\n")
@@ -426,6 +480,7 @@ func findUnconsolidatedNoteWhy(inboxStore *inbox.Store, target string, freshness
 
 // HandleMemoryHistory implements the memory.history tool handler.
 func (s *Server) HandleMemoryHistory(ctx context.Context, req MemoryHistoryRequest) (MemoryHistoryResponse, error) {
+	// --- Step 1: Validate scope and query retired/superseded entries ---
 	scope := strings.TrimSpace(req.Scope)
 	if scope == "" {
 		return MemoryHistoryResponse{}, errors.New("scope is required")
@@ -446,6 +501,7 @@ func (s *Server) HandleMemoryHistory(ctx context.Context, req MemoryHistoryReque
 		return MemoryHistoryResponse{Result: fmt.Sprintf("No retired or superseded entries found for scope: %s", resolvedScope)}, nil
 	}
 
+	// --- Step 2: Format retired and superseded entries with retirement rationale ---
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("History for scope %s (%d retired/superseded entries):\n", resolvedScope, len(retiredEntries)))
 	for _, e := range retiredEntries {
@@ -466,7 +522,9 @@ func (s *Server) HandleMemoryHistory(ctx context.Context, req MemoryHistoryReque
 	return MemoryHistoryResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
 }
 
+// findRetiredEntries collects retired entries for scope, resolving scope aliases if the direct lookup is empty.
 func (s *Server) findRetiredEntries(ctx context.Context, scope string) ([]dossiers.Entry, string, error) {
+	// --- Step 1: Query retired entries for the direct scope name ---
 	retired, err := s.collectRetiredForScope(ctx, scope)
 	if err != nil {
 		return nil, scope, err
@@ -475,6 +533,7 @@ func (s *Server) findRetiredEntries(ctx context.Context, scope string) ([]dossie
 		return retired, scope, nil
 	}
 
+	// --- Step 2: Resolve scope alias and retry when direct lookup is empty ---
 	resolved, err := s.idx.ResolveAlias(ctx, scope)
 	if err == nil && resolved != "" && resolved != scope {
 		resolvedRetired, err := s.collectRetiredForScope(ctx, resolved)
@@ -487,7 +546,9 @@ func (s *Server) findRetiredEntries(ctx context.Context, scope string) ([]dossie
 	return retired, scope, nil
 }
 
+// collectRetiredForScope gathers retired and superseded entries from both entries and entry_history tables.
 func (s *Server) collectRetiredForScope(ctx context.Context, scope string) ([]dossiers.Entry, error) {
+	// --- Step 1: Collect entries marked retired or superseded in the entries table ---
 	seen := make(map[string]bool)
 	var result []dossiers.Entry
 
@@ -503,7 +564,7 @@ func (s *Server) collectRetiredForScope(ctx context.Context, scope string) ([]do
 		}
 	}
 
-	// Use a plain read query — no write transaction needed.
+	// --- Step 2: Append historical rows from entry_history for the scope ---
 	histEntries, err := s.idx.QueryHistoryByScope(ctx, scope)
 	if err != nil {
 		return result, err
@@ -521,6 +582,7 @@ func (s *Server) collectRetiredForScope(ctx context.Context, scope string) ([]do
 
 // HandleMemorySearch implements the memory.search tool handler.
 func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest) (MemorySearchResponse, error) {
+	// --- Step 1: Search both unconsolidated inbox notes and the FTS5 entries index ---
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
 		return MemorySearchResponse{Result: "No results found."}, nil
@@ -538,6 +600,7 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 		return MemorySearchResponse{Result: "No results found."}, nil
 	}
 
+	// --- Step 2: Cap indexed results at 10 and record pull exposures ---
 	if len(results) > 10 {
 		results = results[:10]
 	}
@@ -548,6 +611,7 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 		}
 	}
 
+	// --- Step 3: Format freshness line, ranked FTS matches, and unconsolidated inbox matches ---
 	var b strings.Builder
 	b.WriteString(FormatFreshnessLine(ctx, s.dataDir, s.repoID, s.repoRoot, s.idx, inboxStore))
 	b.WriteString("\n")
@@ -576,7 +640,9 @@ func (s *Server) HandleMemorySearch(ctx context.Context, req MemorySearchRequest
 	return MemorySearchResponse{Result: strings.TrimRight(b.String(), "\n")}, nil
 }
 
+// searchUnconsolidatedNotes performs case-insensitive substring and token-conjunction matching over unconsolidated notes.
 func searchUnconsolidatedNotes(inboxStore *inbox.Store, query string) []matchedNoteItem {
+	// --- Step 1: Load unconsolidated notes and tokenize the search query ---
 	if inboxStore == nil {
 		return nil
 	}
@@ -590,6 +656,7 @@ func searchUnconsolidatedNotes(inboxStore *inbox.Store, query string) []matchedN
 	}
 	tokens := strings.Fields(qLower)
 
+	// --- Step 2: Match each note item against the full query string or all query tokens ---
 	var out []matchedNoteItem
 	for _, n := range unconsolidated {
 		if n == nil {
@@ -627,6 +694,7 @@ func searchUnconsolidatedNotes(inboxStore *inbox.Store, query string) []matchedN
 
 // HandleMemoryNote implements the memory.note tool handler.
 func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (MemoryNoteResponse, error) {
+	// --- Step 1: Validate scope, text, and entry type ---
 	scope := strings.TrimSpace(req.Scope)
 	if scope == "" {
 		return MemoryNoteResponse{}, errors.New("scope is required")
@@ -647,6 +715,7 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 		return MemoryNoteResponse{}, fmt.Errorf("invalid entry type %q", entryTypeStr)
 	}
 
+	// --- Step 2: Generate entry ID, write op batch, and upsert into the SQLite index ---
 	prefix := dossiers.EntryTypePrefixes[entryType]
 	if prefix == "" {
 		prefix = "dec-"
@@ -695,6 +764,7 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 		})
 	}
 
+	// --- Step 3: Persist corresponding inbox note and update conversation distillation mark ---
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		firstLine := text
@@ -767,10 +837,12 @@ func (s *Server) HandleMemoryNote(ctx context.Context, req MemoryNoteRequest) (M
 	}, nil
 }
 
+// ftsAllTokensQuery is a broad prefix disjunction used to enumerate indexed entries via FTS5.
 const ftsAllTokensQuery = "a* OR b* OR c* OR d* OR e* OR f* OR g* OR h* OR i* OR j* OR k* OR l* OR m* OR n* OR o* OR p* OR q* OR r* OR s* OR t* OR u* OR v* OR w* OR x* OR y* OR z* OR 0* OR 1* OR 2* OR 3* OR 4* OR 5* OR 6* OR 7* OR 8* OR 9*"
 
 // HandleMemoryStatus implements the memory_status (alias memory_stats) tool handler.
 func (s *Server) HandleMemoryStatus(ctx context.Context, _ MemoryStatusRequest) (MemoryStatusResponse, error) {
+	// --- Step 1: Enumerate all indexed entries across FTS and source filters ---
 	seenIDs := make(map[string]dossiers.Entry)
 	if s.idx != nil {
 		if entries, err := s.idx.SearchEntries(ctx, ftsAllTokensQuery); err == nil {
@@ -787,6 +859,7 @@ func (s *Server) HandleMemoryStatus(ctx context.Context, _ MemoryStatusRequest) 
 		}
 	}
 
+	// --- Step 2: Classify entries by active/retired status and cognitive kind ---
 	activeCount := 0
 	semanticCount := 0
 	proceduralCount := 0
@@ -835,6 +908,7 @@ func (s *Server) HandleMemoryStatus(ctx context.Context, _ MemoryStatusRequest) 
 	}
 	retiredCount = len(retiredSeen)
 
+	// --- Step 3: Count pending and total inbox notes and format the status report ---
 	pendingNotes := 0
 	totalNotes := 0
 	inboxStore := s.inboxStore

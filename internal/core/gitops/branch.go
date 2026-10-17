@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/gitops/branch.go
+ * Description: Queries the active git branch name and current HEAD commit SHA
+ *              for a repository with bounded command timeouts.
+ *
+ * Exported Types / Functions:
+ * - GetCurrentBranch():            Returns the active branch name using a default 2-second timeout.
+ * - GetCurrentBranchWithContext(): Returns the active branch name using a caller-supplied context.
+ * - GetHeadCommit():               Returns the current HEAD commit hash using a default 2-second timeout.
+ * - GetHeadCommitWithContext():    Returns the current HEAD commit hash using a caller-supplied context.
+ */
+
 package gitops
 
 import (
@@ -17,6 +35,7 @@ func GetCurrentBranch(repoRoot string) (string, error) {
 
 // GetCurrentBranchWithContext returns the active branch name using the provided context.
 func GetCurrentBranchWithContext(ctx context.Context, repoRoot string) (string, error) {
+	// --- Step 1: Query git branch --show-current ---
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "branch", "--show-current")
 	out, err := cmd.Output()
 	if err == nil {
@@ -26,7 +45,7 @@ func GetCurrentBranchWithContext(ctx context.Context, repoRoot string) (string, 
 		}
 	}
 
-	// Fallback: rev-parse --abbrev-ref HEAD
+	// --- Step 2: Fall back to git rev-parse --abbrev-ref HEAD ---
 	cmd = exec.CommandContext(ctx, "git", "-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err = cmd.Output()
 	if err == nil {

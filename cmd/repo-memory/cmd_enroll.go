@@ -1,5 +1,5 @@
 /*
- * repo-memory-plugin (c) 2026 CBLabs
+ * repo-memory-plugin (c) 2026 cblabs-org
  *
  * https://github.com/cblabs-org/repo-memory-plugin
  *
@@ -44,15 +44,16 @@ import (
 )
 
 var (
-	enrollNoSeedFlag       bool     // When true, skips all automatic Day-1 PA and doc seeding during enroll.
-	enrollNoSeedPAFlag     bool     // When true, skips Day-1 Principal Architect report seeding and episode import.
-	enrollNoSeedDocsFlag   bool     // When true, skips Day-1 seeding of curated repository docs and skills.
-	enrollDocSeedGlobs     []string // Additional doc_seeds globs to persist into .memory/config.yaml on enroll.
-	enrollTurnNotesMode    string   // Optional turn_notes mode ("on", "fallback-only", "off") for .memory/config.yaml.
-	enrollPAMemoryMode     string   // PA handoff mode ("external" or "keep"; defaults to "external").
-	enrollPushGapsFlag     bool     // When true, sets gaps.push = true in .memory/config.yaml.
+	enrollNoSeedFlag     bool     // When true, skips all automatic Day-1 PA and doc seeding during enroll.
+	enrollNoSeedPAFlag   bool     // When true, skips Day-1 Principal Architect report seeding and episode import.
+	enrollNoSeedDocsFlag bool     // When true, skips Day-1 seeding of curated repository docs and skills.
+	enrollDocSeedGlobs   []string // Additional doc_seeds globs to persist into .memory/config.yaml on enroll.
+	enrollTurnNotesMode  string   // Optional turn_notes mode ("on", "fallback-only", "off") for .memory/config.yaml.
+	enrollPAMemoryMode   string   // PA handoff mode ("external" or "keep"; defaults to "external").
+	enrollPushGapsFlag   bool     // When true, sets gaps.push = true in .memory/config.yaml.
 )
 
+// enrollCmd defines the `repo-memory enroll` subcommand.
 var enrollCmd = &cobra.Command{
 	Use:     "enroll [path]",
 	Short:   "Enroll a repository for memory tracking",
@@ -67,7 +68,8 @@ var enrollCmd = &cobra.Command{
 	},
 }
 
-var initCmd = enrollCmd // Retained alias for backwards compatibility.
+// initCmd is a retained alias for enrollCmd for backwards compatibility.
+var initCmd = enrollCmd
 
 func init() {
 	enrollCmd.Flags().BoolVar(&enrollNoSeedFlag, "no-seed", false, "Skip automatic Day-1 seeding of docs and Principal Architect history")
@@ -166,6 +168,7 @@ func RunInit(cmd *cobra.Command, targetDir string) error {
 // applyEnrollRepoConfigOverrides persists any CLI flags (--turn-notes, --doc-seed, --push-gaps)
 // into <repoRoot>/.memory/config.yaml while preserving existing subsystem and spend settings.
 func applyEnrollRepoConfigOverrides(cmd *cobra.Command, repoRoot string) error {
+	// --- Step 1: Check whether any CLI override flags were supplied ---
 	hasTurnNotes := strings.TrimSpace(enrollTurnNotesMode) != ""
 	hasDocSeeds := len(enrollDocSeedGlobs) > 0
 	hasPushGaps := enrollPushGapsFlag || (cmd != nil && cmd.Flags().Changed("push-gaps"))
@@ -178,6 +181,7 @@ func applyEnrollRepoConfigOverrides(cmd *cobra.Command, repoRoot string) error {
 		cfg = config.DefaultRepoConfig()
 	}
 
+	// --- Step 2: Apply turn-notes, doc-seed, and push-gaps overrides ---
 	if hasTurnNotes {
 		mode := strings.ToLower(strings.TrimSpace(enrollTurnNotesMode))
 		switch mode {
@@ -211,6 +215,7 @@ func applyEnrollRepoConfigOverrides(cmd *cobra.Command, repoRoot string) error {
 		cfg.Gaps.Push = enrollPushGapsFlag
 	}
 
+	// --- Step 3: Persist updated repository configuration ---
 	return config.SaveRepoConfig(repoRoot, cfg)
 }
 
@@ -218,6 +223,7 @@ func applyEnrollRepoConfigOverrides(cmd *cobra.Command, repoRoot string) error {
 // under .agents/{plugins,skills}/principal-architect-workspace/.state/state.db and
 // updates repo_config.memory_mode to mode ("external" on enroll, "builtin" on unenroll).
 func SyncPAMemoryMode(repoRoot, mode string) bool {
+	// --- Step 1: Scan candidate Principal Architect state.db locations ---
 	updated := false
 	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 
@@ -231,6 +237,7 @@ func SyncPAMemoryMode(repoRoot, mode string) bool {
 			continue
 		}
 
+		// --- Step 2: Open SQLite database and upsert repo_config.memory_mode ---
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			continue
@@ -417,6 +424,7 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 // RemoveWorkspacePluginConfigured removes the repo-memory workspace-plugin entry from
 // <repoRoot>/.agents/plugins.json, deleting the file if no other entries remain.
 func RemoveWorkspacePluginConfigured(repoRoot string) error {
+	// --- Step 1: Read and parse .agents/plugins.json ---
 	pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
 	data, err := os.ReadFile(pluginsPath)
 	if err != nil {
@@ -431,6 +439,7 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 		return fmt.Errorf("parsing %s: %w", pluginsPath, err)
 	}
 
+	// --- Step 2: Filter out repo-memory workspace-plugin entries ---
 	var expectedPath string
 	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
 		if abs, err := filepath.Abs(daemonDir); err == nil {
@@ -457,6 +466,7 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 		remaining = append(remaining, item)
 	}
 
+	// --- Step 3: Remove empty plugins.json or write remaining entries ---
 	hasOtherKeys := false
 	for k, v := range configMap {
 		if k == "entries" {
@@ -488,6 +498,7 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 
 // ensurePluginsGitExcluded appends .agents/plugins.json to <repoRoot>/.git/info/exclude if absent.
 func ensurePluginsGitExcluded(repoRoot string) error {
+	// --- Step 1: Verify .git/info directory exists and read current exclude file ---
 	excludePath := filepath.Join(repoRoot, ".git", "info", "exclude")
 
 	infoDir := filepath.Dir(excludePath)
@@ -500,6 +511,7 @@ func ensurePluginsGitExcluded(repoRoot string) error {
 		return err
 	}
 
+	// --- Step 2: Check for existing entry and append if missing ---
 	content := string(data)
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {

@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_promote_skills.go
+ * Description: Implements the `repo-memory promote-skills` CLI command, which
+ *              checks build manifest freshness and deterministically graduates
+ *              qualified procedural recipes to `.agents/skills/rm-<slug>/SKILL.md`.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -14,16 +30,18 @@ import (
 )
 
 var (
-	promoteSkillsRepoDir string
-	promoteSkillsDryRun  bool
-	promoteSkillsJSON    bool
+	promoteSkillsRepoDir string // Optional --repo directory override for promote-skills.
+	promoteSkillsDryRun  bool   // When true, previews graduated skills without modifying files.
+	promoteSkillsJSON    bool   // When true, emits the graduation result as indented JSON.
 )
 
+// promoteSkillsCmd defines the `repo-memory promote-skills` subcommand.
 var promoteSkillsCmd = &cobra.Command{
 	Use:   "promote-skills [repo-dir]",
 	Short: "Deterministically graduate qualified procedural recipes to .agents/skills/rm-<slug>/SKILL.md",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve target repository root and repo ID ---
 		targetDir := "."
 		if strings.TrimSpace(promoteSkillsRepoDir) != "" {
 			targetDir = promoteSkillsRepoDir
@@ -49,6 +67,7 @@ var promoteSkillsCmd = &cobra.Command{
 			repoID, _ = gitops.GenerateRepoID(repoRoot)
 		}
 
+		// --- Step 2: Check build manifest freshness and sync graduated skills ---
 		if !promoteSkillsDryRun {
 			_, _ = skills.CheckBuildManifestFreshness(cmd.Context(), repoRoot, dataDir, repoID, nil)
 		}
@@ -58,6 +77,7 @@ var promoteSkillsCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 3: Render JSON or human-readable summary ---
 		if promoteSkillsJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")

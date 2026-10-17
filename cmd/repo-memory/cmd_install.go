@@ -63,6 +63,7 @@ func ResolveWorkspacePluginDir(daemonDir string) string {
 
 // ValidateHooksJSON parses hooks.json data and verifies it has at least one valid hook entry.
 func ValidateHooksJSON(data []byte) error {
+	// --- Step 1: Unmarshal top-level JSON map and reject empty payloads ---
 	var parsed map[string]json.RawMessage
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
@@ -71,6 +72,7 @@ func ValidateHooksJSON(data []byte) error {
 		return errors.New("hooks configuration is empty ({})")
 	}
 
+	// --- Step 2: Count configured hook entries across nested and flat structures ---
 	totalHooks := 0
 	for _, v := range parsed {
 		var hookGroup map[string]json.RawMessage
@@ -108,7 +110,7 @@ func RunInstall(pluginDir, binPath string) error {
 		return errors.New("binary path cannot be empty")
 	}
 
-	// 0. Migration: check if legacy repo-memory directory exists alongside repo-memory-daemon
+	// --- Step 1: Migrate legacy repo-memory plugin directory and update global config.json ---
 	parentDir := filepath.Dir(pluginDir)
 	legacyDir := filepath.Join(parentDir, "repo-memory")
 	if legacyDir != pluginDir {
@@ -163,7 +165,7 @@ func RunInstall(pluginDir, binPath string) error {
 
 	wsDir := ResolveWorkspacePluginDir(pluginDir)
 
-	// --- Step 1: Create necessary directory hierarchy ---
+	// --- Step 2: Create necessary directory hierarchy ---
 	subdirs := []string{
 		pluginDir,
 		filepath.Join(pluginDir, "sidecars", "tick"),
@@ -178,7 +180,7 @@ func RunInstall(pluginDir, binPath string) error {
 		}
 	}
 
-	// --- Step 2: Generate JSON and Markdown file contents using templates with absolute binary path ---
+	// --- Step 3: Generate JSON and Markdown file contents using templates with absolute binary path ---
 	hooksContent := antigravity.GenerateHooksJSON(binPath)
 	if err := ValidateHooksJSON([]byte(hooksContent)); err != nil {
 		return fmt.Errorf("validating generated hooks template: %w", err)
@@ -195,15 +197,15 @@ func RunInstall(pluginDir, binPath string) error {
 
 	files := map[string]string{
 		// Daemon files
-		filepath.Join(pluginDir, "plugin.json"):                                daemonPluginContent,
-		filepath.Join(pluginDir, "config.json"):                                configContent,
-		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):           sidecarContent,
-		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"):    adminSkillContent,
+		filepath.Join(pluginDir, "plugin.json"):                             daemonPluginContent,
+		filepath.Join(pluginDir, "config.json"):                             configContent,
+		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):        sidecarContent,
+		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"): adminSkillContent,
 		// Workspace files
-		filepath.Join(wsDir, "plugin.json"):                                    workspacePluginContent,
-		filepath.Join(wsDir, "mcp_config.json"):                                mcpContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"):    distillerAgentContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):             distillerAgentContent,
+		filepath.Join(wsDir, "plugin.json"):                                 workspacePluginContent,
+		filepath.Join(wsDir, "mcp_config.json"):                             mcpContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"): distillerAgentContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):          distillerAgentContent,
 	}
 
 	for path, content := range files {
@@ -212,7 +214,7 @@ func RunInstall(pluginDir, binPath string) error {
 		}
 	}
 
-	// 3. Write and verify hooks.json with safety validation
+	// --- Step 4: Write and verify hooks.json with read-back safety validation ---
 	// Workspace plugin hooks live at <plugin-root>/hooks.json
 	// (NOT <plugin-root>/hooks/hooks.json — that path is for a different plugin layout)
 	hooksPath := filepath.Join(wsDir, "hooks.json")
@@ -234,10 +236,12 @@ func RunInstall(pluginDir, binPath string) error {
 	return nil
 }
 
+// installCmd defines the `repo-memory install` subcommand.
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install repo-memory plugin and harness configurations",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Validate target harness and resolve binary path ---
 		if installHarness != "antigravity" {
 			return fmt.Errorf("unsupported harness %q (only 'antigravity' is supported in Release 1)", installHarness)
 		}
@@ -254,6 +258,7 @@ var installCmd = &cobra.Command{
 			absBinPath = evalPath
 		}
 
+		// --- Step 2: Resolve plugin directory and execute installation ---
 		pluginDir, err := ResolveAntigravityPluginDir()
 		if err != nil {
 			return err
@@ -263,6 +268,7 @@ var installCmd = &cobra.Command{
 			return err
 		}
 
+		// --- Step 3: Print post-install onboarding instructions ---
 		wsDir := ResolveWorkspacePluginDir(pluginDir)
 		fmt.Printf("Successfully installed repo-memory daemon plugin to %s\n", pluginDir)
 		fmt.Printf("Workspace plugin bundle at %s\n", wsDir)
@@ -281,15 +287,15 @@ var installCmd = &cobra.Command{
 // write to a temp file in the same directory, then rename into place.
 // This prevents corruption from crashes or concurrent IDE writes.
 func atomicWriteConfig(configPath string, originalData, newData []byte) error {
+	// --- Step 1: Back up the original config.json to a sibling .bak file ---
 	dir := filepath.Dir(configPath)
 
-	// Back up original to a sibling file
 	backupPath := configPath + ".bak"
 	if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
 		return fmt.Errorf("backing up config.json: %w", err)
 	}
 
-	// Write to temp file in the same directory (same filesystem for atomic rename)
+	// --- Step 2: Write updated payload to a temporary file in the same directory ---
 	tmp, err := os.CreateTemp(dir, "config-*.json.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
@@ -306,13 +312,12 @@ func atomicWriteConfig(configPath string, originalData, newData []byte) error {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
 
-	// Atomic rename
+	// --- Step 3: Atomically rename temporary file over config.json and remove backup ---
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp to config.json: %w", err)
 	}
 
-	// Clean up backup on success
 	os.Remove(backupPath)
 	return nil
 }

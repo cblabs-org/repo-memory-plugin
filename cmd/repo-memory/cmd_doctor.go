@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_doctor.go
+ * Description: CLI subcommand and diagnostic runner for verifying repository
+ *              memory enrollment, workspace plugin linkage, GEMINI.md managed
+ *              block integrity, and graduated skills health.
+ *
+ * Exported Types / Functions:
+ * - RunDoctor(): Verifies repository memory installation and health for a target directory.
+ */
+
 package main
 
 import (
@@ -13,6 +29,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// doctorCmd defines the `repo-memory doctor` subcommand.
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [path]",
 	Short: "Verify repository memory installation and health",
@@ -28,6 +45,7 @@ var doctorCmd = &cobra.Command{
 
 // RunDoctor verifies repository memory installation and health.
 func RunDoctor(cmd *cobra.Command, targetDir string) error {
+	// --- Step 1: Resolve repository root and check .memory enrollment markers ---
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
 		repoRoot = targetDir
@@ -45,6 +63,7 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 	_, errEnrolled := os.Stat(enrolledMarker)
 	hasEnrolledMarker := errEnrolled == nil
 
+	// --- Step 2: Verify .agents/plugins.json workspace plugin registration ---
 	if hasMemoryDir && hasEnrolledMarker {
 		pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
 		var pluginPath string
@@ -86,6 +105,7 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 		}
 	}
 
+	// --- Step 3: Validate GEMINI.md managed instruction block ---
 	geminiPath := filepath.Join(repoRoot, config.InstructionFilename)
 	if data, err := os.ReadFile(geminiPath); err == nil {
 		content := string(data)
@@ -97,6 +117,7 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 		}
 	}
 
+	// --- Step 4: Run graduated skills lint checks ---
 	if hasMemoryDir {
 		dataDir := config.DataDir()
 		repoID := ""

@@ -1,3 +1,40 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/consolidate/route.go
+ * Description: Implements deterministic Five-Tier State Scope Hierarchy
+ *              classification, dossier scope routing, exact-duplicate merging,
+ *              and broken file/symbol anchor auditing for Stage 2 consolidation.
+ *
+ * Exported Types / Functions:
+ * - ScopeTier:                Represents a tier in the Five-Tier State Scope Hierarchy.
+ * - TierTemp:                 Ephemeral temporary scope tier ("temp").
+ * - TierSession:              Single-session scope tier ("session").
+ * - TierUser:                 Workstation-local personal user scope tier ("user").
+ * - TierBranch:               Gitignored feature-branch scope tier ("branch").
+ * - TierRepo:                 Shared repository-wide scope tier ("repo").
+ * - RoutedItem:               Pairs a candidate NoteItem with its resolved ScopeTier, scope, and kind.
+ * - DedupResult:              Holds the outcome of deterministic exact-duplicate merging.
+ * - BrokenAnchorReport:       Describes an active dossier entry with one or more missing anchors.
+ * - StripTierPrefix():        Extracts a known tier prefix and trimmed scope remainder.
+ * - IsDefaultBranch():        Reports whether a branch name is empty or a default branch.
+ * - ClassifyTier():           Classifies a candidate note item into a ScopeTier.
+ * - RouteItem():              Classifies an item's tier and routes it to a target dossier scope and kind.
+ * - RouteItems():             Routes a slice of NoteItems using RouteItem.
+ * - CanonicalEntryTypeGroup(): Maps alias-equivalent entry types to their canonical counterpart.
+ * - MergeExactDuplicates():   Merges duplicate candidate items into OpAmend ops and coalesces batch duplicates.
+ * - CheckAnchor():            Reports whether a file and optional symbol anchor exist in repoRoot.
+ * - CheckDossierAnchors():    Inspects active dossier entries and reports broken file or symbol anchors.
+ */
+
+// Package consolidate implements the Stage 2 consolidation pipeline: echo
+// filtering, corroboration gating, tier and scope routing, exact-duplicate
+// merging, LLM/deterministic op synthesis, op validation and scrubbing, and
+// multi-tier dossier projection.
 package consolidate
 
 import (
@@ -16,17 +53,23 @@ import (
 type ScopeTier string
 
 const (
-	TierTemp    ScopeTier = "temp"
+	// TierTemp designates ephemeral scratch state that is never persisted to dossiers.
+	TierTemp ScopeTier = "temp"
+	// TierSession designates single-conversation state bounded to an active session.
 	TierSession ScopeTier = "session"
-	TierUser    ScopeTier = "user"
-	TierBranch  ScopeTier = "branch"
-	TierRepo    ScopeTier = "repo"
+	// TierUser designates developer-local workstation state stored under <dataDir>/<repoID>/user-dossiers.
+	TierUser ScopeTier = "user"
+	// TierBranch designates unmerged feature-branch state stored under .memory/local/{ops,dossiers}/<branch-slug>.
+	TierBranch ScopeTier = "branch"
+	// TierRepo designates shared repository-wide state stored under .memory/{ops,dossiers}.
+	TierRepo ScopeTier = "repo"
 )
 
 // StripTierPrefix inspects rawScope case-insensitively for a known tier prefix
 // ("temp:", "session:", "user:", "branch:", or "repo:"). If present, it returns
 // the matched ScopeTier and the trimmed remainder; otherwise ("", trimmed rawScope).
 func StripTierPrefix(rawScope string) (ScopeTier, string) {
+	// --- Step 1: Trim input and handle empty strings ---
 	trimmed := strings.TrimSpace(rawScope)
 	if trimmed == "" {
 		return "", ""
@@ -42,6 +85,8 @@ func StripTierPrefix(rawScope string) (ScopeTier, string) {
 		{"branch:", TierBranch},
 		{"repo:", TierRepo},
 	}
+
+	// --- Step 2: Match known tier prefixes case-insensitively ---
 	for _, p := range prefixes {
 		if strings.HasPrefix(lower, p.prefix) {
 			return p.tier, strings.TrimSpace(trimmed[len(p.prefix):])
@@ -62,21 +107,21 @@ func IsDefaultBranch(branch string) bool {
 // ClassifyTier classifies a candidate note item into the Five-Tier State Scope Hierarchy
 // (SPEC §5.5, design-v2 §6 step 7).
 func ClassifyTier(note *inbox.Note, item inbox.NoteItem, repoRoot string, isBranchMerged func(branch string) bool) ScopeTier {
-	// 1. Explicit prefix on item.Scope.
+	// --- Step 1: Honour explicit tier prefix on item.Scope ---
 	prefixTier, _ := StripTierPrefix(item.Scope)
 	switch prefixTier {
 	case TierUser, TierBranch, TierRepo, TierSession, TierTemp:
 		return prefixTier
 	}
 
-	// 2. Personal/Workstation heuristic (TierUser).
+	// --- Step 2: Check personal/workstation scope heuristic (TierUser) ---
 	trimmedScope := strings.TrimSpace(item.Scope)
 	lowerScope := strings.ToLower(trimmedScope)
 	if strings.HasPrefix(lowerScope, "user-dossiers") || strings.EqualFold(trimmedScope, "user") {
 		return TierUser
 	}
 
-	// 3. Unmerged Branch heuristic (TierBranch).
+	// --- Step 3: Check unmerged feature-branch heuristic (TierBranch) when all file anchors are missing on default branch ---
 	if note != nil && !IsDefaultBranch(note.Branch) {
 		merged := isBranchMerged != nil && isBranchMerged(note.Branch)
 		if !merged {
@@ -106,11 +151,14 @@ func ClassifyTier(note *inbox.Note, item inbox.NoteItem, repoRoot string, isBran
 		}
 	}
 
-	// 4. Default (TierRepo).
+	// --- Step 4: Default to shared repository tier (TierRepo) ---
 	return TierRepo
 }
 
+// hasBranchOnlyAnchorChecks reports whether pre-recorded anchor checks on item or note
+// confirm that all fileAnchors were missing from the working tree when repoRoot is unavailable.
 func hasBranchOnlyAnchorChecks(note *inbox.Note, item inbox.NoteItem, fileAnchors []string) bool {
+	// --- Step 1: Collect pre-recorded AnchorCheck entries from item and note ---
 	checks := make([]inbox.AnchorCheck, 0, len(item.AnchorChecks))
 	checks = append(checks, item.AnchorChecks...)
 	if note != nil {
@@ -120,6 +168,7 @@ func hasBranchOnlyAnchorChecks(note *inbox.Note, item inbox.NoteItem, fileAnchor
 		return false
 	}
 
+	// --- Step 2: Verify that at least one file anchor matched a check and none existed ---
 	matchedAny := false
 	for _, fa := range fileAnchors {
 		normFA := StripAnchorSymbol(fa)
@@ -138,22 +187,23 @@ func hasBranchOnlyAnchorChecks(note *inbox.Note, item inbox.NoteItem, fileAnchor
 
 // RoutedItem pairs a candidate NoteItem with its resolved ScopeTier, target dossier scope, and kind.
 type RoutedItem struct {
-	NoteID         string               `json:"note_id"`
-	NoteSource     inbox.NoteSource     `json:"note_source"`
-	ConversationID string               `json:"conversation_id,omitempty"`
-	Branch         string               `json:"branch,omitempty"`
-	HeadCommit     string               `json:"head_commit,omitempty"`
-	CreatedAt      time.Time            `json:"created_at"`
-	Tier           ScopeTier            `json:"tier"`
-	DossierScope   string               `json:"dossier_scope"`
-	DossierKind    dossiers.DossierKind `json:"dossier_kind"`
-	DerivedNew     bool                 `json:"derived_new,omitempty"`
-	Item           inbox.NoteItem       `json:"item"`
+	NoteID         string               `json:"note_id"`                   // Originating inbox note ID.
+	NoteSource     inbox.NoteSource     `json:"note_source"`               // Stage 1 source pathway of the parent note.
+	ConversationID string               `json:"conversation_id,omitempty"` // Originating conversation or session ID.
+	Branch         string               `json:"branch,omitempty"`          // Git branch recorded on the parent note.
+	HeadCommit     string               `json:"head_commit,omitempty"`     // Git HEAD commit SHA recorded on the parent note.
+	CreatedAt      time.Time            `json:"created_at"`                // UTC creation timestamp of the parent note.
+	Tier           ScopeTier            `json:"tier"`                      // Resolved Five-Tier State Scope Hierarchy tier.
+	DossierScope   string               `json:"dossier_scope"`             // Target dossier scope path (e.g. "core/index" or "general").
+	DossierKind    dossiers.DossierKind `json:"dossier_kind"`              // Target dossier kind (module, topic, external, or procedure).
+	DerivedNew     bool                 `json:"derived_new,omitempty"`     // True when DossierScope was newly derived from anchor directory structure.
+	Item           inbox.NoteItem       `json:"item"`                      // Candidate knowledge item being routed.
 }
 
 // RouteItem deterministically classifies an item's tier and routes it to a target dossier scope and kind
 // (SPEC §6.5 step 2, design-v2 §6 step 2).
 func RouteItem(note *inbox.Note, item inbox.NoteItem, resolver *config.ScopeResolver, repoRoot string, isBranchMerged func(branch string) bool) RoutedItem {
+	// --- Step 1: Classify the item's state tier and normalize any explicit scope ---
 	tier := ClassifyTier(note, item, repoRoot, isBranchMerged)
 
 	_, explicitScope := StripTierPrefix(item.Scope)
@@ -174,7 +224,7 @@ func RouteItem(note *inbox.Note, item inbox.NoteItem, resolver *config.ScopeReso
 		derivedNew   bool
 	)
 
-	// Case A — Explicit scope on item.Scope.
+	// --- Step 2: Case A — Resolve explicit scope on item.Scope ---
 	if explicitScope != "" {
 		dossierScope = explicitScope
 		if resolver != nil {
@@ -193,7 +243,7 @@ func RouteItem(note *inbox.Note, item inbox.NoteItem, resolver *config.ScopeReso
 		}
 	}
 
-	// Case B — Anchored item (len(item.Anchors) > 0).
+	// --- Step 3: Case B — Route anchored items via ScopeResolver or module derivation ---
 	if dossierScope == "" && len(item.Anchors) > 0 {
 		if resolver != nil {
 			if matched := resolver.ResolveScope(item.Anchors, nil); matched != "" {
@@ -222,7 +272,7 @@ func RouteItem(note *inbox.Note, item inbox.NoteItem, resolver *config.ScopeReso
 		}
 	}
 
-	// Case C — Unanchored item (or still empty dossierScope).
+	// --- Step 4: Case C — Route unanchored items by keyword matching or cognitive type fallback ---
 	if dossierScope == "" {
 		keywords := extractRoutingKeywords(item)
 		if resolver != nil && len(keywords) > 0 {
@@ -249,6 +299,7 @@ func RouteItem(note *inbox.Note, item inbox.NoteItem, resolver *config.ScopeReso
 		}
 	}
 
+	// --- Step 5: Populate RoutedItem metadata from the parent note ---
 	item.Scope = dossierScope
 
 	routed := RoutedItem{
@@ -281,6 +332,7 @@ func RouteItems(note *inbox.Note, items []inbox.NoteItem, resolver *config.Scope
 	return out
 }
 
+// inferDossierKindFromScope infers a DossierKind from conventional scope path prefixes.
 func inferDossierKindFromScope(scope string) dossiers.DossierKind {
 	lower := strings.ToLower(strings.TrimSpace(scope))
 	switch {
@@ -295,6 +347,7 @@ func inferDossierKindFromScope(scope string) dossiers.DossierKind {
 	}
 }
 
+// routingStopwords contains common English function words excluded during unanchored keyword routing.
 var routingStopwords = map[string]bool{
 	"the": true, "and": true, "for": true, "with": true, "from": true,
 	"that": true, "this": true, "when": true, "only": true, "have": true,
@@ -313,7 +366,10 @@ var routingStopwords = map[string]bool{
 	"every": true, "both": true, "such": true, "same": true, "very": true,
 }
 
+// extractRoutingKeywords extracts deduplicated command phrases and non-stopword tokens
+// from item.Commands, item.Title, item.Why, and item.Do for ScopeResolver matching.
 func extractRoutingKeywords(item inbox.NoteItem) []string {
+	// --- Step 1: Initialize deduplicating keyword collector ---
 	seen := make(map[string]bool)
 	var out []string
 	addKw := func(kw string) {
@@ -325,7 +381,7 @@ func extractRoutingKeywords(item inbox.NoteItem) []string {
 		out = append(out, k)
 	}
 
-	// Preserve full command phrases first so multi-word commands (e.g. "git tag", "make release") match.
+	// --- Step 2: Preserve full command phrases first so multi-word commands match with full weight ---
 	for _, cmd := range item.Commands {
 		trimmed := strings.TrimSpace(cmd)
 		if trimmed != "" {
@@ -333,6 +389,7 @@ func extractRoutingKeywords(item inbox.NoteItem) []string {
 		}
 	}
 
+	// --- Step 3: Extract punctuation-trimmed tokens and normalized sub-words from Title, Why, Do, and Commands ---
 	sources := []string{item.Title, item.Why, item.Do}
 	sources = append(sources, item.Commands...)
 
@@ -360,8 +417,8 @@ func extractRoutingKeywords(item inbox.NoteItem) []string {
 
 // DedupResult holds the outcome of deterministic exact-duplicate merging (MergeExactDuplicates).
 type DedupResult struct {
-	Remaining []RoutedItem
-	AmendOps  []ops.Op
+	Remaining []RoutedItem // Candidate items that did not match any existing active entry and were deduplicated within the batch.
+	AmendOps  []ops.Op     // Deterministic OpAmend operations merging duplicate candidate evidence into existing active entries.
 }
 
 // CanonicalEntryTypeGroup maps alias-equivalent entry types to their canonical counterpart
@@ -383,6 +440,7 @@ func CanonicalEntryTypeGroup(t dossiers.EntryType) dossiers.EntryType {
 // dossier entries into OpAmend operations, and coalesces duplicate candidate items within the
 // remaining batch (SPEC §6.5 step 3, design-v2 §6 step 3).
 func MergeExactDuplicates(routed []RoutedItem, dossiersMap map[string]*dossiers.Dossier, now time.Time) DedupResult {
+	// --- Step 1: Normalize timestamp and handle empty input ---
 	var res DedupResult
 	if len(routed) == 0 {
 		return res
@@ -397,7 +455,7 @@ func MergeExactDuplicates(routed []RoutedItem, dossiersMap map[string]*dossiers.
 	amendIdxByEntryID := make(map[string]int)
 	var unmatched []RoutedItem
 
-	// 1. Deduplicate candidate items against existing active entries in dossiersMap.
+	// --- Step 2: Deduplicate candidate items against existing active entries in dossiersMap ---
 	for _, ri := range routed {
 		var matchedEntry *dossiers.Entry
 		if dossiersMap != nil && (ri.Tier == "" || ri.Tier == TierRepo) {
@@ -470,7 +528,7 @@ func MergeExactDuplicates(routed []RoutedItem, dossiersMap map[string]*dossiers.
 		}
 	}
 
-	// 2. Coalesce exact duplicates within the remaining candidate batch.
+	// --- Step 3: Coalesce exact duplicates within the remaining candidate batch ---
 	for _, cand := range unmatched {
 		normCandTitle := NormalizeTitle(cand.Item.Title)
 		candGroup := CanonicalEntryTypeGroup(cand.Item.Type)
@@ -519,7 +577,9 @@ func MergeExactDuplicates(routed []RoutedItem, dossiersMap map[string]*dossiers.
 	return res
 }
 
+// mergeEvidenceSlice combines base evidence entries, noteID, and comma-separated itemEvidence into a deduplicated slice.
 func mergeEvidenceSlice(base []string, noteID string, itemEvidence string) []string {
+	// --- Step 1: Define comma-splitting deduplicated evidence appender ---
 	seen := make(map[string]bool)
 	var out []string
 	add := func(raw string) {
@@ -532,6 +592,8 @@ func mergeEvidenceSlice(base []string, noteID string, itemEvidence string) []str
 			out = append(out, trimmed)
 		}
 	}
+
+	// --- Step 2: Merge existing base evidence, noteID, and itemEvidence ---
 	for _, b := range base {
 		add(b)
 	}
@@ -546,17 +608,18 @@ func mergeEvidenceSlice(base []string, noteID string, itemEvidence string) []str
 
 // BrokenAnchorReport describes an active dossier entry with one or more missing anchors in repoRoot.
 type BrokenAnchorReport struct {
-	EntryID        string             `json:"entry_id"`
-	DossierScope   string             `json:"dossier_scope"`
-	EntryType      dossiers.EntryType `json:"entry_type"`
-	Title          string             `json:"title"`
-	MissingAnchors []string           `json:"missing_anchors"`
-	ValidAnchors   []string           `json:"valid_anchors"`
-	AllMissing     bool               `json:"all_missing"`
+	EntryID        string             `json:"entry_id"`        // Unique identifier of the entry with broken anchors.
+	DossierScope   string             `json:"dossier_scope"`   // Dossier scope containing the entry.
+	EntryType      dossiers.EntryType `json:"entry_type"`      // Cognitive entry type of the affected entry.
+	Title          string             `json:"title"`           // Extracted one-line title of the affected entry.
+	MissingAnchors []string           `json:"missing_anchors"` // Anchors whose file path or symbol could not be found in repoRoot.
+	ValidAnchors   []string           `json:"valid_anchors"`   // Anchors that still resolve validly in repoRoot.
+	AllMissing     bool               `json:"all_missing"`     // True when every anchor on the entry is missing (len(ValidAnchors) == 0).
 }
 
 // CheckAnchor reports whether a file (and optional #symbol or :symbol suffix) anchor exists in repoRoot.
 func CheckAnchor(repoRoot, rawAnchor string) bool {
+	// --- Step 1: Validate inputs and extract the normalized file path ---
 	trimmed := strings.TrimSpace(rawAnchor)
 	if repoRoot == "" || trimmed == "" {
 		return false
@@ -565,6 +628,8 @@ func CheckAnchor(repoRoot, rawAnchor string) bool {
 	if normPath == "" {
 		return false
 	}
+
+	// --- Step 2: Check file existence and verify optional symbol presence inside the file ---
 	checks := inbox.CheckAnchors(repoRoot, []string{trimmed})
 	exists := len(checks) > 0 && checks[0].Exists
 	if exists {
@@ -586,6 +651,7 @@ func CheckAnchor(repoRoot, rawAnchor string) bool {
 // CheckDossierAnchors inspects all active entries in d against repoRoot and returns a report
 // for each entry that has at least one missing file or symbol anchor (SPEC §6.5 step 3, design-v2 §6 step 4).
 func CheckDossierAnchors(repoRoot string, d *dossiers.Dossier) []BrokenAnchorReport {
+	// --- Step 1: Return early when repoRoot or dossier is empty ---
 	if repoRoot == "" || d == nil {
 		return nil
 	}
@@ -596,6 +662,7 @@ func CheckDossierAnchors(repoRoot string, d *dossiers.Dossier) []BrokenAnchorRep
 			continue
 		}
 
+		// --- Step 2: Partition each active entry's anchors into valid and missing ---
 		var missing []string
 		var valid []string
 
@@ -632,6 +699,7 @@ func CheckDossierAnchors(repoRoot string, d *dossiers.Dossier) []BrokenAnchorRep
 			}
 		}
 
+		// --- Step 3: Record a BrokenAnchorReport when any anchor is missing ---
 		if len(missing) > 0 {
 			scope := d.Scope
 			if scope == "" {

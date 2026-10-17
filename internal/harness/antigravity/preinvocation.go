@@ -18,7 +18,6 @@
  * - HandlePreInvocation(): Processes a PreInvocation hook event and returns InjectStepsResponse JSON.
  */
 
-// Package antigravity implements the Antigravity IDE/CLI hook and transcript adapters.
 package antigravity
 
 import (

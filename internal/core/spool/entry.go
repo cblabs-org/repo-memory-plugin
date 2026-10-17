@@ -1,3 +1,32 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/spool/entry.go
+ * Description: Defines the Entry payload schema and EntryKind constants written
+ *              by fast-path hooks for asynchronous background tick ingestion.
+ *
+ * Exported Types / Functions:
+ * - EntryKind:   Category of work requested via the spool.
+ * - KindCapture: Indicates a finished agent turn requiring transcript capture.
+ * - KindBrief:   Indicates a request for task brief generation.
+ * - KindDejavu:  Indicates a tier-2 semantic deja-vu check request.
+ * - KindRecheck: Indicates a re-check requested following git or dependency changes.
+ * - Entry:       Durable unit of work spooled by hooks for tick ingestion.
+ *
+ *   Lifecycle:
+ *   - NewCaptureEntry(): Creates a spool entry for a finished agent session turn.
+ *   - NewBriefEntry():   Creates a spool entry requesting task brief generation.
+ *   - NewDejavuEntry():  Creates a spool entry requesting a tier-2 semantic deja-vu check.
+ *   - NewRecheckEntry(): Creates a spool entry requesting re-verification after git changes.
+ *
+ *   json.Unmarshaler:
+ *   - UnmarshalJSON():   Unmarshals JSON and defaults Kind to KindCapture when omitted.
+ */
+
 package spool
 
 import (
@@ -21,26 +50,27 @@ const (
 
 // Entry represents a durable unit of work spooled by hooks for ingestion by the tick.
 type Entry struct {
-	ID             string         `json:"id,omitempty"`
-	Kind           EntryKind      `json:"kind,omitempty"`
-	Timestamp      time.Time      `json:"timestamp,omitempty"`
-	Harness        string         `json:"harness,omitempty"`
-	ConversationID       string         `json:"conversation_id,omitempty"`
-	ParentConversationID string         `json:"parent_conversation_id,omitempty"`
-	SessionID            string         `json:"session_id,omitempty"`
-	TranscriptPath string         `json:"transcript_path,omitempty"`
-	RepoRoot       string         `json:"repo_root,omitempty"`
-	Branch         string         `json:"branch,omitempty"`
-	Head           string         `json:"head,omitempty"`
-	StepIndex      int            `json:"step_index,omitempty"`
-	EntityID       string         `json:"entity_id,omitempty"`
-	Reasoning      string         `json:"reasoning,omitempty"`
-	Command        string         `json:"command,omitempty"`
-	Details        map[string]any `json:"details,omitempty"`
+	ID                   string         `json:"id,omitempty"`                     // Unique spool entry identifier.
+	Kind                 EntryKind      `json:"kind,omitempty"`                   // Category of background work requested.
+	Timestamp            time.Time      `json:"timestamp,omitempty"`              // UTC creation timestamp of the spool event.
+	Harness              string         `json:"harness,omitempty"`                // Originating agent harness identifier.
+	ConversationID       string         `json:"conversation_id,omitempty"`        // Active conversation or trajectory UUID.
+	ParentConversationID string         `json:"parent_conversation_id,omitempty"` // Parent conversation UUID for subagent sessions.
+	SessionID            string         `json:"session_id,omitempty"`             // Optional harness session identifier.
+	TranscriptPath       string         `json:"transcript_path,omitempty"`        // Filesystem path to the queued or raw transcript.
+	RepoRoot             string         `json:"repo_root,omitempty"`              // Repository root directory path.
+	Branch               string         `json:"branch,omitempty"`                 // Active git branch name at spool time.
+	Head                 string         `json:"head,omitempty"`                   // Active git HEAD commit hash at spool time.
+	StepIndex            int            `json:"step_index,omitempty"`             // Transcript step index associated with the event.
+	EntityID             string         `json:"entity_id,omitempty"`              // Target entity identifier for deja-vu checks.
+	Reasoning            string         `json:"reasoning,omitempty"`              // Agent reasoning excerpt attached to the request.
+	Command              string         `json:"command,omitempty"`                // Executed shell or git command triggering the event.
+	Details              map[string]any `json:"details,omitempty"`                // Additional unstructured event metadata.
 }
 
 // UnmarshalJSON unmarshals JSON and normalizes defaults (such as defaulting Kind to KindCapture).
 func (e *Entry) UnmarshalJSON(data []byte) error {
+	// --- Step 1: Unmarshal raw JSON fields via alias type ---
 	type Alias Entry
 	aux := &struct {
 		*Alias
@@ -50,6 +80,8 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
+
+	// --- Step 2: Backfill default KindCapture when transcript or conversation is set ---
 	if e.Kind == "" {
 		if e.TranscriptPath != "" || e.ConversationID != "" {
 			e.Kind = KindCapture

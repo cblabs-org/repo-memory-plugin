@@ -1,3 +1,22 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/dossiers/projector.go
+ * Description: Deterministic state projection of ordered operation batches
+ *              (OpAdd, OpAmend, OpSupersede, OpRetire, OpMove, OpSplit) into
+ *              in-memory Dossier structures sorted by section priority and ID.
+ *
+ * Exported Types / Functions:
+ * - Projector:          Projects operation log batches into active and historical dossier state.
+ *   - NewProjector():   Creates a Projector backed by an ops.Reader.
+ *   - Project():        Replays all operation batches from the reader into a scope-keyed Dossier map.
+ *   - ProjectBefore():  Replays operation batches committed prior to beforeCommit.
+ */
+
 package dossiers
 
 import (
@@ -10,17 +29,23 @@ import (
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/ops"
 )
 
+// Projector folds ordered operation batches from an ops.Reader into a map of
+// projected Dossier instances.
 type Projector struct {
-	reader *ops.Reader
+	reader *ops.Reader // Underlying operation batch reader.
 }
 
+// NewProjector returns a new Projector backed by opsReader.
 func NewProjector(opsReader *ops.Reader) *Projector {
 	return &Projector{
 		reader: opsReader,
 	}
 }
 
+// projectFromSeq iterates through seq, applies each batch in order, and sorts
+// all resulting dossiers deterministically.
 func (p *Projector) projectFromSeq(seq iter.Seq2[*ops.OpBatch, error]) (map[string]*Dossier, error) {
+	// --- Step 1: Replay operation batches into the in-memory dossier map ---
 	dossiers := make(map[string]*Dossier)
 	entryIndex := make(map[string]string)
 
@@ -33,6 +58,7 @@ func (p *Projector) projectFromSeq(seq iter.Seq2[*ops.OpBatch, error]) (map[stri
 		}
 	}
 
+	// --- Step 2: Sort active and historical entries in each projected dossier ---
 	for _, d := range dossiers {
 		sortDossier(d)
 	}
@@ -40,15 +66,21 @@ func (p *Projector) projectFromSeq(seq iter.Seq2[*ops.OpBatch, error]) (map[stri
 	return dossiers, nil
 }
 
+// Project replays all operation batches from the underlying reader and returns
+// the projected dossiers keyed by scope name.
 func (p *Projector) Project(ctx context.Context) (map[string]*Dossier, error) {
 	return p.projectFromSeq(p.reader.Iterate(ctx))
 }
 
+// ProjectBefore replays all operation batches committed prior to beforeCommit
+// and returns the projected dossiers keyed by scope name.
 func (p *Projector) ProjectBefore(ctx context.Context, beforeCommit string) (map[string]*Dossier, error) {
 	return p.projectFromSeq(p.reader.IterateBefore(ctx, beforeCommit))
 }
 
+// applyBatch applies every operation in batch to dossiers and updates entryIndex.
 func applyBatch(dossiers map[string]*Dossier, entryIndex map[string]string, batch *ops.OpBatch) error {
+	// --- Step 1: Dispatch each operation in the batch by its OpType ---
 	for _, op := range batch.Ops {
 		switch op.Type {
 		case ops.OpAdd:
@@ -68,6 +100,8 @@ func applyBatch(dossiers map[string]*Dossier, entryIndex map[string]string, batc
 	return nil
 }
 
+// getOrCreateDossier returns the existing Dossier for scope or initializes a new
+// module-kind Dossier when not yet present.
 func getOrCreateDossier(dossiers map[string]*Dossier, scope string) *Dossier {
 	d, ok := dossiers[scope]
 	if !ok {
@@ -80,7 +114,9 @@ func getOrCreateDossier(dossiers map[string]*Dossier, scope string) *Dossier {
 	return d
 }
 
+// extractIntField reads an integer value (int, int64, or float64) from fields[key].
 func extractIntField(fields map[string]any, key string) (int, bool) {
+	// --- Step 1: Lookup key and convert numeric JSON/YAML types to int ---
 	v, exists := fields[key]
 	if !exists {
 		return 0, false
@@ -97,7 +133,10 @@ func extractIntField(fields map[string]any, key string) (int, bool) {
 	}
 }
 
+// extractKinds inspects fields for `kind`, `cognitive_kind`, and `dossier_kind`
+// values and returns any recognized CognitiveKind and DossierKind overrides.
 func extractKinds(fields map[string]any) (ck CognitiveKind, hasCK bool, dk DossierKind, hasDK bool) {
+	// --- Step 1: Inspect generic `kind` field for either CognitiveKind or DossierKind ---
 	if k, ok := fields["kind"].(string); ok {
 		if CognitiveKind(k).Valid() {
 			ck = CognitiveKind(k)
@@ -110,6 +149,8 @@ func extractKinds(fields map[string]any) (ck CognitiveKind, hasCK bool, dk Dossi
 			}
 		}
 	}
+
+	// --- Step 2: Check explicit `cognitive_kind` and `dossier_kind` overrides ---
 	if k, ok := fields["cognitive_kind"].(string); ok && CognitiveKind(k).Valid() {
 		ck = CognitiveKind(k)
 		hasCK = true
@@ -121,8 +162,10 @@ func extractKinds(fields map[string]any) (ck CognitiveKind, hasCK bool, dk Dossi
 	return ck, hasCK, dk, hasDK
 }
 
+// applyAdd inserts a new Entry into its target dossier (or amends/moves an
+// existing entry if op.EntryID was already projected).
 func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
-	// If entry already exists, treat as amend (or move if scope differs)
+	// --- Step 1: Handle duplicate EntryID as an amendment (with cross-scope move if needed) ---
 	if existingScope, exists := entryIndex[op.EntryID]; exists {
 		if existingScope != op.DossierScope && op.DossierScope != "" {
 			// Scope changed — move entry across scopes before amending
@@ -132,6 +175,7 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 		return
 	}
 
+	// --- Step 2: Resolve target dossier and apply optional dossier-level metadata ---
 	d := getOrCreateDossier(dossiers, op.DossierScope)
 
 	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
@@ -145,6 +189,7 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 		d.Purpose = purpose
 	}
 
+	// --- Step 3: Populate new Entry fields from operation payload ---
 	entry := Entry{
 		ID:           op.EntryID,
 		DossierScope: op.DossierScope,
@@ -213,6 +258,7 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 		entry.RenderAsSkill = ras
 	}
 
+	// --- Step 4: Append entry and index its scope ---
 	for _, e := range d.Entries {
 		if e.ID == entry.ID {
 			entryIndex[op.EntryID] = op.DossierScope
@@ -225,7 +271,9 @@ func applyAdd(dossiers map[string]*Dossier, entryIndex map[string]string, op ops
 	entryIndex[op.EntryID] = op.DossierScope
 }
 
+// applyAmend updates an existing active entry and/or dossier metadata in place.
 func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	// --- Step 1: Resolve target dossier scope and apply dossier-level metadata ---
 	scope := entryIndex[op.EntryID]
 	if scope == "" {
 		scope = op.DossierScope
@@ -233,7 +281,7 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 	if scope == "" {
 		return // Cannot resolve scope
 	}
-	
+
 	d := getOrCreateDossier(dossiers, scope)
 
 	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
@@ -247,6 +295,7 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 		d.Purpose = purpose
 	}
 
+	// --- Step 2: Locate matching active entry and apply field updates ---
 	for i, e := range d.Entries {
 		if e.ID == op.EntryID {
 			typeAmended := false
@@ -317,7 +366,11 @@ func applyAmend(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 	}
 }
 
+// applySupersede moves the superseded entry into History and inserts the
+// replacement entry (`new_entry_id`) into active Entries, inheriting any
+// unspecified fields from the prior entry.
 func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	// --- Step 1: Resolve target dossier and retire the superseded entry into History ---
 	scope := entryIndex[op.EntryID]
 	if scope == "" {
 		scope = op.DossierScope
@@ -325,7 +378,7 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 	if scope == "" {
 		return
 	}
-	
+
 	d := getOrCreateDossier(dossiers, scope)
 	ck, hasCK, dk, hasDK := extractKinds(op.Fields)
 	if hasDK {
@@ -356,6 +409,7 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 		d.History = append(d.History, entryToMove)
 	}
 
+	// --- Step 2: Construct replacement entry with inheritance from the superseded entry ---
 	newEntry := Entry{
 		ID:           newID,
 		DossierScope: scope,
@@ -363,7 +417,7 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 		CreatedAt:    op.Timestamp,
 		UpdatedAt:    op.Timestamp,
 	}
-	
+
 	if text, ok := op.Fields["text"].(string); ok {
 		newEntry.Text = text
 	}
@@ -381,7 +435,7 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 	} else {
 		newEntry.Kind = DeriveCognitiveKind(newEntry.Type)
 	}
-	
+
 	if anchors, ok := op.Fields["anchors"].([]any); ok {
 		for _, a := range anchors {
 			if s, ok := a.(string); ok {
@@ -411,7 +465,7 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 	} else if found {
 		newEntry.Verified = entryToMove.Verified
 	}
-	
+
 	if closesWhen, ok := op.Fields["closes_when"].(string); ok {
 		newEntry.ClosesWhen = closesWhen
 	} else if found {
@@ -446,11 +500,15 @@ func applySupersede(dossiers map[string]*Dossier, entryIndex map[string]string, 
 		newEntry.RenderAsSkill = entryToMove.RenderAsSkill
 	}
 
+	// --- Step 3: Append replacement entry to active Entries and update entryIndex ---
 	d.Entries = append(d.Entries, newEntry)
 	entryIndex[newID] = scope
 }
 
+// applyRetire moves an active entry into its dossier's History slice and records
+// the retirement reason.
 func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	// --- Step 1: Resolve target dossier scope and retirement reason ---
 	scope := entryIndex[op.EntryID]
 	if scope == "" {
 		scope = op.DossierScope
@@ -458,13 +516,14 @@ func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op 
 	if scope == "" {
 		return
 	}
-	
+
 	d := getOrCreateDossier(dossiers, scope)
 	var reason string
 	if r, ok := op.Fields["reason"].(string); ok {
 		reason = r
 	}
 
+	// --- Step 2: Remove entry from active Entries and append to History ---
 	var entryToMove Entry
 	found := false
 	var keep []Entry
@@ -485,7 +544,10 @@ func applyRetire(dossiers map[string]*Dossier, entryIndex map[string]string, op 
 	}
 }
 
+// moveEntry transfers entryID from fromScope to toScope and prunes fromScope if
+// it becomes completely empty.
 func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entryID, fromScope, toScope string, ts time.Time) {
+	// --- Step 1: Validate source and destination scopes ---
 	if fromScope == "" || toScope == "" || fromScope == toScope {
 		return
 	}
@@ -493,6 +555,7 @@ func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entry
 	fromD := getOrCreateDossier(dossiers, fromScope)
 	toD := getOrCreateDossier(dossiers, toScope)
 
+	// --- Step 2: Detach entry from source dossier ---
 	var entryToMove Entry
 	found := false
 	var keep []Entry
@@ -506,6 +569,8 @@ func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entry
 			keep = append(keep, e)
 		}
 	}
+
+	// --- Step 3: Prune empty source dossier and attach entry to destination dossier ---
 	if found {
 		fromD.Entries = keep
 		if len(fromD.Entries) == 0 && len(fromD.History) == 0 && fromD.Title == "" && fromD.Purpose == "" {
@@ -522,6 +587,7 @@ func moveEntry(dossiers map[string]*Dossier, entryIndex map[string]string, entry
 	}
 }
 
+// applyMove handles an OpMove operation by transferring op.EntryID to `to_dossier`.
 func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
 	toScope, _ := op.Fields["to_dossier"].(string)
 	fromScope := entryIndex[op.EntryID]
@@ -531,12 +597,12 @@ func applyMove(dossiers map[string]*Dossier, entryIndex map[string]string, op op
 	moveEntry(dossiers, entryIndex, op.EntryID, fromScope, toScope, op.Timestamp)
 }
 
+// applySplit handles an OpSplit operation by creating target dossiers and
+// reassigning entries specified in `entry_moves`.
 func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op ops.Op) {
+	// --- Step 1: Resolve source dossier scope from op or entryMoves ---
 	fromScope := op.DossierScope
 	if fromScope == "" || dossiers[fromScope] == nil {
-		// Just take the scope of one of the entries to move? Split operates on DossierScope primarily in the previous impl. 
-		// If DossierScope is empty, we don't know which dossier is being split easily, unless we check entryMoves.
-		// Let's see if we can resolve it from entryMoves.
 		if entryMoves, ok := op.Fields["entry_moves"].(map[string]any); ok {
 			for id := range entryMoves {
 				fromScope = entryIndex[id]
@@ -552,9 +618,10 @@ func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 	if fromScope == "" {
 		return
 	}
-	
+
 	fromD := getOrCreateDossier(dossiers, fromScope)
 
+	// --- Step 2: Ensure all declared replacement dossiers exist ---
 	if newDossiers, ok := op.Fields["new_dossiers"].([]any); ok {
 		for _, nd := range newDossiers {
 			if scope, ok := nd.(string); ok {
@@ -567,6 +634,7 @@ func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 		}
 	}
 
+	// --- Step 3: Extract entry-to-destination-scope map and redistribute entries ---
 	moves := make(map[string]string)
 	if entryMoves, ok := op.Fields["entry_moves"].(map[string]any); ok {
 		for id, dest := range entryMoves {
@@ -593,6 +661,7 @@ func applySplit(dossiers map[string]*Dossier, entryIndex map[string]string, op o
 	fromD.Entries = keep
 }
 
+// typeOrder defines the canonical section ordering for entries within a dossier.
 var typeOrder = map[EntryType]int{
 	EntryTypeInvariant:         1,
 	EntryTypeContract:          1,
@@ -608,11 +677,14 @@ var typeOrder = map[EntryType]int{
 	EntryTypeOpenIssue:         8,
 }
 
+// sortDossier sorts both active and historical entries of d in place.
 func sortDossier(d *Dossier) {
 	sortEntries(d.Entries)
 	sortEntries(d.History)
 }
 
+// sortEntries sorts entries by canonical section priority (typeOrder) and then
+// lexicographically by entry ID.
 func sortEntries(entries []Entry) {
 	sort.Slice(entries, func(i, j int) bool {
 		oi := typeOrder[entries[i].Type]

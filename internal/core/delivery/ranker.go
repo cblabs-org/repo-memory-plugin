@@ -1,8 +1,22 @@
 /*
-ranker.go scores, orders, and token-budgets candidate dossier entries for push
-delivery based on anchor specificity, entry type priority, verification status,
-evidence count, and FTS5 BM25 relevance.
-*/
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/delivery/ranker.go
+ * Description: Scores, orders, and token-budgets candidate dossier entries for
+ *              push delivery based on anchor specificity, entry type priority,
+ *              verification status, evidence count, and FTS5 BM25 relevance.
+ *
+ * Exported Types / Functions:
+ * - RankedEntry:              Pairs a dossier entry with its composite delivery score and match metadata.
+ * - DefaultMinRelevanceScore: Default minimum relevance score required for push delivery.
+ * - RankEntries():            Computes composite delivery scores and sorts entries descending.
+ * - RankEntriesWithScores():  Scores and sorts entries using an explicit FTS5 score map.
+ * - SelectWithinBudget():     Greedily selects entries above the score threshold that fit a token budget.
+ */
 
 package delivery
 

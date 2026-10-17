@@ -1,8 +1,34 @@
 /*
-engine.go implements the push-delivery selection engine across task-start,
-first-entry (dossier scope), first-touch (file/symbol anchor), command-error,
-and pre-edit gate moments.
-*/
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/delivery/engine.go
+ * Description: Implements the push-delivery selection engine across task-start,
+ *              first-entry (dossier scope), first-touch (file/symbol anchor),
+ *              command-error, and pre-edit gate moments.
+ *
+ * Exported Types / Functions:
+ * - Engine:             Selects, verifies, ranks, and deduplicates dossier entries for push delivery.
+ *   - NewEngine():        Constructs a push-delivery Engine backed by an Index and workspace root.
+ *   - InjectedSet():      Returns the set of entry IDs marked as injected in the current session.
+ *   - IsInjected():       Reports whether an entry ID has already been injected.
+ *   - MarkInjected():     Marks an entry ID as injected in the current session.
+ *   - ResetInjected():    Clears the per-session injected entry set.
+ *   - TaskStartEntries(): Selects push-delivery entries for MomentTaskStart from prompt terms and git diffs.
+ *   - DossierEntries():   Selects push-delivery entries for MomentFirstEntry when entering a module scope.
+ *   - AnchorEntries():    Selects push-delivery entries for MomentFirstTouch when touching a file/symbol anchor.
+ *   - ErrorEntries():     Selects push-delivery entries for MomentError when a command fails.
+ *   - GateEntries():      Selects unacknowledged `gate: edit` entries anchored to a target file.
+ * - EngineOption:       Functional option for configuring an Engine instance.
+ * - WithBudgets():      Overrides per-moment token budgets on an Engine.
+ * - WithScopeResolver(): Sets the module scope resolver on an Engine.
+ * - WithMinScore():     Overrides the minimum relevance score threshold on an Engine.
+ * - WithInjectedSet():  Shares an existing per-conversation injected-entry set with an Engine.
+ * - IsStopWord():       Reports whether a token is a common stopword excluded from FTS5 prompt queries.
+ */
 
 package delivery
 
@@ -69,6 +95,7 @@ func WithInjectedSet(set map[string]bool) EngineOption {
 
 // NewEngine constructs a push-delivery Engine backed by idx and rooted at workspaceRoot.
 func NewEngine(idx *index.Index, workspaceRoot string, opts ...EngineOption) *Engine {
+	// --- Step 1: Initialize Engine with default budgets and relevance threshold ---
 	e := &Engine{
 		index:         idx,
 		workspaceRoot: workspaceRoot,
@@ -76,6 +103,8 @@ func NewEngine(idx *index.Index, workspaceRoot string, opts ...EngineOption) *En
 		minScore:      DefaultMinRelevanceScore,
 		injectedSet:   make(map[string]bool),
 	}
+
+	// --- Step 2: Apply functional options and ensure non-nil injectedSet ---
 	for _, opt := range opts {
 		opt(e)
 	}

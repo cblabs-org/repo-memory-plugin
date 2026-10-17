@@ -1,3 +1,26 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/config/managed_block.go
+ * Description: Management, validation, atomic insertion, and removal of the
+ *              repo-memory v2 managed instruction block inside GEMINI.md.
+ *
+ * Exported Types / Functions:
+ * - InstructionFilename:      Target instruction filename ("GEMINI.md").
+ * - ManagedBlockBeginV2:      Opening HTML comment marker for the v2 managed block.
+ * - ManagedBlockBeginPrefix:  Prefix used to detect any repo-memory begin marker.
+ * - ManagedBlockEnd:          Closing HTML comment marker for the managed block.
+ * - LegacyMapMention:         Legacy v1 map reference string replaced during upgrade.
+ * - CanonicalManagedBlockV2(): Returns the canonical v2 managed instruction block for GEMINI.md.
+ * - ValidateInstructionBlock(): Validates balanced and ordered managed block markers in GEMINI.md.
+ * - EnsureInstructionBlock():  Inserts or updates the canonical v2 managed block in GEMINI.md.
+ * - RemoveInstructionBlock():  Removes the managed instruction block from GEMINI.md on unenroll.
+ */
+
 package config
 
 import (
@@ -8,11 +31,16 @@ import (
 )
 
 const (
-	InstructionFilename     = "GEMINI.md"
-	ManagedBlockBeginV2     = "<!-- repo-memory:begin v2 — managed by repo-memory; edits inside are overwritten -->"
+	// InstructionFilename is the repository instruction file managed during enrolment.
+	InstructionFilename = "GEMINI.md"
+	// ManagedBlockBeginV2 is the opening HTML comment marker for the v2 managed block.
+	ManagedBlockBeginV2 = "<!-- repo-memory:begin v2 — managed by repo-memory; edits inside are overwritten -->"
+	// ManagedBlockBeginPrefix is the prefix used to match any version of the begin marker.
 	ManagedBlockBeginPrefix = "<!-- repo-memory:begin"
-	ManagedBlockEnd         = "<!-- repo-memory:end -->"
-	LegacyMapMention        = "@[memory map](.memory/views/MAP.md)"
+	// ManagedBlockEnd is the closing HTML comment marker for the managed block.
+	ManagedBlockEnd = "<!-- repo-memory:end -->"
+	// LegacyMapMention is the v1 memory map include replaced by the v2 managed block.
+	LegacyMapMention = "@[memory map](.memory/views/MAP.md)"
 )
 
 // CanonicalManagedBlockV2 returns the canonical v2 managed instruction block for GEMINI.md.
@@ -29,6 +57,7 @@ func CanonicalManagedBlockV2() string {
 // ValidateInstructionBlock validates the repo-memory managed block markers in GEMINI.md content.
 // It returns nil if no markers are present or if a single well-formed begin/end pair is present.
 func ValidateInstructionBlock(content string) error {
+	// --- Step 1: Count begin and end markers and verify cardinality ---
 	beginCount := strings.Count(content, ManagedBlockBeginPrefix)
 	endCount := strings.Count(content, ManagedBlockEnd)
 
@@ -45,6 +74,7 @@ func ValidateInstructionBlock(content string) error {
 		return fmt.Errorf("unbalanced repo-memory managed block markers in GEMINI.md")
 	}
 
+	// --- Step 2: Verify marker ordering and HTML comment closure ---
 	beginIdx := strings.Index(content, ManagedBlockBeginPrefix)
 	endIdx := strings.Index(content, ManagedBlockEnd)
 	if endIdx < beginIdx {
@@ -64,6 +94,7 @@ func ValidateInstructionBlock(content string) error {
 // EnsureInstructionBlock ensures GEMINI.md in repoRoot contains the canonical v2 managed instruction block.
 // It returns createdFile=true if GEMINI.md did not previously exist and was created by this call.
 func EnsureInstructionBlock(repoRoot string) (createdFile bool, err error) {
+	// --- Step 1: Read existing GEMINI.md or create a new file with the canonical block ---
 	path := filepath.Join(repoRoot, InstructionFilename)
 	block := CanonicalManagedBlockV2()
 
@@ -78,11 +109,13 @@ func EnsureInstructionBlock(repoRoot string) (createdFile bool, err error) {
 		return false, fmt.Errorf("reading %s: %w", path, err)
 	}
 
+	// --- Step 2: Validate existing managed block markers ---
 	content := string(data)
 	if err := ValidateInstructionBlock(content); err != nil {
 		return false, err
 	}
 
+	// --- Step 3: Replace existing block, upgrade legacy mention, or append block ---
 	var updated string
 	beginIdx := strings.Index(content, ManagedBlockBeginPrefix)
 	if beginIdx >= 0 {
@@ -100,6 +133,7 @@ func EnsureInstructionBlock(repoRoot string) (createdFile bool, err error) {
 		updated = content + "\n\n" + block
 	}
 
+	// --- Step 4: Atomically persist changes when content differs ---
 	if updated != content {
 		if err := writeInstructionFileAtomic(path, updated); err != nil {
 			return false, err
@@ -112,6 +146,7 @@ func EnsureInstructionBlock(repoRoot string) (createdFile bool, err error) {
 // RemoveInstructionBlock removes the repo-memory managed instruction block (and any bare legacy map include)
 // from GEMINI.md in repoRoot. If the remaining content is empty and createdByUs is true, GEMINI.md is deleted.
 func RemoveInstructionBlock(repoRoot string, createdByUs bool) error {
+	// --- Step 1: Read and validate GEMINI.md ---
 	path := filepath.Join(repoRoot, InstructionFilename)
 
 	data, err := os.ReadFile(path)
@@ -127,6 +162,7 @@ func RemoveInstructionBlock(repoRoot string, createdByUs bool) error {
 		return err
 	}
 
+	// --- Step 2: Excise the managed block and normalize surrounding newlines ---
 	remaining := content
 	beginIdx := strings.Index(remaining, ManagedBlockBeginPrefix)
 	if beginIdx >= 0 {
@@ -164,6 +200,7 @@ func RemoveInstructionBlock(repoRoot string, createdByUs bool) error {
 		}
 	}
 
+	// --- Step 3: Strip any residual legacy map mentions ---
 	if strings.Contains(remaining, LegacyMapMention) {
 		lines := strings.Split(remaining, "\n")
 		filtered := make([]string, 0, len(lines))
@@ -176,6 +213,7 @@ func RemoveInstructionBlock(repoRoot string, createdByUs bool) error {
 		remaining = strings.Join(filtered, "\n")
 	}
 
+	// --- Step 4: Delete or atomically update GEMINI.md ---
 	if strings.TrimSpace(remaining) == "" {
 		if createdByUs {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -192,6 +230,8 @@ func RemoveInstructionBlock(repoRoot string, createdByUs bool) error {
 	return nil
 }
 
+// writeInstructionFileAtomic writes content to a PID-scoped temporary file and
+// renames it over path.
 func writeInstructionFileAtomic(path, content string) error {
 	dir := filepath.Dir(path)
 	tmpFile := filepath.Join(dir, fmt.Sprintf(".gemini-md-%d.tmp", os.Getpid()))

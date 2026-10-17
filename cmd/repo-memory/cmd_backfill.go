@@ -1,3 +1,19 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_backfill.go
+ * Description: CLI subcommand for backfilling repository memory from historical
+ *              transcripts, Principal Architect workspace artifacts, repository
+ *              documentation, and git revert commits.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
+
 package main
 
 import (
@@ -16,23 +32,25 @@ import (
 )
 
 var (
-	backfillRepo        string
-	backfillDataDir     string
-	backfillDryRun      bool
-	backfillJSON        bool
-	backfillForce       bool
-	backfillTranscripts bool
-	backfillDocs        bool
-	backfillGit         bool
-	backfillMaxItems    int
+	backfillRepo        string // Target repository root path (--repo).
+	backfillDataDir     string // Optional data directory override (--data-dir).
+	backfillDryRun      bool   // Whether to preview backfill actions without writing (--dry-run).
+	backfillJSON        bool   // Whether to emit structured JSON output (--json).
+	backfillForce       bool   // Whether to bypass A5 spend guard interval/quota limits (--force).
+	backfillTranscripts bool   // Whether to backfill PA workspace artifacts and historical transcripts (--transcripts).
+	backfillDocs        bool   // Whether to backfill repository docs via incremental doc seeding (--docs).
+	backfillGit         bool   // Whether to backfill refutation/gotcha notes from git revert commits (--git).
+	backfillMaxItems    int    // Maximum number of items to process (--max-items; 0 uses spend guard default).
 )
 
+// backfillCmd defines the `repo-memory backfill` subcommand.
 var backfillCmd = &cobra.Command{
 	Use:     "backfill [repo-dir]",
 	Aliases: []string{"backfill-captures"},
 	Short:   "Backfill repository memory from historical transcripts/PA artifacts, docs, and git reverts",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --- Step 1: Resolve execution context, data directory, and repository root ---
 		ctx := cmd.Context()
 		if ctx == nil {
 			ctx = context.Background()
@@ -61,6 +79,7 @@ var backfillCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 2: Resolve repository ID and execute backfill ---
 		repoID := ""
 		if repoRoot != "" {
 			if entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot); found && entry != nil && entry.RepoID != "" {
@@ -99,6 +118,7 @@ var backfillCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 3: Requeue capture jobs across registered repositories when invoked globally ---
 		// Fallback / supplementary support for registered repos when invoked without --repo
 		// or via the legacy backfill-captures alias.
 		if targetRepo == "" && (cmd.CalledAs() == "backfill-captures" || repoRoot == "") {
@@ -138,6 +158,7 @@ var backfillCmd = &cobra.Command{
 			}
 		}
 
+		// --- Step 4: Format and write backfill output ---
 		if backfillJSON {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")

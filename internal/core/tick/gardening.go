@@ -1,3 +1,24 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/gardening.go
+ * Description: Deterministic dossier gardening (SPEC §6.3.6). Cleans up broken
+ *              anchors, merges near-duplicate entries within each dossier scope,
+ *              splits oversized dossiers exceeding token caps, reconciles doc-seed
+ *              freshness, and rebuilds the multi-tier SQLite search index.
+ *
+ * Exported Types / Functions:
+ * - FreshnessResult:                  Alias for seed.DocSeedResult returned by CheckDocFreshness.
+ * - GardeningOptions:                 Configuration parameters for a dossier gardening pass.
+ * - GardeningResult:                  Summary of operations emitted and applied by RunGardening.
+ * - PipelineExecutor.SetIndex():      Attaches a SQLite search index handle to the executor.
+ * - PipelineExecutor.RunGardening():  Executes the 4-step deterministic dossier gardening pass.
+ */
+
 package tick
 
 import (
@@ -23,19 +44,19 @@ type FreshnessResult = seed.DocSeedResult
 
 // GardeningOptions configures a dossier gardening pass.
 type GardeningOptions struct {
-	DryRun           bool `json:"dry_run"`
-	MaxDossierTokens int  `json:"max_dossier_tokens,omitempty"`
+	DryRun           bool `json:"dry_run"`                      // When true, computes gardening ops without mutating disk or index.
+	MaxDossierTokens int  `json:"max_dossier_tokens,omitempty"` // Token cap per dossier before splitting (defaults to 3000).
 }
 
 // GardeningResult summarizes all operations generated and applied by RunGardening.
 type GardeningResult struct {
-	RetiredBrokenAnchors []string         `json:"retired_broken_anchors,omitempty"`
-	PrunedAnchorEntries  []string         `json:"pruned_anchor_entries,omitempty"`
-	MergedDuplicates     []string         `json:"merged_duplicates,omitempty"`
-	SplitDossiers        []string         `json:"split_dossiers,omitempty"`
-	OpsEmitted           int              `json:"ops_emitted"`
-	Ops                  []ops.Op         `json:"ops,omitempty"`
-	Freshness            *FreshnessResult `json:"freshness,omitempty"`
+	RetiredBrokenAnchors []string         `json:"retired_broken_anchors,omitempty"` // Entry IDs retired because all anchors were missing.
+	PrunedAnchorEntries  []string         `json:"pruned_anchor_entries,omitempty"`  // Entry IDs amended to prune partially missing anchors.
+	MergedDuplicates     []string         `json:"merged_duplicates,omitempty"`      // Duplicate entry IDs merged and retired.
+	SplitDossiers        []string         `json:"split_dossiers,omitempty"`         // Dossier scopes split due to exceeding MaxDossierTokens.
+	OpsEmitted           int              `json:"ops_emitted"`                      // Total gardening operations generated.
+	Ops                  []ops.Op         `json:"ops,omitempty"`                    // Ordered slice of gardening operations emitted.
+	Freshness            *FreshnessResult `json:"freshness,omitempty"`              // Doc-freshness reconciliation result (nil in dry-run mode).
 }
 
 // SetIndex sets the SQLite index instance on the PipelineExecutor.
@@ -49,6 +70,7 @@ func (p *PipelineExecutor) SetIndex(idx *index.Index) {
 //  3. Dossier cap split (> MaxDossierTokens, defaulting to cfg.Budgets.DossierCapTokens or 3000).
 //  4. Write & re-project (when !opts.DryRun), doc freshness check, and multi-tier index rebuild.
 func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptions) (*GardeningResult, error) {
+	// --- Step 0: Resolve configuration defaults and project existing dossiers ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -90,7 +112,7 @@ func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptio
 	retiredIDs := make(map[string]bool)
 	prunedAnchorsByID := make(map[string][]string)
 
-	// Step 1 — Broken-anchor cleanup.
+	// --- Step 1: Broken-anchor cleanup across all active entries ---
 	for _, scope := range scopes {
 		d := projected[scope]
 		if d == nil || len(d.Entries) == 0 {
@@ -147,7 +169,7 @@ func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptio
 		}
 	}
 
-	// Step 2 — Near-duplicate merging within each dossier.
+	// --- Step 2: Merge near-duplicate entries within each dossier ---
 	survivingByScope := make(map[string][]dossiers.Entry, len(scopes))
 	for _, scope := range scopes {
 		d := projected[scope]
@@ -248,7 +270,7 @@ func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptio
 		survivingByScope[scope] = survivors
 	}
 
-	// Step 3 — Dossier cap split (> maxTokens).
+	// --- Step 3: Split oversized dossiers exceeding maxTokens ---
 	var splitAliases [][2]string
 	for _, scope := range scopes {
 		d := projected[scope]
@@ -297,7 +319,7 @@ func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptio
 
 	res.OpsEmitted = len(res.Ops)
 
-	// Step 4 — Write & Re-project (when !opts.DryRun).
+	// --- Step 4: Record ops, check doc freshness, and rebuild multi-tier index ---
 	if !opts.DryRun {
 		if len(res.Ops) > 0 {
 			if _, err := consolidate.RecordRepoTier(ctx, p.repoRoot, res.Ops, nil, nil, now); err != nil {
@@ -342,17 +364,22 @@ func (p *PipelineExecutor) RunGardening(ctx context.Context, opts GardeningOptio
 	return res, nil
 }
 
+// areEntriesNearDuplicates reports whether two dossier entries in the same canonical type group
+// have identical normalized titles or overlapping anchors with token Jaccard similarity >= 0.75.
 func areEntriesNearDuplicates(a, b dossiers.Entry) bool {
+	// --- Step 1: Require matching canonical entry type group ---
 	if consolidate.CanonicalEntryTypeGroup(a.Type) != consolidate.CanonicalEntryTypeGroup(b.Type) {
 		return false
 	}
 
+	// --- Step 2: Check for exact normalized title match ---
 	titleA := consolidate.NormalizeTitle(consolidate.ExtractEntryTitle(a.Text))
 	titleB := consolidate.NormalizeTitle(consolidate.ExtractEntryTitle(b.Text))
 	if titleA != "" && titleA == titleB {
 		return true
 	}
 
+	// --- Step 3: Check anchor overlap and token Jaccard similarity ---
 	if !consolidate.AnchorsOverlap(a.Anchors, b.Anchors) {
 		return false
 	}
@@ -366,12 +393,16 @@ func areEntriesNearDuplicates(a, b dossiers.Entry) bool {
 	return false
 }
 
+// tokenJaccard computes the Jaccard similarity coefficient between the token sets of a and b.
 func tokenJaccard(a, b string) float64 {
+	// --- Step 1: Tokenize both strings ---
 	setA := tokenizeForJaccard(a)
 	setB := tokenizeForJaccard(b)
 	if len(setA) == 0 || len(setB) == 0 {
 		return 0
 	}
+
+	// --- Step 2: Compute intersection over union ---
 	inter := 0
 	for k := range setA {
 		if setB[k] {
@@ -385,6 +416,7 @@ func tokenJaccard(a, b string) float64 {
 	return float64(inter) / float64(union)
 }
 
+// tokenizeForJaccard splits text into lowercase alphanumeric tokens for Jaccard comparison.
 func tokenizeForJaccard(text string) map[string]bool {
 	tokens := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
@@ -398,7 +430,9 @@ func tokenizeForJaccard(text string) map[string]bool {
 	return out
 }
 
+// mergeUniqueStrings combines two string slices while preserving order and eliminating duplicates.
 func mergeUniqueStrings(a, b []string) []string {
+	// --- Step 1: Collect unique non-empty strings from slice a ---
 	seen := make(map[string]bool, len(a)+len(b))
 	var out []string
 	for _, s := range a {
@@ -408,6 +442,8 @@ func mergeUniqueStrings(a, b []string) []string {
 			out = append(out, trimmed)
 		}
 	}
+
+	// --- Step 2: Append unique non-empty strings from slice b ---
 	for _, s := range b {
 		trimmed := strings.TrimSpace(s)
 		if trimmed != "" && !seen[trimmed] {
@@ -418,8 +454,10 @@ func mergeUniqueStrings(a, b []string) []string {
 	return out
 }
 
+// partitionDossierEntries partitions entries of an oversized dossier into at least two sub-scopes
+// using anchor subdirectory prefixes, anchor file stems, entry types, or cognitive kinds.
 func partitionDossierEntries(parentScope string, entries []dossiers.Entry) ([]string, map[string]string) {
-	// Strategy 1: Partition by anchor sub-directory prefix.
+	// --- Step 1: Partition by anchor sub-directory prefix ---
 	dirMoves := make(map[string]string, len(entries))
 	dirScopes := make(map[string]bool)
 	for _, e := range entries {
@@ -432,7 +470,7 @@ func partitionDossierEntries(parentScope string, entries []dossiers.Entry) ([]st
 		return sortedKeys(dirScopes), dirMoves
 	}
 
-	// Strategy 1b: Partition by anchor file stem if all anchors share the same directory.
+	// --- Step 2: Partition by anchor file stem if all anchors share the same directory ---
 	fileMoves := make(map[string]string, len(entries))
 	fileScopes := make(map[string]bool)
 	for _, e := range entries {
@@ -445,7 +483,7 @@ func partitionDossierEntries(parentScope string, entries []dossiers.Entry) ([]st
 		return sortedKeys(fileScopes), fileMoves
 	}
 
-	// Strategy 2: Partition by entry type.
+	// --- Step 3: Partition by entry type ---
 	typeMoves := make(map[string]string, len(entries))
 	typeScopes := make(map[string]bool)
 	for _, e := range entries {
@@ -461,7 +499,7 @@ func partitionDossierEntries(parentScope string, entries []dossiers.Entry) ([]st
 		return sortedKeys(typeScopes), typeMoves
 	}
 
-	// Strategy 2b: Partition by cognitive kind.
+	// --- Step 4: Partition by cognitive kind ---
 	kindMoves := make(map[string]string, len(entries))
 	kindScopes := make(map[string]bool)
 	for _, e := range entries {
@@ -480,7 +518,9 @@ func partitionDossierEntries(parentScope string, entries []dossiers.Entry) ([]st
 	return nil, nil
 }
 
+// deriveAnchorDirSubScope derives a child scope slug from the subdirectory or file stem of anchors relative to parentScope.
 func deriveAnchorDirSubScope(parentScope string, anchors []string) string {
+	// --- Step 1: Normalize parentScope and inspect each anchor path ---
 	scopeNorm := strings.Trim(filepath.ToSlash(strings.TrimSpace(parentScope)), "/")
 	for _, raw := range anchors {
 		p := consolidate.StripAnchorSymbol(raw)
@@ -488,6 +528,8 @@ func deriveAnchorDirSubScope(parentScope string, anchors []string) string {
 		if p == "" {
 			continue
 		}
+
+		// --- Step 2: Extract first path segment relative to parentScope when prefixed ---
 		if scopeNorm != "" {
 			if strings.HasPrefix(p, scopeNorm+"/") {
 				rem := strings.TrimPrefix(p, scopeNorm+"/")
@@ -509,6 +551,7 @@ func deriveAnchorDirSubScope(parentScope string, anchors []string) string {
 			}
 		}
 
+		// --- Step 3: Fall back to parent directory basename or file stem ---
 		dir := filepath.ToSlash(filepath.Dir(p))
 		if dir != "." && dir != "" {
 			base := filepath.Base(dir)
@@ -528,6 +571,7 @@ func deriveAnchorDirSubScope(parentScope string, anchors []string) string {
 	return "general"
 }
 
+// deriveAnchorFileSubScope derives a child scope slug from the first non-empty anchor file stem.
 func deriveAnchorFileSubScope(anchors []string) string {
 	for _, raw := range anchors {
 		p := consolidate.StripAnchorSymbol(raw)
@@ -543,6 +587,7 @@ func deriveAnchorFileSubScope(anchors []string) string {
 	return "general"
 }
 
+// sortedKeys returns the keys of map m in ascending lexicographical order.
 func sortedKeys(m map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

@@ -1,3 +1,33 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/hooks.go
+ * Description: Implements the Antigravity Stop hook pipeline, including budget
+ *              enforcement, kill-switch and enrollment checks, capture spool
+ *              creation, incremental transcript queuing, artifact copying, and
+ *              Stage 1 warm-cache Stop distillation.
+ *
+ * Exported Types / Functions:
+ * - DefaultHookBudget:          Maximum allowed runtime for the Stop hook (200ms).
+ * - StopPayload:                JSON payload received on an Antigravity Stop hook event.
+ *   - Normalize():              Normalizes camelCase and snake_case fields and expands home paths.
+ * - StopResult:                 Outcome summary of processing a Stop hook invocation.
+ * - HookOptions:                Configuration overrides for hook execution.
+ * - HookOption:                 Functional option for configuring HookOptions.
+ * - WithHookAppDBPath():        Sets an explicit app conversation_summaries.db path.
+ * - WithHookCLIDBPath():        Sets an explicit CLI conversation_summaries.db path.
+ * - WithParentConversationID(): Sets an explicit parent conversation ID override.
+ * - WithDataDir():              Sets an explicit repo-memory data directory override.
+ * - WithWorkspace():            Sets an explicit workspace directory override.
+ * - WithTimeout():              Sets a custom execution budget duration.
+ * - HandleStop():               Parses raw JSON and executes the Stop hook, returning JSON response bytes.
+ * - HandleStopEvent():          Executes the complete Stop hook pipeline on a normalized StopPayload.
+ */
+
 package antigravity
 
 import (
@@ -20,27 +50,28 @@ const DefaultHookBudget = 200 * time.Millisecond
 
 // StopPayload represents the JSON payload received from Google Antigravity on a Stop event.
 type StopPayload struct {
-	ArtifactDirectoryPath      string   `json:"artifactDirectoryPath,omitempty"`
-	ArtifactDirectoryPathSnake string   `json:"artifact_directory_path,omitempty"`
-	ConversationID            string   `json:"conversationId,omitempty"`
-	ConversationIDSnake       string   `json:"conversation_id,omitempty"`
-	ParentConversationID      string   `json:"parentConversationId,omitempty"`
-	ParentConversationIDSnake string   `json:"parent_conversation_id,omitempty"`
-	Error                     string   `json:"error,omitempty"`
-	ExecutionNum          int      `json:"executionNum,omitempty"`
-	FullyIdle             bool     `json:"fullyIdle,omitempty"`
-	ModelName             string   `json:"modelName,omitempty"`
-	TerminationReason     string   `json:"terminationReason,omitempty"`
-	TranscriptPath        string   `json:"transcriptPath,omitempty"`
-	TranscriptPathSnake   string   `json:"transcript_path,omitempty"`
-	WorkspacePaths        []string `json:"workspacePaths,omitempty"`
-	WorkspacePathsSnake   []string `json:"workspace_paths,omitempty"`
-	RepoID                string   `json:"repo_id,omitempty"`
-	RepoIDAlt             string   `json:"repoId,omitempty"`
+	ArtifactDirectoryPath      string   `json:"artifactDirectoryPath,omitempty"`      // CamelCase path to the session artifact directory.
+	ArtifactDirectoryPathSnake string   `json:"artifact_directory_path,omitempty"`    // Snake_case fallback for the artifact directory path.
+	ConversationID             string   `json:"conversationId,omitempty"`             // Primary camelCase session UUID supplied by the Antigravity Stop hook.
+	ConversationIDSnake        string   `json:"conversation_id,omitempty"`            // Snake_case fallback for the conversation UUID.
+	ParentConversationID       string   `json:"parentConversationId,omitempty"`       // CamelCase parent conversation UUID for subagents.
+	ParentConversationIDSnake  string   `json:"parent_conversation_id,omitempty"`     // Snake_case fallback for the parent conversation UUID.
+	Error                      string   `json:"error,omitempty"`                      // Error string reported on abnormal termination.
+	ExecutionNum               int      `json:"executionNum,omitempty"`               // 0-based Stop hook continuation count within the turn.
+	FullyIdle                  bool     `json:"fullyIdle,omitempty"`                  // True when the session has no background tasks running.
+	ModelName                  string   `json:"modelName,omitempty"`                  // Model identifier active during the turn.
+	TerminationReason          string   `json:"terminationReason,omitempty"`          // Reason the turn ended (e.g., "NO_TOOL_CALL").
+	TranscriptPath             string   `json:"transcriptPath,omitempty"`             // CamelCase path to the conversation transcript.
+	TranscriptPathSnake        string   `json:"transcript_path,omitempty"`            // Snake_case fallback for the transcript path.
+	WorkspacePaths             []string `json:"workspacePaths,omitempty"`             // CamelCase list of workspace root paths.
+	WorkspacePathsSnake        []string `json:"workspace_paths,omitempty"`            // Snake_case fallback for workspace root paths.
+	RepoID                     string   `json:"repo_id,omitempty"`                    // Explicit snake_case repository ID override.
+	RepoIDAlt                  string   `json:"repoId,omitempty"`                     // CamelCase fallback for the repository ID override.
 }
 
 // Normalize normalizes fields across camelCase and snake_case variations.
 func (p *StopPayload) Normalize() {
+	// --- Step 1: Coalesce snake_case fallbacks into canonical fields ---
 	if p.ArtifactDirectoryPath == "" && p.ArtifactDirectoryPathSnake != "" {
 		p.ArtifactDirectoryPath = p.ArtifactDirectoryPathSnake
 	}
@@ -63,6 +94,7 @@ func (p *StopPayload) Normalize() {
 		p.RepoID = p.RepoIDAlt
 	}
 
+	// --- Step 2: Expand leading tilde (~) home prefixes on filesystem paths ---
 	if p.TranscriptPath != "" {
 		p.TranscriptPath = expandHome(p.TranscriptPath)
 	}
@@ -70,6 +102,7 @@ func (p *StopPayload) Normalize() {
 		p.WorkspacePaths[i] = expandHome(w)
 	}
 
+	// --- Step 3: Derive ConversationID from artifact or transcript path when omitted ---
 	if p.ConversationID == "" {
 		if p.ArtifactDirectoryPath != "" {
 			p.ConversationID = filepath.Base(filepath.Clean(p.ArtifactDirectoryPath))
@@ -81,32 +114,32 @@ func (p *StopPayload) Normalize() {
 
 // StopResult records the outcome of processing a Stop hook invocation.
 type StopResult struct {
-	Skipped              bool              `json:"skipped"`
-	Reason               string            `json:"reason,omitempty"`
-	ConversationID       string            `json:"conversation_id,omitempty"`
-	ParentConversationID string            `json:"parent_conversation_id,omitempty"`
-	RepoID               string            `json:"repo_id,omitempty"`
-	RepoRoot             string            `json:"repo_root,omitempty"`
-	Branch               string            `json:"branch,omitempty"`
-	Head                 string            `json:"head,omitempty"`
-	SpoolPath            string            `json:"spool_path,omitempty"`
-	SpoolEntry           *spool.Entry      `json:"spool_entry,omitempty"`
-	CopyResult           *spool.CopyResult `json:"copy_result,omitempty"`
-	ArtifactsCopied      int               `json:"artifacts_copied,omitempty"`
-	Decision             string            `json:"decision,omitempty"`
-	ContinueReason       string            `json:"continue_reason,omitempty"`
-	NoteID               string            `json:"note_id,omitempty"`
-	Duration             time.Duration     `json:"duration_ms"`
+	Skipped              bool              `json:"skipped"`                          // True when hook execution was bypassed by a guard.
+	Reason               string            `json:"reason,omitempty"`                 // Explanation for why execution was skipped.
+	ConversationID       string            `json:"conversation_id,omitempty"`        // Normalized session UUID after payload normalization and path fallback.
+	ParentConversationID string            `json:"parent_conversation_id,omitempty"` // Resolved parent conversation UUID if subagent.
+	RepoID               string            `json:"repo_id,omitempty"`                // Canonical 16-hex repository identifier resolved for the workspace.
+	RepoRoot             string            `json:"repo_root,omitempty"`              // Canonical root path of the enrolled repository.
+	Branch               string            `json:"branch,omitempty"`                 // Active git branch name at capture time.
+	Head                 string            `json:"head,omitempty"`                   // Active git HEAD commit hash at capture time.
+	SpoolPath            string            `json:"spool_path,omitempty"`             // Filesystem path to the written spool entry.
+	SpoolEntry           *spool.Entry      `json:"spool_entry,omitempty"`            // Written capture spool entry metadata.
+	CopyResult           *spool.CopyResult `json:"copy_result,omitempty"`            // Incremental transcript copy statistics.
+	ArtifactsCopied      int               `json:"artifacts_copied,omitempty"`       // Count of artifact files copied to evidence storage.
+	Decision             string            `json:"decision,omitempty"`               // Optional Stop hook decision (e.g., "continue").
+	ContinueReason       string            `json:"continue_reason,omitempty"`        // Continuation prompt injected when Decision is "continue".
+	NoteID               string            `json:"note_id,omitempty"`                // Inbox note ID when a turn note was harvested.
+	Duration             time.Duration     `json:"duration_ms"`                      // Wall-clock execution duration of the Stop hook.
 }
 
 // HookOptions configures optional overrides for hook execution.
 type HookOptions struct {
-	DataDir              string
-	WorkspaceOverride    string
-	Timeout              time.Duration
-	AppDBPath            string
-	CliDBPath            string
-	ParentConversationID string
+	DataDir              string        // Explicit repo-memory data directory override.
+	WorkspaceOverride    string        // Explicit workspace root directory override.
+	Timeout              time.Duration // Maximum execution budget for the hook call.
+	AppDBPath            string        // Custom path to the app conversation_summaries.db.
+	CLIDBPath            string        // Custom path to the CLI conversation_summaries.db.
+	ParentConversationID string        // Explicit parent conversation UUID override.
 }
 
 // HookOption is a functional configuration option.
@@ -119,10 +152,10 @@ func WithHookAppDBPath(p string) HookOption {
 	}
 }
 
-// WithHookCliDBPath specifies an explicit CLI conversation summaries DB path.
-func WithHookCliDBPath(p string) HookOption {
+// WithHookCLIDBPath specifies an explicit CLI conversation summaries DB path.
+func WithHookCLIDBPath(p string) HookOption {
 	return func(o *HookOptions) {
-		o.CliDBPath = p
+		o.CLIDBPath = p
 	}
 }
 
@@ -157,6 +190,7 @@ func WithTimeout(d time.Duration) HookOption {
 // HandleStop parses the raw JSON payload and handles the Stop event within the execution budget.
 // It returns a standard JSON object string ("{}") on completion or no-op skip.
 func HandleStop(ctx context.Context, rawPayload []byte, opts ...HookOption) ([]byte, error) {
+	// --- Step 1: Unmarshal and normalize the Stop hook payload ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -168,6 +202,7 @@ func HandleStop(ctx context.Context, rawPayload []byte, opts ...HookOption) ([]b
 	}
 	payload.Normalize()
 
+	// --- Step 2: Execute Stop pipeline and serialize continuation or empty response ---
 	res, err := HandleStopEvent(ctx, &payload, opts...)
 	if err != nil {
 		return nil, err
@@ -192,6 +227,7 @@ func HandleStop(ctx context.Context, rawPayload []byte, opts ...HookOption) ([]b
 func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOption) (*StopResult, error) {
 	start := time.Now()
 
+	// --- Step 1: Apply hook options and enforce the execution budget timeout ---
 	opt := HookOptions{
 		Timeout: DefaultHookBudget,
 	}
@@ -199,7 +235,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		fn(&opt)
 	}
 
-	// 1. Budget enforcement (≤ 200ms)
 	budget := opt.Timeout
 	if budget <= 0 {
 		budget = DefaultHookBudget
@@ -213,7 +248,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		defer cancel()
 	}
 
-	// 2. Kill-switch check (Step A: REPO_MEMORY_DISABLED env var)
+	// --- Step 2: Evaluate environment kill-switch and housekeeping/internal guards ---
 	if os.Getenv("REPO_MEMORY_DISABLED") == "1" || strings.EqualFold(os.Getenv("REPO_MEMORY_DISABLED"), "true") {
 		return &StopResult{
 			Skipped:  true,
@@ -222,7 +257,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
-	// 3. REPO_MEMORY_HOUSEKEEPING & REPO_MEMORY_INTERNAL guard (Step B: skip housekeeping/internal runs per SPEC §6.2 / E07)
 	if os.Getenv("REPO_MEMORY_HOUSEKEEPING") == "1" || strings.EqualFold(os.Getenv("REPO_MEMORY_HOUSEKEEPING"), "true") {
 		return &StopResult{
 			Skipped:  true,
@@ -243,7 +277,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		dataDir = config.DataDir()
 	}
 
-	// 2. Kill-switch check (Step C: machine configuration enabled)
 	machCfg, err := config.LoadMachineConfig(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("loading machine config: %w", err)
@@ -256,7 +289,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
-	// Determine candidate workspace
+	// --- Step 3: Resolve candidate workspace and verify repository enrollment ---
 	workspace := opt.WorkspaceOverride
 	if workspace == "" && len(payload.WorkspacePaths) > 0 && payload.WorkspacePaths[0] != "" {
 		workspace = payload.WorkspacePaths[0]
@@ -267,13 +300,13 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}
 	}
 	var convSummary *ConversationSummary
-	if (workspace == "" || payload.ParentConversationID == "") && payload.ConversationID != "" && (opt.AppDBPath != "" || opt.CliDBPath != "") {
+	if (workspace == "" || payload.ParentConversationID == "") && payload.ConversationID != "" && (opt.AppDBPath != "" || opt.CLIDBPath != "") {
 		var attrOpts []AttributionOption
 		if opt.AppDBPath != "" {
 			attrOpts = append(attrOpts, WithAppDBPath(opt.AppDBPath))
 		}
-		if opt.CliDBPath != "" {
-			attrOpts = append(attrOpts, WithCliDBPath(opt.CliDBPath))
+		if opt.CLIDBPath != "" {
+			attrOpts = append(attrOpts, WithCLIDBPath(opt.CLIDBPath))
 		}
 		convSummary, _ = LookupConversationSummary(payload.ConversationID, attrOpts...)
 		if workspace == "" && convSummary != nil && len(convSummary.WorkspacePaths) > 0 {
@@ -295,7 +328,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
-	// 4. Enrolment check (Step D: verify repository enrolment in registry.json)
 	entry, found, err := config.FindRegistryEntry(dataDir, workspace)
 	if err != nil {
 		return nil, fmt.Errorf("querying registry: %w", err)
@@ -308,7 +340,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
-	// 2. Kill-switch check (Step E: repository config enabled)
 	repoCfg, err := config.LoadRepoConfig(entry.RootPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading repo config: %w", err)
@@ -321,6 +352,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}, nil
 	}
 
+	// --- Step 4: Ensure data layout and capture git branch/HEAD metadata ---
 	repoID := entry.RepoID
 	if repoID == "" {
 		repoID, err = gitops.GenerateRepoID(entry.RootPath)
@@ -330,7 +362,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 	}
 	repoRoot := entry.RootPath
 
-	// Ensure destination directory structure exists under <data-dir>/<repo-id>/
 	if err := config.EnsureDataDirLayout(dataDir, repoID); err != nil {
 		return nil, fmt.Errorf("ensuring data dir layout: %w", err)
 	}
@@ -358,7 +389,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		transcriptPath = findBrainTranscript(convID)
 	}
 
-	// 5. Spool entry creation (using packages from WO1)
+	// --- Step 5: Write capture spool entry and incrementally copy transcript to queue/ ---
 	spoolDir := filepath.Join(dataDir, repoID, "spool")
 	captureEntry := spool.NewCaptureEntry("antigravity", convID, transcriptPath, repoRoot, branch, head)
 	parentConvID := opt.ParentConversationID
@@ -374,7 +405,6 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		return nil, fmt.Errorf("writing capture spool entry: %w", err)
 	}
 
-	// 6. Incremental copy (using packages from WO1)
 	queueDir := filepath.Join(dataDir, repoID, "queue")
 	stateDir := filepath.Join(dataDir, repoID, "state")
 
@@ -388,12 +418,12 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		}
 	}
 
-	// 7. Artifact capture (best-effort per SPEC)
+	// --- Step 6: Copy session artifacts best-effort within a 100ms bound ---
 	var artifactsCopied int
 	if payload.ArtifactDirectoryPath != "" {
 		artSrc := expandHome(payload.ArtifactDirectoryPath)
 		artDst := evidence.ArtifactDir(dataDir, repoID, convID)
-		
+
 		ch := make(chan int, 1)
 		go func() {
 			count, err := evidence.CopyArtifacts(artSrc, artDst)
@@ -425,13 +455,14 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 		ArtifactsCopied:      artifactsCopied,
 	}
 
-	// 8. Stage 1 Warm-Cache Stop Distillation (Milestone Gate on executionNum == 0, Harvest on executionNum >= 1)
+	// --- Step 7: Evaluate Stage 1 warm-cache Stop distillation ---
 	evaluateStopDistillation(ctx, payload, result, dataDir, repoID, repoRoot, repoCfg, transcriptPath)
 
 	result.Duration = time.Since(start)
 	return result, nil
 }
 
+// isHousekeepingPath reports whether path resides inside an isolated runs/<repo-id> directory.
 func isHousekeepingPath(path string) bool {
 	if path == "" {
 		return false
@@ -446,6 +477,7 @@ func isHousekeepingPath(path string) bool {
 	return false
 }
 
+// extractConversationID extracts the conversation UUID segment following /brain/ in transcriptPath.
 func extractConversationID(transcriptPath string) string {
 	clean := filepath.Clean(transcriptPath)
 	idx := strings.Index(clean, "/brain/")
@@ -462,7 +494,9 @@ func extractConversationID(transcriptPath string) string {
 	return ""
 }
 
+// findBrainTranscript searches standard Antigravity app and CLI brain locations for convID's transcript file.
 func findBrainTranscript(convID string) string {
+	// --- Step 1: Resolve user home directory and candidate transcript paths ---
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -475,6 +509,7 @@ func findBrainTranscript(convID string) string {
 		filepath.Join(home, ".gemini", "antigravity-cli", "brain", convID, ".system_generated", "logs", "transcript_full.jsonl"),
 	}
 
+	// --- Step 2: Return the first candidate path that exists on disk ---
 	for _, cand := range candidates {
 		if _, err := os.Stat(cand); err == nil {
 			return cand
@@ -483,6 +518,7 @@ func findBrainTranscript(convID string) string {
 	return ""
 }
 
+// expandHome expands a leading "~" or "~/" prefix in path to the current user's home directory.
 func expandHome(path string) string {
 	if path == "~" {
 		if home, err := os.UserHomeDir(); err == nil {

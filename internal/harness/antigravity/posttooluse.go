@@ -1,3 +1,21 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/harness/antigravity/posttooluse.go
+ * Description: Implements the Antigravity PostToolUse hook handler, recording
+ *              subagent lineage, command recipe outcomes, pending gate acknowledgments
+ *              after successful edits, and MomentError ephemeral entry injections.
+ *
+ * Exported Types / Functions:
+ * - PostToolUsePayload: JSON payload delivered to the PostToolUse hook.
+ *   - Normalize():      Populates canonical fields from snake_case and error fallbacks.
+ * - HandlePostToolUse(): Processes a PostToolUse hook event and returns InjectStepsResponse JSON.
+ */
+
 package antigravity
 
 import (
@@ -17,32 +35,37 @@ import (
 )
 
 var (
+	// subagentUUIDPattern matches standard 36-character UUID strings in subagent tool outputs.
 	subagentUUIDPattern = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
-	exitCodePattern     = regexp.MustCompile(`(?i)(?:exited\s+with\s+code|exit\s+code|exit\s+status|exit_code"?\s*[:=]|exitCode"?\s*[:=])\s*([0-9]+)`)
+	// exitCodePattern matches non-zero exit code diagnostics in command tool output text.
+	exitCodePattern = regexp.MustCompile(`(?i)(?:exited\s+with\s+code|exit\s+code|exit\s+status|exit_code"?\s*[:=]|exitCode"?\s*[:=])\s*([0-9]+)`)
 )
 
+// PostToolUsePayload represents the JSON payload delivered to the Antigravity PostToolUse hook.
 type PostToolUsePayload struct {
-	ConversationID      string   `json:"conversationId"`
-	ConversationIDSnake string   `json:"conversation_id"`
-	InvocationNum       int      `json:"invocationNum"`
-	ToolName            string   `json:"toolName"`
+	ConversationID      string `json:"conversationId"`      // Primary camelCase session UUID supplied by the PostToolUse hook.
+	ConversationIDSnake string `json:"conversation_id"`     // Snake_case conversation UUID fallback.
+	InvocationNum       int    `json:"invocationNum"`       // 0-based model invocation index within the turn.
+	ToolName            string `json:"toolName"`            // Identifier of the tool that just finished executing (e.g. "run_command", "edit_file").
 	ToolCall            struct {
-		Name string          `json:"name"`
-		Args json.RawMessage `json:"args"`
-	} `json:"toolCall"`
+		Name string          `json:"name"` // Nested tool call name fallback.
+		Args json.RawMessage `json:"args"` // Raw JSON tool arguments.
+	} `json:"toolCall"` // Nested tool call descriptor.
 	ToolResult struct {
-		Status string `json:"status"`
-		Output string `json:"output"`
-	} `json:"toolResult"`
-	Error               string   `json:"error"`
-	StepIdx             int      `json:"stepIdx"`
-	TranscriptPath      string   `json:"transcriptPath"`
-	TranscriptPathSnake string   `json:"transcript_path"`
-	WorkspacePaths      []string `json:"workspacePaths"`
-	WorkspacePathsSnake []string `json:"workspace_paths"`
+		Status string `json:"status"` // Tool execution status (e.g., "success", "error").
+		Output string `json:"output"` // Tool execution output text.
+	} `json:"toolResult"` // Nested tool execution result.
+	Error               string   `json:"error"`           // Top-level error string when tool execution failed.
+	StepIdx             int      `json:"stepIdx"`         // Transcript step index of the tool execution.
+	TranscriptPath      string   `json:"transcriptPath"`  // CamelCase transcript file path.
+	TranscriptPathSnake string   `json:"transcript_path"` // Snake_case transcript file path fallback.
+	WorkspacePaths      []string `json:"workspacePaths"`  // CamelCase workspace root paths.
+	WorkspacePathsSnake []string `json:"workspace_paths"` // Snake_case workspace root paths fallback.
 }
 
+// Normalize populates canonical fields from snake_case and top-level error fallbacks.
 func (p *PostToolUsePayload) Normalize() {
+	// --- Step 1: Coalesce snake_case and nested toolCall/error fields ---
 	if p.ConversationID == "" {
 		p.ConversationID = p.ConversationIDSnake
 	}
@@ -63,25 +86,29 @@ func (p *PostToolUsePayload) Normalize() {
 	}
 }
 
+// isCommandTool reports whether name identifies a shell command execution tool.
 func isCommandTool(name string) bool {
 	return strings.EqualFold(name, "run_command") || strings.EqualFold(name, "bash")
 }
 
+// extractPostToolCommand extracts the command string from rawArgs across supported casing variants.
 func extractPostToolCommand(rawArgs json.RawMessage) string {
+	// --- Step 1: Unmarshal candidate command argument fields ---
 	if len(rawArgs) == 0 {
 		return ""
 	}
 	var args struct {
-		CommandLine  string `json:"CommandLine"`
-		CmdLineLower string `json:"commandLine"`
-		CmdSnake     string `json:"command_line"`
-		Command      string `json:"command"`
-		CmdCap       string `json:"Command"`
-		Cmd          string `json:"cmd"`
+		CommandLine  string `json:"CommandLine"`  // PascalCase CommandLine argument.
+		CmdLineLower string `json:"commandLine"`  // CamelCase commandLine argument.
+		CmdSnake     string `json:"command_line"` // Snake_case command_line argument.
+		Command      string `json:"command"`      // Lowercase command argument.
+		CmdCap       string `json:"Command"`      // PascalCase Command argument.
+		Cmd          string `json:"cmd"`          // Shorthand cmd argument.
 	}
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return ""
 	}
+	// --- Step 2: Return the first non-empty command string ---
 	for _, s := range []string{args.CommandLine, args.CmdLineLower, args.CmdSnake, args.Command, args.CmdCap, args.Cmd} {
 		if strings.TrimSpace(s) != "" {
 			return strings.TrimSpace(s)
@@ -90,6 +117,7 @@ func extractPostToolCommand(rawArgs json.RawMessage) string {
 	return ""
 }
 
+// hasNonZeroExitCodeInOutput reports whether output contains a non-zero exit code marker.
 func hasNonZeroExitCodeInOutput(output string) bool {
 	matches := exitCodePattern.FindAllStringSubmatch(output, -1)
 	for _, m := range matches {
@@ -101,7 +129,11 @@ func hasNonZeroExitCodeInOutput(output string) bool {
 	return false
 }
 
+// HandlePostToolUse processes an Antigravity PostToolUse hook event, recording subagent
+// lineage, command recipe outcomes, and gate acknowledgments, and returning MomentError
+// ephemeral step injections when a tool fails.
 func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) ([]byte, error) {
+	// --- Step 1: Parse payload and evaluate fast-exit guards ---
 	var input PostToolUsePayload
 	if err := json.Unmarshal(payload, &input); err != nil {
 		return []byte("{}"), nil
@@ -125,6 +157,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
+	// --- Step 2: Resolve enrolled workspace root and repository ID ---
 	var hookOpts HookOptions
 	for _, opt := range opts {
 		if opt != nil {
@@ -166,6 +199,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
+	// --- Step 3: Record subagent lineage and command execution outcomes ---
 	if isSubagentInvoke {
 		childConvID := extractSubagentChildID(input.ToolResult.Output, input.TranscriptPath, input.StepIdx, input.ConversationID)
 		role := extractSubagentRole(input.ToolCall.Args)
@@ -195,7 +229,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		}
 	}
 
-	// On successful edit tool completion, acknowledge any pending gates.
+	// --- Step 4: Acknowledge pending edit gates on successful file modification ---
 	// Require explicit "success" status — empty/cancelled/rejected should not approve.
 	if strings.EqualFold(input.ToolResult.Status, "success") && isEdit {
 		targetFile := extractTargetFile(input.ToolCall.Args)
@@ -219,7 +253,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	// Error injection path — only runs when the tool result is an error.
+	// --- Step 5: Query MomentError entries on tool failure and deduplicate against the ledger ---
 	if !isError {
 		return []byte("{}"), nil
 	}
@@ -280,7 +314,7 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 		return []byte("{}"), nil
 	}
 
-	// Record these injections for future dedup under the cross-process lock.
+	// --- Step 6: Persist MomentError injections and return ephemeral step response ---
 	_ = ModifyLedger(dataDir, repoID, input.ConversationID, func(l *delivery.Ledger) {
 		for _, ent := range fresh {
 			l.RecordInjection(delivery.InjectionRecord{
@@ -306,13 +340,16 @@ func HandlePostToolUse(ctx context.Context, payload []byte, opts ...HookOption) 
 	return out, nil
 }
 
+// extractSubagentChildID extracts the spawned child conversation UUID from tool output or the transcript tail.
 func extractSubagentChildID(output, transcriptPath string, stepIdx int, parentConvID string) string {
+	// --- Step 1: Attempt direct extraction from the tool output string ---
 	if id := extractConvIDFromText(output, parentConvID); id != "" {
 		return id
 	}
 	if transcriptPath == "" {
 		return ""
 	}
+	// --- Step 2: Fall back to scanning recent steps in the transcript ---
 	baseDir := transcriptPath
 	if fi, err := os.Stat(transcriptPath); err == nil && !fi.IsDir() {
 		baseDir = filepath.Dir(transcriptPath)
@@ -343,7 +380,9 @@ func extractSubagentChildID(output, transcriptPath string, stepIdx int, parentCo
 	return ""
 }
 
+// extractConvIDFromText parses JSON fields or UUID substrings in s, returning the first ID distinct from parentConvID.
 func extractConvIDFromText(s, parentConvID string) string {
+	// --- Step 1: Check structured JSON keys for conversationId / childConversationId ---
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
 		return ""
@@ -369,6 +408,7 @@ func extractConvIDFromText(s, parentConvID string) string {
 			}
 		}
 	}
+	// --- Step 2: Fall back to regex UUID matching ---
 	matches := subagentUUIDPattern.FindAllString(trimmed, -1)
 	for _, m := range matches {
 		if !strings.EqualFold(m, parentConvID) {
@@ -378,6 +418,7 @@ func extractConvIDFromText(s, parentConvID string) string {
 	return ""
 }
 
+// extractSubagentRole extracts the Role or TypeName field from invoke_subagent tool arguments.
 func extractSubagentRole(rawArgs json.RawMessage) string {
 	if len(rawArgs) == 0 {
 		return ""

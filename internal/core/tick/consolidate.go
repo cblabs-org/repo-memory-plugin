@@ -1,3 +1,34 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/tick/consolidate.go
+ * Description: Stage 2 warm batch consolidation pipeline (SPEC §6.3.2) and A6
+ *              freshness state persistence/formatting (Addendum A §7). Promotes
+ *              merged branch ops, filters echoes, enforces corroboration gates,
+ *              routes items across user/branch/repo tiers, deduplicates and
+ *              consolidates dossiers, publishes to the memory worktree, and
+ *              updates the multi-tier SQLite search index.
+ *
+ * Exported Types / Functions:
+ * - DefaultConsolidationMinNotes:                     Minimum unconsolidated notes triggering immediate consolidation.
+ * - DefaultConsolidationMaxAge:                       Maximum note wait age before daily consolidation triggers.
+ * - ConsolidationOptions:                             Options for a Stage 2 consolidation run.
+ * - ProposedScope:                                    Describes a newly derived dossier scope proposed during routing.
+ * - ConsolidationResult:                              Summary metrics and batch IDs from a Stage 2 consolidation run.
+ * - FreshnessState:                                   Tracks capture, consolidation, and index freshness on disk.
+ * - FreshnessStatePath():                             Returns the filesystem path to freshness.json.
+ * - LoadFreshnessState():                             Reads freshness.json from disk.
+ * - SaveFreshnessState():                             Atomically writes freshness.json to disk.
+ * - PipelineExecutor.RunConsolidation():              Executes Stage 2 consolidation with a boolean force flag.
+ * - PipelineExecutor.RunConsolidationWithOptions():   Executes the 7-step Stage 2 warm batch consolidation pipeline.
+ * - PipelineExecutor.RefreshFreshnessState():         Computes and persists the A6 FreshnessState on disk.
+ * - FormatFreshnessLine():                            Formats the 1-line A6 freshness status header.
+ */
+
 package tick
 
 import (
@@ -35,57 +66,57 @@ const (
 
 // ConsolidationOptions configures a Stage 2 warm batch consolidation run.
 type ConsolidationOptions struct {
-	Force  bool `json:"force"`
-	DryRun bool `json:"dry_run"`
+	Force  bool `json:"force"`   // When true, bypasses cadence and spend guard interval checks.
+	DryRun bool `json:"dry_run"` // When true, previews deterministic operations without mutating disk or calling the LLM.
 }
 
 // ProposedScope describes a newly derived dossier scope proposed during routing.
 type ProposedScope struct {
-	Scope string               `json:"scope"`
-	Kind  dossiers.DossierKind `json:"kind,omitempty"`
+	Scope string               `json:"scope"`          // Slash-separated module or topic scope slug (e.g. "core/consolidate").
+	Kind  dossiers.DossierKind `json:"kind,omitempty"` // Dossier kind (e.g. module, topic).
 }
 
 // ConsolidationResult summarizes the outcome of a Stage 2 warm batch consolidation run.
 type ConsolidationResult struct {
-	Skipped              bool              `json:"skipped"`
-	SkipReason           string            `json:"skip_reason,omitempty"`
-	DryRun               bool              `json:"dry_run"`
-	PromotedBranches     []string          `json:"promoted_branches,omitempty"`
-	UnconsolidatedNotes  int               `json:"unconsolidated_notes"`
-	ProcessedNotes       int               `json:"processed_notes"`
-	CandidateItems       int               `json:"candidate_items"`
-	EchoesDropped        int               `json:"echoes_dropped"`
-	DowngradedToIssue    int               `json:"downgraded_to_issue"`
-	ExactDuplicatesAmend int               `json:"exact_duplicates_amend"`
-	ProposedScopes       []ProposedScope   `json:"proposed_scopes,omitempty"`
-	OpsAdded             int               `json:"ops_added"`
-	OpsAmended           int               `json:"ops_amended"`
-	OpsSuperseded        int               `json:"ops_superseded"`
-	OpsRetired           int               `json:"ops_retired"`
-	OpsMoved             int               `json:"ops_moved"`
-	OpsSplit             int               `json:"ops_split"`
-	OpsRejected          int               `json:"ops_rejected"`
-	UserBatchID          string            `json:"user_batch_id,omitempty"`
-	BranchBatches        map[string]string `json:"branch_batches,omitempty"`
-	RepoBatchID          string            `json:"repo_batch_id,omitempty"`
-	WorktreeCommitted    bool              `json:"worktree_committed"`
-	WorktreeCommitSHA    string            `json:"worktree_commit_sha,omitempty"`
-	Usage                harness.Usage     `json:"usage"`
-	EstimatedInputTokens int               `json:"estimated_input_tokens"`
+	Skipped              bool              `json:"skipped"`                       // Whether consolidation was skipped due to empty inbox, cadence, or quota.
+	SkipReason           string            `json:"skip_reason,omitempty"`         // Machine-readable reason consolidation was skipped.
+	DryRun               bool              `json:"dry_run"`                       // Whether the run executed in dry-run preview mode.
+	PromotedBranches     []string          `json:"promoted_branches,omitempty"`   // Branch slugs whose local ops were promoted to the repo tier.
+	UnconsolidatedNotes  int               `json:"unconsolidated_notes"`          // Total unconsolidated notes found in the inbox before processing.
+	ProcessedNotes       int               `json:"processed_notes"`               // Number of inbox notes marked consolidated during the run.
+	CandidateItems       int               `json:"candidate_items"`               // Total note items inspected across the batch.
+	EchoesDropped        int               `json:"echoes_dropped"`                // Number of note items dropped by echo suppression.
+	DowngradedToIssue    int               `json:"downgraded_to_issue"`           // Number of uncorroborated items downgraded to open-issue.
+	ExactDuplicatesAmend int               `json:"exact_duplicates_amend"`        // Number of exact duplicate items merged via deterministic OpAmend.
+	ProposedScopes       []ProposedScope   `json:"proposed_scopes,omitempty"`     // Newly derived scopes encountered during routing.
+	OpsAdded             int               `json:"ops_added"`                     // Count of OpAdd operations recorded.
+	OpsAmended           int               `json:"ops_amended"`                   // Count of OpAmend operations recorded.
+	OpsSuperseded        int               `json:"ops_superseded"`                // Count of OpSupersede operations recorded.
+	OpsRetired           int               `json:"ops_retired"`                   // Count of OpRetire operations recorded.
+	OpsMoved             int               `json:"ops_moved"`                     // Count of OpMove operations recorded.
+	OpsSplit             int               `json:"ops_split"`                     // Count of OpSplit operations recorded.
+	OpsRejected          int               `json:"ops_rejected"`                  // Count of candidate operations rejected by validation or scrubbing.
+	UserBatchID          string            `json:"user_batch_id,omitempty"`       // Recorded op-batch ID for the user tier, if any.
+	BranchBatches        map[string]string `json:"branch_batches,omitempty"`      // Recorded op-batch IDs keyed by branch slug.
+	RepoBatchID          string            `json:"repo_batch_id,omitempty"`       // Recorded op-batch ID for the shared repo tier, if any.
+	WorktreeCommitted    bool              `json:"worktree_committed"`            // Whether batches were committed to the isolated memory worktree.
+	WorktreeCommitSHA    string            `json:"worktree_commit_sha,omitempty"` // Git commit SHA created in the memory worktree.
+	Usage                harness.Usage     `json:"usage"`                         // Cumulative LLM token usage across consolidation turns.
+	EstimatedInputTokens int               `json:"estimated_input_tokens"`        // Calibrated pre-run input token estimate.
 }
 
 // FreshnessState tracks capture, consolidation, and index freshness at <dataDir>/<repoID>/state/freshness.json (Addendum A §7).
 type FreshnessState struct {
-	LastCaptureAt       string `json:"last_capture_at,omitempty"`
-	LastConsolidationAt string `json:"last_consolidation_at,omitempty"`
-	UnconsolidatedNotes int    `json:"unconsolidated_notes"`
-	ActiveEntries       int    `json:"active_entries"`
-	IndexOpLogBatchID   string `json:"index_oplog_batch_id,omitempty"`
-	IndexCurrentToOpLog bool   `json:"index_current_to_oplog"`
-	IndexHeadSHA        string `json:"index_head_sha,omitempty"`
-	HeadMovedSinceBuild bool   `json:"head_moved_since_build"`
-	SuspectEntries      int    `json:"suspect_entries"`
-	UpdatedAt           string `json:"updated_at"`
+	LastCaptureAt       string `json:"last_capture_at,omitempty"`       // RFC3339 timestamp of the last episode capture.
+	LastConsolidationAt string `json:"last_consolidation_at,omitempty"` // RFC3339 timestamp of the last completed consolidation run.
+	UnconsolidatedNotes int    `json:"unconsolidated_notes"`            // Number of inbox notes awaiting consolidation.
+	ActiveEntries       int    `json:"active_entries"`                  // Total active (non-retired, non-superseded) dossier entries.
+	IndexOpLogBatchID   string `json:"index_oplog_batch_id,omitempty"`  // Latest op-log batch ID incorporated into the SQLite index.
+	IndexCurrentToOpLog bool   `json:"index_current_to_oplog"`          // Whether the SQLite index matches the latest op-log batch on disk.
+	IndexHeadSHA        string `json:"index_head_sha,omitempty"`        // Git HEAD commit SHA at the time the index was last built.
+	HeadMovedSinceBuild bool   `json:"head_moved_since_build"`          // Whether git HEAD has moved since IndexHeadSHA was recorded.
+	SuspectEntries      int    `json:"suspect_entries"`                 // Count of active entries flagged as suspect/stale.
+	UpdatedAt           string `json:"updated_at"`                      // RFC3339 timestamp when this state record was last updated.
 }
 
 // FreshnessStatePath returns the path to <dataDir>/<repoID>/state/freshness.json.
@@ -96,6 +127,7 @@ func FreshnessStatePath(dataDir, repoID string) string {
 // LoadFreshnessState reads <dataDir>/<repoID>/state/freshness.json.
 // If the file does not exist, it returns an empty FreshnessState without error.
 func LoadFreshnessState(dataDir, repoID string) (*FreshnessState, error) {
+	// --- Step 1: Validate inputs and read freshness.json from disk ---
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(repoID) == "" {
 		return &FreshnessState{}, nil
 	}
@@ -107,6 +139,8 @@ func LoadFreshnessState(dataDir, repoID string) (*FreshnessState, error) {
 		}
 		return nil, fmt.Errorf("reading freshness state %s: %w", path, err)
 	}
+
+	// --- Step 2: Unmarshal JSON payload ---
 	var st FreshnessState
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, fmt.Errorf("unmarshaling freshness state %s: %w", path, err)
@@ -116,6 +150,7 @@ func LoadFreshnessState(dataDir, repoID string) (*FreshnessState, error) {
 
 // SaveFreshnessState atomically writes st to <dataDir>/<repoID>/state/freshness.json.
 func SaveFreshnessState(dataDir, repoID string, st *FreshnessState) error {
+	// --- Step 1: Validate inputs and ensure parent directory exists ---
 	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(repoID) == "" || st == nil {
 		return nil
 	}
@@ -127,10 +162,14 @@ func SaveFreshnessState(dataDir, repoID string, st *FreshnessState) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating freshness state directory %s: %w", dir, err)
 	}
+
+	// --- Step 2: Serialize state to formatted JSON ---
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling freshness state: %w", err)
 	}
+
+	// --- Step 3: Write to a temporary file and atomically rename into place ---
 	tmp, err := os.CreateTemp(dir, ".freshness-*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp freshness file: %w", err)
@@ -167,7 +206,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		DryRun: opts.DryRun,
 	}
 
-	// 1. Branch Promotion First (!opts.DryRun).
+	// --- Step 1: Promote merged branch operations to repo tier (!opts.DryRun) ---
 	var promotedBatches []ops.OpBatch
 	if !opts.DryRun && strings.TrimSpace(p.repoRoot) != "" {
 		if promoRes, promoErr := consolidate.PromoteMergedBranchOps(ctx, p.repoRoot); promoErr == nil && promoRes != nil {
@@ -176,7 +215,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		}
 	}
 
-	// 2. Load Unconsolidated Notes.
+	// --- Step 2: Load unconsolidated inbox notes ---
 	inboxStore := inbox.NewStore(p.dataDir, p.repoID)
 	notes, err := inboxStore.ListUnconsolidated()
 	if err != nil {
@@ -200,7 +239,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		return res, nil
 	}
 
-	// 3. Cadence & A5 Spend Guard Check (when !opts.Force && !opts.DryRun).
+	// --- Step 3: Evaluate cadence and A5 spend guards (when !opts.Force && !opts.DryRun) ---
 	st, _ := LoadFreshnessState(p.dataDir, p.repoID)
 	if st == nil {
 		st = &FreshnessState{}
@@ -247,7 +286,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		notes = notes[:maxItems]
 	}
 
-	// 4. Quota & Budget Guard (when !opts.DryRun && p.hk != nil).
+	// --- Step 4: Verify quota headroom and daily token budget ---
 	if !opts.DryRun && p.hk != nil {
 		if !p.checkQuotaHeadroom(ctx) || p.checkBudget(nil) != nil {
 			res.Skipped = true
@@ -256,7 +295,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		}
 	}
 
-	// 5. Load Existing Dossiers & Episodes.
+	// --- Step 5: Load existing dossiers across tiers and episodes by conversation ---
 	var repoOpsDir string
 	if strings.TrimSpace(p.repoRoot) != "" {
 		repoOpsDir = filepath.Join(p.repoRoot, ".memory", "ops")
@@ -285,10 +324,10 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 
 	episodesByConv := p.loadEpisodesByConv()
 
-	// 6. Step 1 — Filter Echoes & Corroboration Gate.
+	// --- Step 6: Filter echoes and enforce corroboration gate ---
 	type noteSurvivors struct {
-		note  *inbox.Note
-		items []inbox.NoteItem
+		note  *inbox.Note      // Source inbox note.
+		items []inbox.NoteItem // Surviving note items after echo and corroboration filtering.
 	}
 	var survivingNotes []noteSurvivors
 	for _, note := range notes {
@@ -310,7 +349,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		}
 	}
 
-	// 7. Steps 2–4 — Route, Merge Exact Duplicates & Check Existing Anchors.
+	// --- Step 7: Route items across tiers, merge exact duplicates, and check anchors ---
 	var scopeCfg *config.ScopeConfig
 	if strings.TrimSpace(p.repoRoot) != "" {
 		scopeCfg, _ = config.LoadScopeConfig(filepath.Join(p.repoRoot, ".memory", "config.yaml"))
@@ -420,7 +459,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		res.EstimatedInputTokens = rawEst
 	}
 
-	// 8. Dry-Run Handling (opts.DryRun == true).
+	// --- Step 8: Return deterministic preview when opts.DryRun is enabled ---
 	if opts.DryRun {
 		var previewOps []ops.Op
 		previewOps = append(previewOps, userDedup.AmendOps...)
@@ -441,7 +480,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 		return res, nil
 	}
 
-	// 9. Step 5 — Multi-Turn stream-json Consolidation (or Deterministic Synthesis when p.hk == nil).
+	// --- Step 9: Run multi-turn stream-json LLM consolidation (or deterministic synthesis when p.hk == nil) ---
 	userLLMOps, uUsage, err := consolidate.ConsolidateDossiers(ctx, p.hk, userInputs, now)
 	p.recordUsage(res, uUsage)
 	if err != nil {
@@ -470,7 +509,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 	userCandidateOps := append(append([]ops.Op(nil), userDedup.AmendOps...), userLLMOps...)
 	repoCandidateOps := append(append([]ops.Op(nil), repoDedup.AmendOps...), repoLLMOps...)
 
-	// 10. Steps 6–7 — Validate, Scrub, Record, Publish Worktree, Rebuild Index & Mark Notes Consolidated.
+	// --- Step 10: Validate, scrub, record ops, publish worktree, rebuild index, and mark notes consolidated ---
 	scrubCtx := scrub.Context{
 		Boundary:   "op",
 		RepoID:     p.repoID,
@@ -562,6 +601,7 @@ func (p *PipelineExecutor) RunConsolidationWithOptions(ctx context.Context, opts
 	return res, nil
 }
 
+// recordUsage accumulates LLM token usage into res.Usage and updates the executor's budget tracker.
 func (p *PipelineExecutor) recordUsage(res *ConsolidationResult, u harness.Usage) {
 	res.Usage.InputTokens += u.InputTokens
 	res.Usage.OutputTokens += u.OutputTokens
@@ -573,7 +613,9 @@ func (p *PipelineExecutor) recordUsage(res *ConsolidationResult, u harness.Usage
 	}
 }
 
+// rebuildMultiTierIndex rebuilds the SQLite FTS5 index across repo, branch, and user tiers.
 func (p *PipelineExecutor) rebuildMultiTierIndex(ctx context.Context) error {
+	// --- Step 1: Resolve current git branch and reuse p.idx if already open ---
 	var currentBranch string
 	if strings.TrimSpace(p.repoRoot) != "" {
 		currentBranch, _ = gitops.GetCurrentBranchWithContext(ctx, p.repoRoot)
@@ -584,6 +626,8 @@ func (p *PipelineExecutor) rebuildMultiTierIndex(ctx context.Context) error {
 	if strings.TrimSpace(p.dataDir) == "" || strings.TrimSpace(p.repoID) == "" {
 		return nil
 	}
+
+	// --- Step 2: Open index on disk and rebuild across all tiers ---
 	idxPath := index.IndexPath(p.dataDir, p.repoID)
 	if err := os.MkdirAll(filepath.Dir(idxPath), 0o755); err != nil {
 		return fmt.Errorf("creating index directory: %w", err)
@@ -596,7 +640,9 @@ func (p *PipelineExecutor) rebuildMultiTierIndex(ctx context.Context) error {
 	return consolidate.RebuildMultiTierIndex(ctx, idx, p.dataDir, p.repoID, p.repoRoot, currentBranch)
 }
 
+// loadEpisodesByConv loads all episodes from the episode store indexed by both SessionID and EpisodeID.
 func (p *PipelineExecutor) loadEpisodesByConv() map[string]*episode.Episode {
+	// --- Step 1: Resolve episode store and list all episodes ---
 	out := make(map[string]*episode.Episode)
 	epStore := p.epStore
 	if epStore == nil && strings.TrimSpace(p.dataDir) != "" && strings.TrimSpace(p.repoID) != "" {
@@ -609,6 +655,8 @@ func (p *PipelineExecutor) loadEpisodesByConv() map[string]*episode.Episode {
 	if err != nil {
 		return out
 	}
+
+	// --- Step 2: Index episodes by SessionID and EpisodeID ---
 	for _, ep := range eps {
 		if ep == nil {
 			continue
@@ -623,6 +671,7 @@ func (p *PipelineExecutor) loadEpisodesByConv() map[string]*episode.Episode {
 	return out
 }
 
+// projectOpsDir projects dossiers from opsDir, returning an empty map when opsDir does not exist.
 func projectOpsDir(ctx context.Context, opsDir string) map[string]*dossiers.Dossier {
 	if strings.TrimSpace(opsDir) == "" {
 		return make(map[string]*dossiers.Dossier)
@@ -638,7 +687,9 @@ func projectOpsDir(ctx context.Context, opsDir string) map[string]*dossiers.Doss
 	return projected
 }
 
+// loadAllBranchDossiers projects branch-tier dossiers for every branch subdirectory under .memory/local/ops/.
 func loadAllBranchDossiers(ctx context.Context, repoRoot string) map[string]map[string]*dossiers.Dossier {
+	// --- Step 1: Read branch subdirectories under .memory/local/ops/ ---
 	out := make(map[string]map[string]*dossiers.Dossier)
 	if strings.TrimSpace(repoRoot) == "" {
 		return out
@@ -648,6 +699,8 @@ func loadAllBranchDossiers(ctx context.Context, repoRoot string) map[string]map[
 	if err != nil {
 		return out
 	}
+
+	// --- Step 2: Project each branch ops directory ---
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -658,11 +711,13 @@ func loadAllBranchDossiers(ctx context.Context, repoRoot string) map[string]map[
 	return out
 }
 
+// combineAllActiveEntries flattens and deduplicates active entries across repo, user, and branch dossiers.
 func combineAllActiveEntries(
 	repoDossiers map[string]*dossiers.Dossier,
 	userDossiers map[string]*dossiers.Dossier,
 	branchDossiers map[string]map[string]*dossiers.Dossier,
 ) []dossiers.Entry {
+	// --- Step 1: Set up deduplicating entry collector ---
 	seen := make(map[string]bool)
 	var out []dossiers.Entry
 	appendEntries := func(entries []dossiers.Entry) {
@@ -676,6 +731,8 @@ func combineAllActiveEntries(
 			out = append(out, e)
 		}
 	}
+
+	// --- Step 2: Append active entries from repo, user, and sorted branch tiers ---
 	appendEntries(consolidate.FlattenActiveEntries(repoDossiers))
 	appendEntries(consolidate.FlattenActiveEntries(userDossiers))
 
@@ -690,7 +747,9 @@ func combineAllActiveEntries(
 	return out
 }
 
+// buildExistingModulesFromDossiers constructs ModuleScope descriptors from active anchors in repoDossiers.
 func buildExistingModulesFromDossiers(repoDossiers map[string]*dossiers.Dossier) []config.ModuleScope {
+	// --- Step 1: Collect and sort dossier scopes ---
 	if len(repoDossiers) == 0 {
 		return nil
 	}
@@ -700,6 +759,7 @@ func buildExistingModulesFromDossiers(repoDossiers map[string]*dossiers.Dossier)
 	}
 	sort.Strings(scopes)
 
+	// --- Step 2: Extract unique anchor file paths for each module dossier ---
 	var mods []config.ModuleScope
 	for _, scope := range scopes {
 		d := repoDossiers[scope]
@@ -732,7 +792,9 @@ func buildExistingModulesFromDossiers(repoDossiers map[string]*dossiers.Dossier)
 	return mods
 }
 
+// buildBranchMergedChecker returns a predicate reporting whether a branch is merged into HEAD or is the default branch.
 func buildBranchMergedChecker(ctx context.Context, repoRoot string) func(string) bool {
+	// --- Step 1: Query git branch --merged HEAD for merged branch names ---
 	if strings.TrimSpace(repoRoot) == "" {
 		return nil
 	}
@@ -746,6 +808,8 @@ func buildBranchMergedChecker(ctx context.Context, repoRoot string) func(string)
 			}
 		}
 	}
+
+	// --- Step 2: Return closure checking default branch or sanitized merged set ---
 	return func(branch string) bool {
 		if consolidate.IsDefaultBranch(branch) {
 			return true
@@ -754,12 +818,14 @@ func buildBranchMergedChecker(ctx context.Context, repoRoot string) func(string)
 	}
 }
 
+// mergeTierExactDuplicates merges exact duplicate routed items against tierDossiers while preserving tier assignment.
 func mergeTierExactDuplicates(
 	items []consolidate.RoutedItem,
 	tierDossiers map[string]*dossiers.Dossier,
 	tier consolidate.ScopeTier,
 	now time.Time,
 ) consolidate.DedupResult {
+	// --- Step 1: Temporarily normalize item tier to TierRepo for MergeExactDuplicates ---
 	if len(items) == 0 {
 		return consolidate.DedupResult{}
 	}
@@ -768,6 +834,8 @@ func mergeTierExactDuplicates(
 		normalized[i] = it
 		normalized[i].Tier = consolidate.TierRepo
 	}
+
+	// --- Step 2: Run exact deduplication and restore original tier on remaining items ---
 	dRes := consolidate.MergeExactDuplicates(normalized, tierDossiers, now)
 	for i := range dRes.Remaining {
 		dRes.Remaining[i].Tier = tier
@@ -775,6 +843,7 @@ func mergeTierExactDuplicates(
 	return dRes
 }
 
+// buildDossierInputs groups remaining candidate items and broken anchor reports by scope into DossierConsolidationInput payloads.
 func buildDossierInputs(
 	tier consolidate.ScopeTier,
 	branchSlug string,
@@ -783,6 +852,7 @@ func buildDossierInputs(
 	brokenByScope map[string][]consolidate.BrokenAnchorReport,
 	atlasSummary string,
 ) []consolidate.DossierConsolidationInput {
+	// --- Step 1: Group candidate items and broken anchor scopes ---
 	candidatesByScope := make(map[string][]consolidate.RoutedItem)
 	scopeSet := make(map[string]bool)
 
@@ -805,6 +875,7 @@ func buildDossierInputs(
 		return nil
 	}
 
+	// --- Step 2: Sort scopes and assemble DossierConsolidationInput structs ---
 	scopes := make([]string, 0, len(scopeSet))
 	for scope := range scopeSet {
 		scopes = append(scopes, scope)
@@ -844,6 +915,7 @@ func buildDossierInputs(
 	return inputs
 }
 
+// estimateConsolidationTokens estimates raw input tokens across all consolidation prompts using len(prompt)/4.
 func estimateConsolidationTokens(inputs []consolidate.DossierConsolidationInput) int {
 	total := 0
 	for _, in := range inputs {
@@ -857,7 +929,9 @@ func estimateConsolidationTokens(inputs []consolidate.DossierConsolidationInput)
 	return total
 }
 
+// tallyOps increments operation counters on res by op type.
 func tallyOps(res *ConsolidationResult, validOps []ops.Op) {
+	// --- Step 1: Increment per-type operation counters on res ---
 	for _, op := range validOps {
 		switch op.Type {
 		case ops.OpAdd:
@@ -876,14 +950,19 @@ func tallyOps(res *ConsolidationResult, validOps []ops.Op) {
 	}
 }
 
+// countActiveEntries returns the number of active entries across dossiersMap.
 func countActiveEntries(dossiersMap map[string]*dossiers.Dossier) int {
 	return len(consolidate.FlattenActiveEntries(dossiersMap))
 }
 
+// normalizeDossiersForMatching clones src and strips markdown bold markers from the first line of each entry's text.
 func normalizeDossiersForMatching(src map[string]*dossiers.Dossier) map[string]*dossiers.Dossier {
+	// --- Step 1: Short-circuit empty dossier maps ---
 	if len(src) == 0 {
 		return src
 	}
+
+	// --- Step 2: Deep-copy entries and strip first-line bold formatting ---
 	out := make(map[string]*dossiers.Dossier, len(src))
 	for scope, d := range src {
 		if d == nil {
@@ -900,6 +979,7 @@ func normalizeDossiersForMatching(src map[string]*dossiers.Dossier) map[string]*
 	return out
 }
 
+// normalizeBranchDossiersForMatching applies normalizeDossiersForMatching across all branch dossier maps.
 func normalizeBranchDossiersForMatching(src map[string]map[string]*dossiers.Dossier) map[string]map[string]*dossiers.Dossier {
 	if len(src) == 0 {
 		return src
@@ -911,6 +991,7 @@ func normalizeBranchDossiersForMatching(src map[string]map[string]*dossiers.Doss
 	return out
 }
 
+// stripFirstLineBold removes "**" markdown bold delimiters from the first non-empty line of text.
 func stripFirstLineBold(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
@@ -924,7 +1005,9 @@ func stripFirstLineBold(text string) string {
 	return strings.Join(lines, "\n")
 }
 
+// allowedIDsFromNotesAndEpisodes collects known note, conversation, exposure, episode, and commit IDs exempt from scrubbing.
 func allowedIDsFromNotesAndEpisodes(notes []*inbox.Note, episodesByConv map[string]*episode.Episode) map[string]bool {
+	// --- Step 1: Collect IDs from inbox notes and exposures ---
 	allowed := make(map[string]bool)
 	add := func(id string) {
 		if trimmed := strings.TrimSpace(id); trimmed != "" {
@@ -942,6 +1025,8 @@ func allowedIDsFromNotesAndEpisodes(notes []*inbox.Note, episodesByConv map[stri
 			add(exp.EntryID)
 		}
 	}
+
+	// --- Step 2: Collect IDs and commit SHAs from episodes ---
 	for k, ep := range episodesByConv {
 		add(k)
 		if ep == nil {
@@ -968,6 +1053,7 @@ func (p *PipelineExecutor) RefreshFreshnessState(ctx context.Context, updateLast
 
 // refreshFreshnessState computes and persists the full A6 FreshnessState at <dataDir>/<repoID>/state/freshness.json.
 func (p *PipelineExecutor) refreshFreshnessState(ctx context.Context, updateLastConsolidation bool) {
+	// --- Step 1: Load existing freshness state and update consolidation timestamp if requested ---
 	if strings.TrimSpace(p.dataDir) == "" || strings.TrimSpace(p.repoID) == "" {
 		return
 	}
@@ -980,6 +1066,7 @@ func (p *PipelineExecutor) refreshFreshnessState(ctx context.Context, updateLast
 		st.LastConsolidationAt = now.Format(time.RFC3339)
 	}
 
+	// --- Step 2: Recompute unconsolidated note count, active/suspect entry counts, op-log batch ID, and HEAD SHA ---
 	if unconsolidated, err := inbox.NewStore(p.dataDir, p.repoID).ListUnconsolidated(); err == nil {
 		st.UnconsolidatedNotes = len(unconsolidated)
 	}
@@ -996,11 +1083,14 @@ func (p *PipelineExecutor) refreshFreshnessState(ctx context.Context, updateLast
 	st.IndexHeadSHA = headSHA
 	st.HeadMovedSinceBuild = false
 
+	// --- Step 3: Persist updated FreshnessState to disk ---
 	st.UpdatedAt = now.Format(time.RFC3339)
 	_ = SaveFreshnessState(p.dataDir, p.repoID, st)
 }
 
+// countActiveAndSuspectEntries counts active and suspect entries from idx if available, or by projecting op-log directories.
 func countActiveAndSuspectEntries(ctx context.Context, dataDir, repoID, repoRoot string, idx *index.Index) (active int, suspect int) {
+	// --- Step 1: Query SQLite index directly when available ---
 	if idx != nil {
 		if entries, err := idx.ListAllEntries(ctx); err == nil {
 			for _, e := range entries {
@@ -1016,6 +1106,7 @@ func countActiveAndSuspectEntries(ctx context.Context, dataDir, repoID, repoRoot
 		}
 	}
 
+	// --- Step 2: Fall back to projecting repo, user, and branch op logs ---
 	var repoOpsDir string
 	if strings.TrimSpace(repoRoot) != "" {
 		repoOpsDir = filepath.Join(repoRoot, ".memory", "ops")
@@ -1039,7 +1130,9 @@ func countActiveAndSuspectEntries(ctx context.Context, dataDir, repoID, repoRoot
 	return active, suspect
 }
 
+// latestOpLogBatchID scans repo, active branch, and user op-log directories for the newest batch ID.
 func latestOpLogBatchID(ctx context.Context, dataDir, repoID, repoRoot string) string {
+	// --- Step 1: Collect candidate op-log directories across tiers ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1054,6 +1147,7 @@ func latestOpLogBatchID(ctx context.Context, dataDir, repoID, repoRoot string) s
 		dirs = append(dirs, filepath.Join(consolidate.UserTierBaseDir(dataDir, repoID), "ops"))
 	}
 
+	// --- Step 2: Iterate batches and track the most recent BatchID ---
 	var latestID string
 	var latestTS time.Time
 	for _, dir := range dirs {
@@ -1075,6 +1169,7 @@ func latestOpLogBatchID(ctx context.Context, dataDir, repoID, repoRoot string) s
 	return latestID
 }
 
+// currentGitHeadSHA returns the trimmed HEAD commit SHA of repoRoot, or "" on error.
 func currentGitHeadSHA(ctx context.Context, repoRoot string) string {
 	if strings.TrimSpace(repoRoot) == "" {
 		return ""
@@ -1089,7 +1184,9 @@ func currentGitHeadSHA(ctx context.Context, repoRoot string) string {
 	return strings.TrimSpace(sha)
 }
 
+// formatCompactAge formats duration d as a compact human-readable unit string ("0s", "5m", "3h", "2d").
 func formatCompactAge(d time.Duration) string {
+	// --- Step 1: Clamp negative durations and format by unit threshold ---
 	if d < 0 {
 		d = 0
 	}
@@ -1114,6 +1211,7 @@ func formatCompactAge(d time.Duration) string {
 //
 //	memory: <index status> · <HEAD status> · <N> notes not yet consolidated · <M> entries suspect
 func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, idx *index.Index, inboxStore *inbox.Store) string {
+	// --- Step 1: Load persisted freshness state and compare index against latest op-log batch ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1149,6 +1247,7 @@ func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, 
 		indexStatus = fmt.Sprintf("index behind op-log (last built %s ago)", ageStr)
 	}
 
+	// --- Step 2: Compare live git HEAD SHA against IndexHeadSHA ---
 	liveHead := currentGitHeadSHA(ctx, repoRoot)
 	headMoved := false
 	if st != nil && st.HeadMovedSinceBuild {
@@ -1161,6 +1260,7 @@ func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, 
 		headStatus = "HEAD moved since last build"
 	}
 
+	// --- Step 3: Count unconsolidated inbox notes and suspect entries ---
 	unconsolidatedCount := 0
 	if inboxStore != nil {
 		if notes, err := inboxStore.ListUnconsolidated(); err == nil {
@@ -1179,7 +1279,7 @@ func FormatFreshnessLine(ctx context.Context, dataDir, repoID, repoRoot string, 
 		suspectCount = st.SuspectEntries
 	}
 
+	// --- Step 4: Format the canonical 1-line A6 freshness status header ---
 	return fmt.Sprintf("memory: %s · %s · %d notes not yet consolidated · %d entries suspect",
 		indexStatus, headStatus, unconsolidatedCount, suspectCount)
 }
-

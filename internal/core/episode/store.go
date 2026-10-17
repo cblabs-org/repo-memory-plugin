@@ -1,3 +1,95 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/episode/store.go
+ * Description: Defines the Episode and Header schemas and provides zstd-compressed,
+ *              atomic JSONL persistence and retrieval for conversation episodes.
+ *
+ * Exported Types / Functions:
+ * - DefaultCompactorVersion: Default schema version recorded for transcript compaction.
+ * - DefaultPipelineVersion:  Default version recorded for the ingestion pipeline.
+ * - HarnessAntigravity:      Canonical harness identifier for Antigravity sessions.
+ * - HarnessClaudeCode:       Canonical harness identifier for Claude Code sessions.
+ * - StartedByHuman:          Origin marker indicating an interactive human-initiated session.
+ * - StartedByAutomation:     Origin marker indicating an automated background session.
+ * - ErrEpisodeNotFound:      Sentinel error returned when a requested episode does not exist.
+ * - ErrInvalidSessionID:     Sentinel error returned when a session ID contains path traversal characters.
+ * - ErrNilEpisode:           Sentinel error returned when a nil Episode or Header is passed.
+ * - ErrEmptySessionID:       Sentinel error returned when a session ID is empty.
+ * - Step:                    Type alias to harness.Step for caller convenience.
+ * - StepKind:                Type alias to harness.StepKind for caller convenience.
+ * - StepGap:                 Inclusive [start, end] interval of unwritten step indices.
+ *
+ *   Own Public API:
+ *   - Start():               Returns the inclusive start step index of the gap.
+ *   - End():                 Returns the inclusive end step index of the gap.
+ *
+ *   fmt.Stringer:
+ *   - String():              Formats the step gap as "[i]" or "[start-end]". [fmt.Stringer]
+ *
+ * - Stats:                   Raw and kept character footprint counts for an episode.
+ * - Header:                  Metadata header line (line 1) of a compacted episode file.
+ *
+ *   Own Public API:
+ *   - SetCheckpoint():       Records a named checkpoint section on the header.
+ *   - Checkpoint():          Returns a recorded checkpoint section by name.
+ *   - RecordGap():           Appends a [start, end] step gap interval.
+ *   - RecordGaps():          Detects and records missing step index intervals from a step slice.
+ *   - Gaps():                Returns recorded step gaps as typed StepGap values.
+ *   - HasGaps():             Reports whether any step gaps are recorded.
+ *   - TotalMissingSteps():   Returns the total count of missing steps across all gaps.
+ *   - RecordCommit():        Appends a unique commit hash to Commits.
+ *   - RecordCommits():       Appends multiple commit hashes to Commits, ignoring duplicates.
+ *   - HasCommits():          Reports whether any commits are recorded on the header.
+ *   - HasCommit():           Reports whether a specific commit hash is recorded on the header.
+ *   - SetParentEpisode():    Sets or clears the parent episode ID pointer.
+ *   - GetParentEpisode():    Returns the parent episode ID or empty string if unset.
+ *
+ *   json.Unmarshaler:
+ *   - UnmarshalJSON():       Unmarshals Header JSON with flexible timestamp and commit formats. [json.Unmarshaler]
+ *
+ * - NewEpisodeID():          Generates a new ULID-based episode ID with the "ep-" prefix.
+ * - NewEpisodeIDWithTime():  Generates a ULID-based episode ID seeded with a specific timestamp.
+ * - ParseHeader():           Unmarshals a Header from JSON bytes.
+ * - ParseHeaderLine():       Unmarshals a Header from a single JSON line string.
+ * - DetectGaps():            Computes missing step index intervals across a slice of steps.
+ * - Episode:                 Complete compacted conversation episode (Header plus Steps).
+ *   - NewEpisode():          Constructs an Episode and populates initial step gaps.
+ *   - AddStep():             Appends a step to the episode.
+ *   - RecordGaps():          Detects and records missing step intervals from the episode's steps.
+ *   - RecordCommit():        Appends a commit hash to the episode header.
+ *   - RecordCommits():       Appends multiple commit hashes to the episode header.
+ *   - HasCommits():          Reports whether any commits are recorded on the episode.
+ *   - HasCommit():           Reports whether a specific commit hash is recorded on the episode.
+ *   - ComputeKeptChars():    Sums character counts across all retained episode steps.
+ *   - UpdateStats():         Updates raw and kept character counts on the episode header.
+ * - Store:                   Manages zstd-compressed episode files on disk by year and session ID.
+ *   - NewStore():            Constructs a Store for a data directory and repository ID.
+ *   - DefaultStore():        Constructs a Store using the platform default data directory.
+ *   - DataDir():             Returns the root data directory path.
+ *   - RepoID():              Returns the repository ID bound to the store.
+ *   - EpisodesDir():         Returns the base episodes directory path for the repository.
+ *   - YearDir():             Returns the year-partitioned episodes subdirectory path.
+ *   - Path():                Returns the file path for a session ID and year.
+ *   - EpisodePath():         Returns the canonical file path for an Episode.
+ *   - Write():               Atomically writes a zstd-compressed episode to disk.
+ *   - WriteEpisode():        Atomically writes an episode and returns its destination file path.
+ *   - Read():                Reads and decompresses an episode by session ID (and optional year).
+ *   - ReadHeader():          Reads only the first-line Header for a session ID without decoding steps.
+ *   - ReadFromPath():        Reads and decompresses a full Episode from an explicit path.
+ *   - ReadHeaderFromPath():  Reads only the Header from an explicit episode file path.
+ *   - FindPath():            Locates an episode file across year subdirectories by session ID.
+ *   - Exists():              Reports whether an episode file exists for the given session ID.
+ *   - List():                Returns sorted session IDs of all stored episodes.
+ *   - ListPaths():           Returns sorted file paths of all stored episodes.
+ *   - ListHeaders():         Returns Headers of all stored episodes in path order.
+ *   - ListEpisodes():        Returns all stored Episodes in deterministic path order.
+ */
+
 package episode
 
 import (
@@ -19,24 +111,22 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// Default version constants.
+// Default version and harness constants.
 const (
-	DefaultCompactorVersion = "1.0.0"
-	DefaultPipelineVersion  = "0.1.0"
-
-	HarnessAntigravity = "antigravity"
-	HarnessClaudeCode  = "claude-code"
-
-	StartedByHuman      = "human"
-	StartedByAutomation = "automation"
+	DefaultCompactorVersion = "1.0.0"       // Default version string for the transcript compactor.
+	DefaultPipelineVersion  = "0.1.0"       // Default version string for the ingestion pipeline.
+	HarnessAntigravity      = "antigravity" // Identifier for the Antigravity IDE harness.
+	HarnessClaudeCode       = "claude-code" // Identifier for the Claude Code CLI harness.
+	StartedByHuman          = "human"       // Indicates the session was initiated interactively by a user.
+	StartedByAutomation     = "automation"  // Indicates the session was initiated by an automated runner.
 )
 
-// Common errors.
+// Common episode store errors.
 var (
-	ErrEpisodeNotFound  = errors.New("episode not found")
-	ErrInvalidSessionID = errors.New("invalid session id")
-	ErrNilEpisode       = errors.New("episode cannot be nil")
-	ErrEmptySessionID   = errors.New("session_id cannot be empty")
+	ErrEpisodeNotFound  = errors.New("episode not found")         // Returned when no episode file matches the session ID or path.
+	ErrInvalidSessionID = errors.New("invalid session id")        // Returned when a session ID contains path separators or "..".
+	ErrNilEpisode       = errors.New("episode cannot be nil")     // Returned when a nil Episode or Header pointer is supplied.
+	ErrEmptySessionID   = errors.New("session_id cannot be empty") // Returned when a required session ID is empty.
 )
 
 // Step is an alias to harness.Step for caller convenience.
@@ -64,36 +154,36 @@ func (g StepGap) String() string {
 
 // Stats captures character footprint statistics for the episode.
 type Stats struct {
-	RawChars  int `json:"raw_chars"`
-	KeptChars int `json:"kept_chars"`
+	RawChars  int `json:"raw_chars"`  // Total character count in the uncompacted raw transcript.
+	KeptChars int `json:"kept_chars"` // Total character count retained across compacted steps.
 }
 
 // Header represents the metadata header line of an episode file (§5.1).
 type Header struct {
-	EpisodeID        string            `json:"episode_id"`
-	Harness          string            `json:"harness"`
-	SessionID        string            `json:"session_id"`
-	ParentEpisode    *string           `json:"parent_episode"`
-	RepoID           string            `json:"repo_id"`
-	Branch           string            `json:"branch,omitempty"`
-	Started          time.Time         `json:"started,omitempty"`
-	Ended            time.Time         `json:"ended,omitempty"`
-	HeadStart        string            `json:"head_start,omitempty"`
-	HeadEnd          string            `json:"head_end,omitempty"`
-	Commits          []string          `json:"commits,omitempty"`
-	StepGaps         [][2]int          `json:"step_gaps,omitempty"`
-	Model            string            `json:"model,omitempty"`
-	HarnessVersion   string            `json:"harness_version,omitempty"`
-	StartedBy        string            `json:"started_by,omitempty"`
-	CompactorVersion string            `json:"compactor_version,omitempty"`
-	PipelineVersion  string            `json:"pipeline_version,omitempty"`
-	Stats            Stats             `json:"stats,omitempty"`
-	Source           string            `json:"source,omitempty"`
-	Status           string            `json:"status,omitempty"`
-	StepCount        int               `json:"step_count,omitempty"`
-	Checkpoints      map[string]string `json:"checkpoints,omitempty"`
-	Exposures        []string          `json:"exposures,omitempty"`
-	Metadata         map[string]any    `json:"metadata,omitempty"`
+	EpisodeID        string            `json:"episode_id"`                   // Unique ULID-based identifier (or session ID fallback) for the episode.
+	Harness          string            `json:"harness"`                      // Source agent harness name (e.g., "antigravity" or "claude-code").
+	SessionID        string            `json:"session_id"`                   // Harness conversation or session identifier.
+	ParentEpisode    *string           `json:"parent_episode"`               // Optional parent episode ID for subagent trajectories.
+	RepoID           string            `json:"repo_id"`                      // Stable registry slug derived from remote origin URL or root path hash.
+	Branch           string            `json:"branch,omitempty"`             // Active git branch during the session.
+	Started          time.Time         `json:"started,omitempty"`            // UTC timestamp of the first step in the episode.
+	Ended            time.Time         `json:"ended,omitempty"`              // UTC timestamp of the final step in the episode.
+	HeadStart        string            `json:"head_start,omitempty"`         // Git HEAD commit SHA at session start.
+	HeadEnd          string            `json:"head_end,omitempty"`           // Git HEAD commit SHA at session end.
+	Commits          []string          `json:"commits,omitempty"`            // Chronological commit SHAs linked to the episode.
+	StepGaps         [][2]int          `json:"step_gaps,omitempty"`          // Inclusive [start, end] intervals of missing step indices.
+	Model            string            `json:"model,omitempty"`              // Primary LLM model identifier used during the session.
+	HarnessVersion   string            `json:"harness_version,omitempty"`    // Version string of the originating agent harness.
+	StartedBy        string            `json:"started_by,omitempty"`         // Session initiator category ("human" or "automation").
+	CompactorVersion string            `json:"compactor_version,omitempty"`  // Version of the transcript compactor that produced the episode.
+	PipelineVersion  string            `json:"pipeline_version,omitempty"`   // Version of the ingestion pipeline that processed the episode.
+	Stats            Stats             `json:"stats,omitempty"`              // Character footprint statistics before and after compaction.
+	Source           string            `json:"source,omitempty"`             // Original filesystem path of the source transcript.
+	Status           string            `json:"status,omitempty"`             // Processing lifecycle status (e.g., "captured", "parsed").
+	StepCount        int               `json:"step_count,omitempty"`         // Total count of steps recorded in the episode.
+	Checkpoints      map[string]string `json:"checkpoints,omitempty"`        // Extracted checkpoint sections keyed by canonical title.
+	Exposures        []string          `json:"exposures,omitempty"`          // Memory entry IDs exposed to the agent during the session.
+	Metadata         map[string]any    `json:"metadata,omitempty"`           // Auxiliary key-value metadata for flat JSON and summary adapters.
 }
 
 // SetCheckpoint records a parsed checkpoint section on the header.
@@ -131,10 +221,13 @@ func (h *Header) RecordGap(start, end int) {
 
 // RecordGaps inspects steps, detects missing step index intervals, and appends them to StepGaps.
 func (h *Header) RecordGaps(steps []harness.Step) {
+	// --- Step 1: Detect contiguous missing step intervals ---
 	gaps := DetectGaps(steps)
 	if len(gaps) == 0 {
 		return
 	}
+
+	// --- Step 2: Deduplicate against existing step gaps and append new intervals ---
 	existing := make(map[[2]int]bool, len(h.StepGaps))
 	for _, g := range h.StepGaps {
 		existing[g] = true
@@ -232,12 +325,13 @@ func (h *Header) GetParentEpisode() string {
 // UnmarshalJSON implements custom JSON unmarshaling for Header to handle flexible timestamp formats
 // and flexible commit formats.
 func (h *Header) UnmarshalJSON(data []byte) error {
+	// --- Step 1: Unmarshal standard fields and capture flexible raw fields ---
 	type Alias Header
 	aux := &struct {
-		Started any `json:"started"`
-		Ended   any `json:"ended"`
-		Commits any `json:"commits"`
-		*Alias
+		Started any `json:"started"` // Raw started timestamp value (string or numeric epoch).
+		Ended   any `json:"ended"`   // Raw ended timestamp value (string or numeric epoch).
+		Commits any `json:"commits"` // Raw commits payload (string, string slice, or object slice).
+		*Alias                   // Embedded alias to populate all remaining Header fields.
 	}{
 		Alias: (*Alias)(h),
 	}
@@ -246,6 +340,7 @@ func (h *Header) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	// --- Step 2: Parse flexible start and end timestamps ---
 	if aux.Started != nil {
 		t, err := parseTimeFlexible(aux.Started)
 		if err != nil {
@@ -262,6 +357,7 @@ func (h *Header) UnmarshalJSON(data []byte) error {
 		h.Ended = t
 	}
 
+	// --- Step 3: Parse flexible commit list representations ---
 	if aux.Commits != nil {
 		commits, err := parseCommitsFlexible(aux.Commits)
 		if err != nil {
@@ -273,7 +369,9 @@ func (h *Header) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// parseTimeFlexible converts string timestamps or numeric Unix seconds/milliseconds into UTC time.Time.
 func parseTimeFlexible(val any) (time.Time, error) {
+	// --- Step 1: Handle nil and string timestamp representations ---
 	if val == nil {
 		return time.Time{}, nil
 	}
@@ -299,6 +397,8 @@ func parseTimeFlexible(val any) (time.Time, error) {
 			}
 		}
 		return time.Time{}, fmt.Errorf("unrecognized time format %q", v)
+
+	// --- Step 2: Handle numeric Unix epoch seconds or milliseconds ---
 	case float64:
 		if v == 0 {
 			return time.Time{}, nil
@@ -312,7 +412,10 @@ func parseTimeFlexible(val any) (time.Time, error) {
 	}
 }
 
+// parseCommitsFlexible normalizes commit lists represented as a delimited string,
+// a JSON array of strings/objects, or a Go string slice.
 func parseCommitsFlexible(val any) ([]string, error) {
+	// --- Step 1: Handle nil or comma/whitespace-delimited string formats ---
 	if val == nil {
 		return nil, nil
 	}
@@ -333,6 +436,8 @@ func parseCommitsFlexible(val any) ([]string, error) {
 			}
 		}
 		return result, nil
+
+	// --- Step 2: Handle heterogeneous JSON arrays of strings or commit objects ---
 	case []any:
 		var result []string
 		for _, item := range v {
@@ -355,6 +460,8 @@ func parseCommitsFlexible(val any) ([]string, error) {
 			}
 		}
 		return result, nil
+
+	// --- Step 3: Handle pre-typed string slices ---
 	case []string:
 		var result []string
 		for _, s := range v {
@@ -389,6 +496,7 @@ func ParseHeaderLine(line string) (*Header, error) {
 
 // DetectGaps inspects steps and returns any missing step index intervals.
 func DetectGaps(steps []harness.Step) [][2]int {
+	// --- Step 1: Extract and sort step indices ---
 	if len(steps) <= 1 {
 		return nil
 	}
@@ -398,6 +506,7 @@ func DetectGaps(steps []harness.Step) [][2]int {
 	}
 	sort.Ints(indices)
 
+	// --- Step 2: Identify non-contiguous index jumps ---
 	var gaps [][2]int
 	for i := 1; i < len(indices); i++ {
 		prev := indices[i-1]
@@ -411,8 +520,8 @@ func DetectGaps(steps []harness.Step) [][2]int {
 
 // Episode represents a complete compacted conversation episode.
 type Episode struct {
-	Header Header         `json:"header"`
-	Steps  []harness.Step `json:"steps"`
+	Header Header         `json:"header"` // First-line JSONL metadata record containing provenance, git commits, and step gaps.
+	Steps  []harness.Step `json:"steps"`  // Compacted chronological sequence of steps.
 }
 
 // NewEpisode constructs an episode and automatically detects step gaps.
@@ -475,8 +584,8 @@ func (e *Episode) UpdateStats(rawChars int) {
 // Store handles persistence and retrieval of compacted episodes at:
 // <data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst
 type Store struct {
-	dataDir string
-	repoID  string
+	dataDir string // Base data directory containing per-repository subdirectories.
+	repoID  string // Target repository slug under <data-dir>/<repo-id>/episodes/.
 }
 
 // NewStore creates a new Episode Store. If dataDir is empty, the platform user data directory is used.
@@ -515,8 +624,7 @@ func (s *Store) YearDir(year int) string {
 	return filepath.Join(s.EpisodesDir(), fmt.Sprintf("%04d", year))
 }
 
-// Path returns the path for an episode file:
-// <data-dir>/<repo-id>/episodes/<yyyy>/<session-id>.jsonl.zst
+// Path returns the filesystem path for a compressed episode archive given its sessionID and four-digit year.
 func (s *Store) Path(sessionID string, year int) string {
 	cleanID := filepath.Base(sessionID)
 	return filepath.Join(s.YearDir(year), cleanID+".jsonl.zst")
@@ -543,6 +651,7 @@ func (s *Store) Write(ep *Episode) error {
 
 // WriteEpisode writes an episode and returns its final destination path.
 func (s *Store) WriteEpisode(ep *Episode) (string, error) {
+	// --- Step 1: Validate episode and backfill default header metadata ---
 	if ep == nil {
 		return "", ErrNilEpisode
 	}
@@ -553,7 +662,6 @@ func (s *Store) WriteEpisode(ep *Episode) (string, error) {
 		return "", err
 	}
 
-	// Fill defaults if unset
 	if ep.Header.EpisodeID == "" {
 		ep.Header.EpisodeID = NewEpisodeID()
 	}
@@ -570,6 +678,7 @@ func (s *Store) WriteEpisode(ep *Episode) (string, error) {
 		ep.Header.RecordGaps(ep.Steps)
 	}
 
+	// --- Step 2: Create destination directory and temporary sibling file ---
 	targetPath := s.EpisodePath(ep)
 	dir := filepath.Dir(targetPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -589,12 +698,13 @@ func (s *Store) WriteEpisode(ep *Episode) (string, error) {
 		}
 	}()
 
+	// --- Step 3: Stream zstd-compressed header and step JSONL lines ---
 	enc, err := zstd.NewWriter(tmpFile, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	if err != nil {
 		return "", fmt.Errorf("creating zstd encoder: %w", err)
 	}
 
-	// Line 1: Header line
+	// Line 1: Header line.
 	headerBytes, err := json.Marshal(ep.Header)
 	if err != nil {
 		_ = enc.Close()
@@ -605,7 +715,7 @@ func (s *Store) WriteEpisode(ep *Episode) (string, error) {
 		return "", fmt.Errorf("writing episode header: %w", err)
 	}
 
-	// Step lines
+	// Subsequent lines: Step lines.
 	for i, step := range ep.Steps {
 		stepBytes, err := json.Marshal(step)
 		if err != nil {
@@ -618,6 +728,7 @@ func (s *Store) WriteEpisode(ep *Episode) (string, error) {
 		}
 	}
 
+	// --- Step 4: Flush encoder, close file handle, and atomically rename ---
 	if err := enc.Close(); err != nil {
 		return "", fmt.Errorf("closing zstd encoder: %w", err)
 	}
@@ -669,6 +780,7 @@ func (s *Store) ReadHeader(sessionID string, year ...int) (*Header, error) {
 
 // ReadFromPath reads and decompresses an episode from an explicit file path.
 func (s *Store) ReadFromPath(path string) (*Episode, error) {
+	// --- Step 1: Open file and initialize zstd reader ---
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -686,7 +798,7 @@ func (s *Store) ReadFromPath(path string) (*Episode, error) {
 
 	reader := bufio.NewReader(dec)
 
-	// Line 1: Header line
+	// --- Step 2: Read and unmarshal line 1 as Header ---
 	headerBytes, err := readLineBytes(reader)
 	if err != nil {
 		return nil, fmt.Errorf("reading episode header from %s: %w", path, err)
@@ -696,7 +808,7 @@ func (s *Store) ReadFromPath(path string) (*Episode, error) {
 		return nil, fmt.Errorf("unmarshaling episode header from %s: %w", path, err)
 	}
 
-	// Subsequent lines: Steps
+	// --- Step 3: Read and unmarshal subsequent lines as Steps ---
 	var steps []harness.Step
 	lineNum := 1
 	for {
@@ -726,6 +838,7 @@ func (s *Store) ReadFromPath(path string) (*Episode, error) {
 
 // ReadHeaderFromPath reads only the Header from a given episode file.
 func (s *Store) ReadHeaderFromPath(path string) (*Header, error) {
+	// --- Step 1: Open compressed episode file and attach zstd decoder ---
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -741,6 +854,7 @@ func (s *Store) ReadHeaderFromPath(path string) (*Header, error) {
 	}
 	defer dec.Close()
 
+	// --- Step 2: Read and decode only the first JSONL line ---
 	reader := bufio.NewReader(dec)
 	headerBytes, err := readLineBytes(reader)
 	if err != nil {
@@ -755,6 +869,7 @@ func (s *Store) ReadHeaderFromPath(path string) (*Header, error) {
 
 // FindPath locates an episode file by session ID across year subdirectories.
 func (s *Store) FindPath(sessionID string) (string, error) {
+	// --- Step 1: Validate session ID and read year subdirectories ---
 	if err := validateSessionID(sessionID); err != nil {
 		return "", err
 	}
@@ -767,6 +882,7 @@ func (s *Store) FindPath(sessionID string) (string, error) {
 		return "", err
 	}
 
+	// --- Step 2: Probe each year directory for a matching <session-id>.jsonl.zst file ---
 	filename := sessionID + ".jsonl.zst"
 	var found []string
 
@@ -783,6 +899,7 @@ func (s *Store) FindPath(sessionID string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrEpisodeNotFound, sessionID)
 	}
 
+	// --- Step 3: Prefer the latest year directory if multiple matches exist ---
 	if len(found) > 1 {
 		sort.Sort(sort.Reverse(sort.StringSlice(found)))
 	}
@@ -822,6 +939,8 @@ func (s *Store) List(year ...int) ([]string, error) {
 // ListPaths returns file paths to all stored episodes, sorted.
 func (s *Store) ListPaths(year ...int) ([]string, error) {
 	var paths []string
+
+	// --- Step 1: Collect episode paths from a specific year directory or all years ---
 	if len(year) > 0 && year[0] > 0 {
 		yearDir := s.YearDir(year[0])
 		entries, err := os.ReadDir(yearDir)
@@ -860,16 +979,21 @@ func (s *Store) ListPaths(year ...int) ([]string, error) {
 			}
 		}
 	}
+
+	// --- Step 2: Sort collected paths deterministically ---
 	sort.Strings(paths)
 	return paths, nil
 }
 
 // ListHeaders returns the Header of all stored episodes, sorted by path.
 func (s *Store) ListHeaders(year ...int) ([]*Header, error) {
+	// --- Step 1: Enumerate sorted episode file paths ---
 	paths, err := s.ListPaths(year...)
 	if err != nil {
 		return nil, err
 	}
+
+	// --- Step 2: Read the header line from each episode file ---
 	headers := make([]*Header, 0, len(paths))
 	for _, p := range paths {
 		h, err := s.ReadHeaderFromPath(p)
@@ -883,10 +1007,13 @@ func (s *Store) ListHeaders(year ...int) ([]*Header, error) {
 
 // ListEpisodes returns all stored episodes in deterministic path order.
 func (s *Store) ListEpisodes(year ...int) ([]*Episode, error) {
+	// --- Step 1: Enumerate sorted episode file paths ---
 	paths, err := s.ListPaths(year...)
 	if err != nil {
 		return nil, err
 	}
+
+	// --- Step 2: Decompress and decode each full episode ---
 	episodes := make([]*Episode, 0, len(paths))
 	for _, p := range paths {
 		ep, err := s.ReadFromPath(p)
@@ -898,12 +1025,15 @@ func (s *Store) ListEpisodes(year ...int) ([]*Episode, error) {
 	return episodes, nil
 }
 
+// readLineBytes reads a single newline-delimited line from r without arbitrary length limits.
 func readLineBytes(r *bufio.Reader) ([]byte, error) {
+	// --- Step 1: Accumulate chunks until a newline delimiter or EOF is reached ---
 	var line []byte
 	for {
 		chunk, err := r.ReadBytes('\n')
 		line = append(line, chunk...)
 		if err != nil {
+			// --- Step 2: Return any trailing content before propagating io.EOF ---
 			if errors.Is(err, io.EOF) {
 				trimmed := bytes.TrimSpace(line)
 				if len(trimmed) == 0 {
@@ -919,6 +1049,7 @@ func readLineBytes(r *bufio.Reader) ([]byte, error) {
 	}
 }
 
+// validateSessionID ensures sessionID is non-empty and free of path separators or traversal segments.
 func validateSessionID(sessionID string) error {
 	if sessionID == "" {
 		return ErrEmptySessionID

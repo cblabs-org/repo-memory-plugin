@@ -1,9 +1,19 @@
 /*
-cmd_mcp.go implements the `repo-memory mcp` stdio server command for the Model
-Context Protocol (JSON-RPC 2.0), resolving the active enrolled repository from
-either the current working directory or the most recently active registry entry
-when spawned from a plugin root directory.
-*/
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: cmd/repo-memory/cmd_mcp.go
+ * Description: Implements the `repo-memory mcp` stdio server command for the Model
+ *              Context Protocol (JSON-RPC 2.0), resolving the active enrolled
+ *              repository from either the current working directory or the most
+ *              recently active registry entry when spawned from a plugin root.
+ *
+ * Exported Types / Functions:
+ * - (none — package main CLI command registration)
+ */
 
 package main
 
@@ -253,7 +263,7 @@ type jsonRPCRequest struct {
 	JSONRPC string `json:"jsonrpc"`
 	// ID is the request identifier (nil for notifications).
 	ID json.RawMessage `json:"id,omitempty"`
-	// Method is the RPC method name.
+	// Method is the JSON-RPC 2.0 method identifier (e.g. "initialize", "tools/list", "tools/call").
 	Method string `json:"method"`
 	// Params is the raw JSON method parameters.
 	Params json.RawMessage `json:"params,omitempty"`
@@ -278,7 +288,7 @@ func initializeResult(params json.RawMessage) map[string]any {
 	version := supportedProtocolVersion
 	if len(params) > 0 {
 		var initParams struct {
-			ProtocolVersion string `json:"protocolVersion"`
+			ProtocolVersion string `json:"protocolVersion"` // Client-requested MCP protocol version.
 		}
 		if json.Unmarshal(params, &initParams) == nil && initParams.ProtocolVersion != "" {
 			if initParams.ProtocolVersion == supportedProtocolVersion {
@@ -380,8 +390,8 @@ func writeResult(cmd *cobra.Command, id json.RawMessage, result any) {
 	writeResult2(cmd.OutOrStdout(), id, result)
 }
 
-// writeError writes a JSON-RPC error response to a cobra command's stdout.
-// Kept for backward compatibility with existing callers.
+// writeError writes a JSON-RPC error response to a cobra command's stdout,
+// delegating to writeJSONRPC for callers bound to a *cobra.Command.
 func writeError(cmd *cobra.Command, id json.RawMessage, code int, message string) {
 	writeJSONRPC(cmd.OutOrStdout(), id, code, message, nil)
 }

@@ -1,3 +1,25 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ *
+ * https://github.com/cblabs-org/repo-memory-plugin
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Module: internal/core/consolidate/record.go
+ * Description: Implements state-aware op validation, 6-line entry text cap
+ *              enforcement, 4-layer secret scrubbing on candidate ops, append-only
+ *              op-batch persistence, and dossier/ATLAS projection.
+ *
+ * Exported Types / Functions:
+ * - SourcePASeed:          Provenance source value for Principal Architect seeded operations ("pa-seed").
+ * - SourceHandEdit:        Provenance source value for hand-edit migration operations ("hand-edit").
+ * - OpValidationFailure:   Describes a candidate operation rejected by validation or scrubbing.
+ * - RecordAndRenderResult: Holds the written op batch, projected dossiers, lint warnings, and marked note IDs.
+ * - ValidateAndPrepareOps(): Validates, normalizes, and scrubs candidate ops before op-log append.
+ * - RecordAndRenderDirs(): Writes validOps to opsDir, projects dossiers to renderBaseDir, and marks notes consolidated.
+ * - RecordAndRenderTier(): Convenience wrapper around RecordAndRenderDirs for a single tier base directory.
+ */
+
 package consolidate
 
 import (
@@ -24,14 +46,15 @@ const (
 
 // OpValidationFailure describes a candidate operation rejected by deterministic validation or scrubbing.
 type OpValidationFailure struct {
-	Index  int    `json:"index"`
-	Op     ops.Op `json:"op"`
-	Reason string `json:"reason"`
+	Index  int    `json:"index"`  // Zero-based index of the rejected operation in candidateOps.
+	Op     ops.Op `json:"op"`     // Candidate operation that failed validation or scrubbing.
+	Reason string `json:"reason"` // Human-readable explanation of why the operation was rejected.
 }
 
 // ValidateAndPrepareOps performs state-aware deterministic validation, 6-line entry text cap enforcement,
 // schema validation, and 4-layer secret/blob scrubbing on candidate ops before op-log append (SPEC §6.4 step 6).
 func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.Dossier, scrubCtx scrub.Context, now time.Time) (validOps []ops.Op, rejected []OpValidationFailure) {
+	// --- Step 1: Initialize in-memory active state tracker from existing projected dossiers ---
 	if now.IsZero() {
 		now = time.Now().UTC()
 	} else {
@@ -81,6 +104,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 		}
 	}
 
+	// --- Step 2: Normalize each candidate op's fields, IDs, timestamps, and aliases ---
 	for i, rawOp := range candidateOps {
 		op := rawOp
 		op.Fields = deepCopyFields(rawOp.Fields)
@@ -139,7 +163,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 			}
 		}
 
-		// Enforce <= 6 lines per entry text cap.
+		// --- Step 3: Enforce the <= 6 lines per entry text cap ---
 		if op.Type == ops.OpAdd || op.Type == ops.OpAmend || op.Type == ops.OpSupersede {
 			exceeded := false
 			for _, key := range []string{"text", "new_text"} {
@@ -162,7 +186,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 			}
 		}
 
-		// State-Aware Existence Check.
+		// --- Step 4: Verify state-aware entry ID existence and uniqueness invariants ---
 		switch op.Type {
 		case ops.OpAdd:
 			if op.EntryID != "" && allKnownIDs[op.EntryID] {
@@ -215,7 +239,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 			}
 		}
 
-		// Schema Validation.
+		// --- Step 5: Run schema validation and the 4-layer scrubber gate ---
 		if err := ops.ValidateOp(op); err != nil {
 			rejected = append(rejected, OpValidationFailure{
 				Index:  i,
@@ -225,7 +249,6 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 			continue
 		}
 
-		// 4-Layer Scrubber Gate.
 		opScrubCtx := prepareOpScrubContext(scrubCtx, op)
 		scrubErr := scrubOpStringFields(&op, opScrubCtx)
 		if scrubErr != nil {
@@ -252,7 +275,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 			continue
 		}
 
-		// Update Live State Tracker on Success.
+		// --- Step 6: Update live state tracker so subsequent ops in the same batch see the transition ---
 		ensureScope(op.DossierScope)
 		if strings.TrimSpace(stringField(op.Fields, "purpose")) != "" {
 			scopeHasPurpose[op.DossierScope] = true
@@ -324,6 +347,7 @@ func ValidateAndPrepareOps(candidateOps []ops.Op, existing map[string]*dossiers.
 	return validOps, rejected
 }
 
+// isAllowedConsolidationOpSource reports whether src is an allowed provenance source for consolidated operations.
 func isAllowedConsolidationOpSource(src string) bool {
 	switch strings.TrimSpace(src) {
 	case ops.SourceConsolidation, SourcePASeed, SourceHandEdit, ops.SourceDocSeed, ops.SourceTick, ops.SourceGardening:
@@ -333,6 +357,7 @@ func isAllowedConsolidationOpSource(src string) bool {
 	}
 }
 
+// deepCopyFields returns a deep copy of an operation's Fields map so validation does not mutate caller maps.
 func deepCopyFields(fields map[string]any) map[string]any {
 	if fields == nil {
 		return nil
@@ -344,7 +369,9 @@ func deepCopyFields(fields map[string]any) map[string]any {
 	return cp
 }
 
+// deepCopyValue recursively clones nested maps and slices inside an operation field value.
 func deepCopyValue(v any) any {
+	// --- Step 1: Clone map types ---
 	switch val := v.(type) {
 	case map[string]any:
 		return deepCopyFields(val)
@@ -354,6 +381,7 @@ func deepCopyValue(v any) any {
 			m[k] = s
 		}
 		return m
+	// --- Step 2: Clone slice types and return scalar values directly ---
 	case []string:
 		s := make([]string, len(val))
 		copy(s, val)
@@ -369,6 +397,7 @@ func deepCopyValue(v any) any {
 	}
 }
 
+// stringField extracts a string value from fields[key], returning "" if missing or not a string.
 func stringField(fields map[string]any, key string) string {
 	if fields == nil {
 		return ""
@@ -380,7 +409,9 @@ func stringField(fields map[string]any, key string) string {
 	return v
 }
 
+// syncEntryTypeFields synchronizes the "type" and "entry_type" keys in fields, falling back to fallback when both are empty.
 func syncEntryTypeFields(fields map[string]any, fallback string) string {
+	// --- Step 1: Resolve the effective entry type from "type", "entry_type", or fallback ---
 	t := strings.TrimSpace(stringField(fields, "type"))
 	et := strings.TrimSpace(stringField(fields, "entry_type"))
 	resolved := t
@@ -390,6 +421,8 @@ func syncEntryTypeFields(fields map[string]any, fallback string) string {
 	if resolved == "" {
 		resolved = strings.TrimSpace(fallback)
 	}
+
+	// --- Step 2: Populate any missing alias key in fields ---
 	if resolved != "" {
 		if t == "" {
 			fields["type"] = resolved
@@ -401,6 +434,7 @@ func syncEntryTypeFields(fields map[string]any, fallback string) string {
 	return resolved
 }
 
+// syncTextAndNewTextFields mirrors "text" and "new_text" in fields when only one is populated on an OpSupersede.
 func syncTextAndNewTextFields(fields map[string]any) {
 	txt := strings.TrimSpace(stringField(fields, "text"))
 	newTxt := strings.TrimSpace(stringField(fields, "new_text"))
@@ -411,6 +445,7 @@ func syncTextAndNewTextFields(fields map[string]any) {
 	}
 }
 
+// syncMoveScopeFields mirrors "target_scope" and "to_dossier" in fields for OpMove operations.
 func syncMoveScopeFields(fields map[string]any) {
 	ts := strings.TrimSpace(stringField(fields, "target_scope"))
 	td := strings.TrimSpace(stringField(fields, "to_dossier"))
@@ -421,6 +456,7 @@ func syncMoveScopeFields(fields map[string]any) {
 	}
 }
 
+// syncSplitScopeFields mirrors "new_scopes" and "new_dossiers" in fields for OpSplit operations.
 func syncSplitScopeFields(fields map[string]any) {
 	_, hasNS := fields["new_scopes"]
 	_, hasND := fields["new_dossiers"]
@@ -431,12 +467,16 @@ func syncSplitScopeFields(fields map[string]any) {
 	}
 }
 
+// normalizeEntryTextLines strips blank lines when text exceeds 6 lines and reports whether the result fits within 6 lines.
 func normalizeEntryTextLines(text string) (string, bool) {
+	// --- Step 1: Return immediately when raw line count is already <= 6 ---
 	trimmed := strings.TrimSpace(text)
 	lines := strings.Split(trimmed, "\n")
 	if len(lines) <= 6 {
 		return text, true
 	}
+
+	// --- Step 2: Collapse blank lines and re-check the 6-line ceiling ---
 	var nonEmpty []string
 	for _, line := range lines {
 		if strings.TrimSpace(line) != "" {
@@ -449,11 +489,16 @@ func normalizeEntryTextLines(text string) (string, bool) {
 	return strings.Join(nonEmpty, "\n"), true
 }
 
+// extractEntryMovesMap extracts a string-to-string entry_moves map from fields regardless of whether
+// it was decoded as map[string]string or map[string]any.
 func extractEntryMovesMap(fields map[string]any) map[string]string {
+	// --- Step 1: Handle nil fields ---
 	out := make(map[string]string)
 	if fields == nil {
 		return out
 	}
+
+	// --- Step 2: Copy entries from typed or untyped map representations ---
 	switch v := fields["entry_moves"].(type) {
 	case map[string]string:
 		for k, s := range v {
@@ -469,7 +514,9 @@ func extractEntryMovesMap(fields map[string]any) map[string]string {
 	return out
 }
 
+// prepareOpScrubContext clones base and adds the operation's own entry IDs, session ID, and evidence IDs to AllowedIDs.
 func prepareOpScrubContext(base scrub.Context, op ops.Op) scrub.Context {
+	// --- Step 1: Copy base scrub context and default Boundary to "op" ---
 	ctx := base
 	if strings.TrimSpace(ctx.Boundary) == "" {
 		ctx.Boundary = "op"
@@ -484,6 +531,8 @@ func prepareOpScrubContext(base scrub.Context, op ops.Op) scrub.Context {
 			allowed[trimmed] = true
 		}
 	}
+
+	// --- Step 2: Allowlist EntryID, SessionID, new_entry_id, and evidence references ---
 	addID(op.EntryID)
 	addID(op.SessionID)
 	if op.Fields != nil {
@@ -509,15 +558,17 @@ func prepareOpScrubContext(base scrub.Context, op ops.Op) scrub.Context {
 	return ctx
 }
 
+// scrubOpStringFields runs scrub.Scrub across all free-text fields in op.Fields.
 func scrubOpStringFields(op *ops.Op, scrubCtx scrub.Context) error {
-	// Always invoke scrub.Scrub at least once so malformed Layer 3 scrub.yaml files fail closed
-	// even if an op has no populated optional text fields.
+	// --- Step 1: Probe scrub.Scrub once so malformed Layer 3 scrub.yaml files always fail closed ---
 	if _, err := scrub.Scrub("", scrubCtx); err != nil {
 		return err
 	}
 	if op.Fields == nil {
 		return nil
 	}
+
+	// --- Step 2: Scrub each populated string field in op.Fields ---
 	for _, key := range []string{"text", "new_text", "title", "purpose", "reason", "closes_when"} {
 		val, ok := op.Fields[key].(string)
 		if !ok || val == "" {
@@ -534,15 +585,16 @@ func scrubOpStringFields(op *ops.Op, scrubCtx scrub.Context) error {
 
 // RecordAndRenderResult holds the written op batch, projected dossiers, lint warnings, and marked inbox note IDs.
 type RecordAndRenderResult struct {
-	Batch        *ops.OpBatch                 `json:"batch,omitempty"`
-	Dossiers     map[string]*dossiers.Dossier `json:"dossiers"`
-	LintWarnings map[string][]string          `json:"lint_warnings,omitempty"`
-	MarkedNotes  []string                     `json:"marked_notes,omitempty"`
+	Batch        *ops.OpBatch                 `json:"batch,omitempty"`         // Written append-only OpBatch, or nil when validOps was empty.
+	Dossiers     map[string]*dossiers.Dossier `json:"dossiers"`                // Projected dossiers keyed by canonical scope.
+	LintWarnings map[string][]string          `json:"lint_warnings,omitempty"` // Per-scope LintDossier warnings for active dossiers.
+	MarkedNotes  []string                     `json:"marked_notes,omitempty"`  // Deduplicated inbox note IDs marked Consolidated = true.
 }
 
 // RecordAndRenderDirs writes validOps as an append-only OpBatch into opsDir, re-projects all dossiers
 // and ATLAS.md into renderBaseDir, runs LintDossier cap checks, and marks consolidatedNoteIDs as Consolidated.
 func RecordAndRenderDirs(ctx context.Context, opsDir string, renderBaseDir string, validOps []ops.Op, inboxStore *inbox.Store, consolidatedNoteIDs []string, now time.Time) (*RecordAndRenderResult, error) {
+	// --- Step 1: Normalize context and UTC timestamp and write the append-only OpBatch ---
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -565,6 +617,7 @@ func RecordAndRenderDirs(ctx context.Context, opsDir string, renderBaseDir strin
 		res.Batch = &batch
 	}
 
+	// --- Step 2: Re-project all dossiers from opsDir and populate default Purpose strings ---
 	if err := os.MkdirAll(opsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating ops directory %s: %w", opsDir, err)
 	}
@@ -586,6 +639,7 @@ func RecordAndRenderDirs(ctx context.Context, opsDir string, renderBaseDir strin
 		}
 	}
 
+	// --- Step 3: Render projected dossiers and ATLAS.md to renderBaseDir and collect lint warnings ---
 	if err := os.MkdirAll(renderBaseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating render directory %s: %w", renderBaseDir, err)
 	}
@@ -604,6 +658,7 @@ func RecordAndRenderDirs(ctx context.Context, opsDir string, renderBaseDir strin
 	}
 	res.Dossiers = projected
 
+	// --- Step 4: Mark source inbox notes as Consolidated ---
 	if inboxStore != nil && len(consolidatedNoteIDs) > 0 {
 		seen := make(map[string]bool, len(consolidatedNoteIDs))
 		for _, rawID := range consolidatedNoteIDs {
