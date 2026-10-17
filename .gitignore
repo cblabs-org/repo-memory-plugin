@@ -15,3 +15,6 @@ evaluation/eval-v2/tpl-d/
 evaluation/eval-v2/seed/
 # eval-v2 per-run working copies and archives
 evaluation/eval-v2/runs/
+# Historical raw session transcripts
+evaluation/esp32-transcripts/
+evaluation/repo-memory-transcripts/
