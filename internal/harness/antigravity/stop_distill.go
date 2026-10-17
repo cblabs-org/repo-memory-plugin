@@ -121,7 +121,7 @@ func evaluateMilestoneGate(
 	if strings.TrimSpace(res.ParentConversationID) != "" || strings.TrimSpace(payload.ParentConversationID) != "" {
 		return
 	}
-	if isSub, _, err := state.IsSubagent(ctx, dataDir, repoID, convID); err == nil && isSub {
+	if isSub, _, err := state.IsSubagent(context.Background(), dataDir, repoID, convID); err != nil || isSub {
 		return
 	}
 

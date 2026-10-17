@@ -229,9 +229,7 @@ func HandleStopEvent(ctx context.Context, payload *StopPayload, opts ...HookOpti
 	start := time.Now()
 
 	// --- Step 1: Apply hook options and enforce the execution budget timeout ---
-	opt := HookOptions{
-		Timeout: DefaultHookBudget,
-	}
+	var opt HookOptions
 	for _, fn := range opts {
 		fn(&opt)
 	}
