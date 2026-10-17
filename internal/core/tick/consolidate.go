@@ -961,6 +961,11 @@ func allowedIDsFromNotesAndEpisodes(notes []*inbox.Note, episodesByConv map[stri
 	return allowed
 }
 
+// RefreshFreshnessState computes and persists the full A6 FreshnessState at <dataDir>/<repoID>/state/freshness.json.
+func (p *PipelineExecutor) RefreshFreshnessState(ctx context.Context, updateLastConsolidation bool) {
+	p.refreshFreshnessState(ctx, updateLastConsolidation)
+}
+
 // refreshFreshnessState computes and persists the full A6 FreshnessState at <dataDir>/<repoID>/state/freshness.json.
 func (p *PipelineExecutor) refreshFreshnessState(ctx context.Context, updateLastConsolidation bool) {
 	if strings.TrimSpace(p.dataDir) == "" || strings.TrimSpace(p.repoID) == "" {

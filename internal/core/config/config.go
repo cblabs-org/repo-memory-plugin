@@ -641,6 +641,10 @@ func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
 		return true
 	}
 	if !isExplicitExact {
+		baseUpper := strings.ToUpper(filepath.Base(relSlash))
+		if baseUpper == "GEMINI.MD" || baseUpper == "CLAUDE.MD" || baseUpper == "AGENTS.MD" {
+			return true
+		}
 		if strings.HasPrefix(relSlash, "docs/evaluations/") || strings.HasPrefix(relSlash, "docs/experiments/") {
 			return true
 		}
