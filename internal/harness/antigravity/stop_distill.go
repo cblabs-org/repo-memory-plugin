@@ -32,6 +32,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -121,7 +122,14 @@ func evaluateMilestoneGate(
 	if strings.TrimSpace(res.ParentConversationID) != "" || strings.TrimSpace(payload.ParentConversationID) != "" {
 		return
 	}
-	if isSub, _, err := state.IsSubagent(context.Background(), dataDir, repoID, convID); err != nil || isSub {
+	subTimeout := 100 * time.Millisecond
+	if runtime.GOOS == "windows" {
+		subTimeout = 500 * time.Millisecond
+	}
+	subCtx, subCancel := context.WithTimeout(context.Background(), subTimeout)
+	isSub, _, subErr := state.IsSubagent(subCtx, dataDir, repoID, convID)
+	subCancel()
+	if subErr != nil || isSub {
 		return
 	}
 

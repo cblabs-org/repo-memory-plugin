@@ -430,7 +430,8 @@ func TestRunPortableInstallAndVersionDrift(t *testing.T) {
 	rootCmd.SetErr(buf)
 	doctorCmd.SetOut(buf)
 	doctorCmd.SetErr(buf)
-	rootCmd.SetArgs([]string{"doctor", t.TempDir()})
+	t.Cleanup(func() { doctorRepoDir = "" })
+	rootCmd.SetArgs([]string{"doctor", "--repo", t.TempDir()})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("doctor command failed: %v", err)
 	}
@@ -478,6 +479,43 @@ func TestInstallEnablesGlobalConfigAndSelfHealsOnEnroll(t *testing.T) {
 	}
 	if _, err := os.Stat(daemonSkillPath); err != nil {
 		t.Errorf("expected ensurePluginBundleInstalled to restore %s: %v", daemonSkillPath, err)
+	}
+
+	// 3. Simulate a portable .zip extraction into a fresh <zipConfigDir>/plugins/repo-memory-daemon
+	// where all bundle files already exist at the matching version, but <zipConfigDir>/config.json
+	// does not yet have repo-memory-daemon enabled.
+	zipConfigDir := t.TempDir()
+	zipPluginDir := filepath.Join(zipConfigDir, "plugins", "repo-memory-daemon")
+	if err := RunPortableInstall(zipPluginDir, "linux", Version); err != nil {
+		t.Fatalf("RunPortableInstall failed: %v", err)
+	}
+	if err := ensurePluginBundleInstalled(zipPluginDir, binPath); err != nil {
+		t.Fatalf("ensurePluginBundleInstalled on portable bundle failed: %v", err)
+	}
+	zipConfigPath := filepath.Join(zipConfigDir, "config.json")
+	zipConfigBytes, err := os.ReadFile(zipConfigPath)
+	if err != nil {
+		t.Fatalf("expected %s to be created on enroll after .zip extraction: %v", zipConfigPath, err)
+	}
+	var zipCfg map[string]any
+	if err := json.Unmarshal(zipConfigBytes, &zipCfg); err != nil {
+		t.Fatalf("unmarshaling zip config.json: %v", err)
+	}
+	zipPlugins, ok := zipCfg["plugins"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected 'plugins' map in zip config.json, got %v", zipCfg)
+	}
+	zipDaemon, ok := zipPlugins["repo-memory-daemon"].(map[string]any)
+	if !ok || zipDaemon["enabled"] != true {
+		t.Errorf("expected repo-memory-daemon enabled=true in zip config.json, got %v", zipPlugins["repo-memory-daemon"])
+	}
+	// Verify portable hooks.json was NOT overwritten with binPath when !needsInstall
+	portableHooks, err := os.ReadFile(filepath.Join(ResolveWorkspacePluginDir(zipPluginDir), "hooks.json"))
+	if err != nil {
+		t.Fatalf("reading portable hooks.json: %v", err)
+	}
+	if !strings.Contains(string(portableHooks), "~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh") {
+		t.Errorf("expected portable hooks.json to preserve ~ runner path, got:\n%s", string(portableHooks))
 	}
 }
 

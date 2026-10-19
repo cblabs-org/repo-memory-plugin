@@ -189,12 +189,12 @@ repo-memory reindex [--repo <path>]
 
 # Background Tick, Observability & Diagnostics
 repo-memory tick                                        # alias: repo-memory run
-repo-memory status [--json]
+repo-memory status [--repo <path>] [--json]
 repo-memory search <query>
 repo-memory usage
 repo-memory report [--days <n>] [--json]
 repo-memory snapshot
-repo-memory doctor [path]
+repo-memory doctor [path] [--repo <path>]
 repo-memory disable [--all]
 repo-memory enable
 ```
