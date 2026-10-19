@@ -26,7 +26,7 @@ All commands below use: `<bin> <subcommand> [args]`
 | Command | Example | Purpose |
 |---|---|---|
 | **status** | `<bin> status [--repo <dir>] [--json]` | Enrolment status, freshness, active dossiers/entries, graduated skills |
-| **doctor** | `<bin> doctor [<dir>]` | Verify `.memory/.enrolled`, `.agents/plugins.json`, `GEMINI.md` v2 block, and skill lint |
+| **doctor** | `<bin> doctor [<dir>] [--repo <dir>]` | Verify `.memory/.enrolled`, `.agents/plugins.json`, `GEMINI.md` v2 block, and skill lint |
 | **report** | `<bin> report [--days 7] [--json]` | Multi-tier telemetry and token usage summary |
 | **search** | `<bin> search "<query>"` | FTS5/BM25 query across active entries, unconsolidated inbox notes, and evidence |
 
