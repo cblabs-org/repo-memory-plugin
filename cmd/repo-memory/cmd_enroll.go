@@ -594,6 +594,12 @@ func ensurePluginBundleInstalled(daemonDir, binPath string) error {
 	}
 
 	if !needsInstall {
+		// Even when all bundle files exist (e.g., extracted from a portable .zip archive),
+		// ensure repo-memory-daemon is enabled in the global config.json.
+		parentDir := filepath.Dir(daemonDir)
+		configDir := filepath.Dir(parentDir)
+		configPath := filepath.Join(configDir, "config.json")
+		enableDaemonInGlobalConfig(configPath, filepath.Base(parentDir) == "plugins")
 		return nil
 	}
 	return RunInstall(daemonDir, binPath)

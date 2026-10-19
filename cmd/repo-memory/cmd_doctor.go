@@ -30,6 +30,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// doctorRepoDir holds the optional --repo directory override for `repo-memory doctor`.
+var doctorRepoDir string
+
 // doctorCmd defines the `repo-memory doctor` subcommand.
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [path]",
@@ -37,11 +40,17 @@ var doctorCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		targetDir := "."
-		if len(args) > 0 {
+		if strings.TrimSpace(doctorRepoDir) != "" {
+			targetDir = doctorRepoDir
+		} else if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 			targetDir = args[0]
 		}
 		return RunDoctor(cmd, targetDir)
 	},
+}
+
+func init() {
+	doctorCmd.Flags().StringVar(&doctorRepoDir, "repo", "", "Repository directory (defaults to current working directory)")
 }
 
 // RunDoctor verifies repository memory installation and health.
