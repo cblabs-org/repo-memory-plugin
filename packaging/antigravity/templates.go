@@ -183,6 +183,7 @@ func GeneratePortableSidecarJSON(targetOS string) string {
 const portableRunnerScriptTemplate = `#!/bin/sh
 # Fail-open portable wrapper for repo-memory plugin bundles.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+[ -f "${SCRIPT_DIR}/env.sh" ] && . "${SCRIPT_DIR}/env.sh"
 BIN="${SCRIPT_DIR}/repo-memory"
 
 # Clear macOS Gatekeeper quarantine attribute if extracted via Finder/Browser

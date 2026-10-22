@@ -1,3 +1,9 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ * https://github.com/cblabs-org/repo-memory-plugin
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package antigravity
 
 import (
@@ -298,5 +304,54 @@ func TestPreToolUse_EditWithGate(t *testing.T) {
 	}
 	if !strings.Contains(respNew.Reason, "[REPO-MEMORY gate-crit-01]") {
 		t.Errorf("expected '[REPO-MEMORY gate-crit-01]' in reason, got %q", respNew.Reason)
+	}
+
+	// 6. New component-rewrite tools (edit_file / write_file with Path argument) should also trigger gates and PostToolUse acks.
+	payloadEditFile := fmt.Sprintf(`{
+		"conversationId": "conv-test-gate-3",
+		"toolName": "edit_file",
+		"toolCall": {
+			"name": "edit_file",
+			"args": {"Path": %q, "Target": "package main", "Replacement": "package main\n// edited"}
+		},
+		"workspacePaths": [%q]
+	}`, targetFile, workspace)
+
+	outEditFile, err := HandlePreToolUse(ctx, []byte(payloadEditFile))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var respEditFile PreToolUseResponse
+	if err := json.Unmarshal(outEditFile, &respEditFile); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outEditFile))
+	}
+	if respEditFile.Decision != "force_ask" {
+		t.Errorf("expected decision 'force_ask' for edit_file with Path, got %q", respEditFile.Decision)
+	}
+
+	postEditFile := fmt.Sprintf(`{
+		"conversationId": "conv-test-gate-3",
+		"toolName": "edit_file",
+		"toolCall": {
+			"name": "edit_file",
+			"args": {"Path": %q}
+		},
+		"toolResult": {"status": "success", "output": ""},
+		"workspacePaths": [%q]
+	}`, targetFile, workspace)
+	if _, err := HandlePostToolUse(ctx, []byte(postEditFile)); err != nil {
+		t.Fatalf("unexpected error from PostToolUse on edit_file: %v", err)
+	}
+
+	outAfterEditFile, err := HandlePreToolUse(ctx, []byte(payloadEditFile))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var respAfterEditFile PreToolUseResponse
+	if err := json.Unmarshal(outAfterEditFile, &respAfterEditFile); err != nil {
+		t.Fatalf("failed to unmarshal response: %v, raw: %s", err, string(outAfterEditFile))
+	}
+	if respAfterEditFile.Decision != "allow" {
+		t.Errorf("expected decision 'allow' after edit_file PostToolUse approval, got %q", respAfterEditFile.Decision)
 	}
 }

@@ -1,3 +1,9 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ * https://github.com/cblabs-org/repo-memory-plugin
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package antigravity
 
 import (
@@ -513,3 +519,23 @@ func TestSessionAttributor_Integration(t *testing.T) {
 		t.Errorf("expected repo-test-1 for c-dup, got %s", sDup.RepoID)
 	}
 }
+
+func TestNewSessionAttributor_EnvOverrides(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_APP_DIR", "/custom/app-data")
+	t.Setenv("ANTIGRAVITY_CLI_DIR", "/custom/cli-data")
+
+	attributor := NewSessionAttributor()
+	if attributor.opts.AppDBPath != filepath.Join("/custom/app-data", "conversation_summaries.db") {
+		t.Errorf("AppDBPath = %q, want %q", attributor.opts.AppDBPath, filepath.Join("/custom/app-data", "conversation_summaries.db"))
+	}
+	if attributor.opts.AppBrainDir != filepath.Join("/custom/app-data", "brain") {
+		t.Errorf("AppBrainDir = %q, want %q", attributor.opts.AppBrainDir, filepath.Join("/custom/app-data", "brain"))
+	}
+	if attributor.opts.CLIDBPath != filepath.Join("/custom/cli-data", "conversation_summaries.db") {
+		t.Errorf("CLIDBPath = %q, want %q", attributor.opts.CLIDBPath, filepath.Join("/custom/cli-data", "conversation_summaries.db"))
+	}
+	if attributor.opts.CLIBrainDir != filepath.Join("/custom/cli-data", "brain") {
+		t.Errorf("CLIBrainDir = %q, want %q", attributor.opts.CLIBrainDir, filepath.Join("/custom/cli-data", "brain"))
+	}
+}
+

@@ -300,14 +300,24 @@ func normalizeStep(rs rawStep, isToolOutput, isCheckpoint bool) harness.Step {
 				if cmd, ok := call.Args["CommandLine"].(string); ok {
 					step.Command = cmd
 				}
-			case "view_file":
+			case "view_file", "read_file":
 				step.Kind = harness.StepKindRead
 				if f, ok := call.Args["AbsolutePath"].(string); ok {
 					step.File = f
+				} else if f, ok := call.Args["Path"].(string); ok {
+					step.File = f
+				} else if f, ok := call.Args["path"].(string); ok {
+					step.File = f
 				}
-			case "replace_file_content", "write_to_file":
+			case "replace_file_content", "write_to_file", "edit_file", "write_file", "multi_replace_file_content", "sed_file", "notebook_edit":
 				step.Kind = harness.StepKindEdit
 				if f, ok := call.Args["TargetFile"].(string); ok {
+					step.File = f
+				} else if f, ok := call.Args["Path"].(string); ok {
+					step.File = f
+				} else if f, ok := call.Args["path"].(string); ok {
+					step.File = f
+				} else if f, ok := call.Args["NotebookPath"].(string); ok {
 					step.File = f
 				}
 			default:

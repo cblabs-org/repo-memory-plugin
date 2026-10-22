@@ -92,6 +92,15 @@ type streamResult struct {
 	} `json:"result"` // Nested result payload when Event is "result".
 }
 
+// resolveCLIBin returns the configured Antigravity CLI executable name or path.
+// It checks ANTIGRAVITY_CLI_BIN first and defaults to "agy".
+func resolveCLIBin() string {
+	if bin := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLI_BIN")); bin != "" {
+		return expandHome(bin)
+	}
+	return "agy"
+}
+
 // Run executes a single pipeline stage via the agy CLI and returns its output payload and token usage.
 // It returns harness.ErrQuotaExhausted (discoverable via errors.Is) if agy exits with code 3.
 func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (harness.Result, error) {
@@ -147,7 +156,7 @@ func (h *Housekeeper) Run(ctx context.Context, stage harness.Stage, input any) (
 		args = append(args, "--agent", "repo-memory-distiller")
 	}
 
-	cmd := exec.CommandContext(ctx, "agy", args...)
+	cmd := exec.CommandContext(ctx, resolveCLIBin(), args...)
 
 	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1", "REPO_MEMORY_INTERNAL=1")
 	cmd.Dir = workDir
@@ -246,7 +255,7 @@ func (h *Housekeeper) RunMultiTurn(ctx context.Context, stage harness.Stage, pro
 		args = append(args, "--agent", "repo-memory-distiller")
 	}
 
-	cmd := exec.CommandContext(ctx, "agy", args...)
+	cmd := exec.CommandContext(ctx, resolveCLIBin(), args...)
 	cmd.Env = append(os.Environ(), "REPO_MEMORY_HOUSEKEEPING=1", "REPO_MEMORY_INTERNAL=1")
 	cmd.Dir = workDir
 	cmd.Stdin = &stdinBuf

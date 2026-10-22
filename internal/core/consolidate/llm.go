@@ -369,6 +369,8 @@ func checkConsolidatorDerailment(raw string) error {
 		`"tool_calls"`,
 		"invoke_subagent",
 		"write_to_file",
+		"write_file",
+		"edit_file",
 		"replace_file_content",
 		"run_command",
 		"<!-- generated from .memory/ops",

@@ -508,11 +508,25 @@ func findBrainTranscript(convID string) string {
 		return ""
 	}
 
+	appRoot := strings.TrimSpace(os.Getenv("ANTIGRAVITY_APP_DIR"))
+	if appRoot == "" {
+		appRoot = filepath.Join(home, ".gemini", "antigravity")
+	} else {
+		appRoot = expandHome(appRoot)
+	}
+
+	cliRoot := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLI_DIR"))
+	if cliRoot == "" {
+		cliRoot = filepath.Join(home, ".gemini", "antigravity-cli")
+	} else {
+		cliRoot = expandHome(cliRoot)
+	}
+
 	candidates := []string{
-		filepath.Join(home, ".gemini", "antigravity", "brain", convID, ".system_generated", "logs", "transcript_full.jsonl"),
-		filepath.Join(home, ".gemini", "antigravity", "brain", convID, "transcript_full.jsonl"),
-		filepath.Join(home, ".gemini", "antigravity", "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
-		filepath.Join(home, ".gemini", "antigravity-cli", "brain", convID, ".system_generated", "logs", "transcript_full.jsonl"),
+		filepath.Join(appRoot, "brain", convID, ".system_generated", "logs", "transcript_full.jsonl"),
+		filepath.Join(appRoot, "brain", convID, "transcript_full.jsonl"),
+		filepath.Join(appRoot, "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
+		filepath.Join(cliRoot, "brain", convID, ".system_generated", "logs", "transcript_full.jsonl"),
 	}
 
 	// --- Step 2: Return the first candidate path that exists on disk ---

@@ -165,17 +165,31 @@ func NewSessionAttributor(opts ...AttributionOption) *SessionAttributor {
 	if opt.AppDBPath == "" || opt.CLIDBPath == "" || opt.AppBrainDir == "" || opt.CLIBrainDir == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
+			appRoot := strings.TrimSpace(os.Getenv("ANTIGRAVITY_APP_DIR"))
+			if appRoot == "" {
+				appRoot = filepath.Join(home, ".gemini", "antigravity")
+			} else {
+				appRoot = expandHome(appRoot)
+			}
+
+			cliRoot := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLI_DIR"))
+			if cliRoot == "" {
+				cliRoot = filepath.Join(home, ".gemini", "antigravity-cli")
+			} else {
+				cliRoot = expandHome(cliRoot)
+			}
+
 			if opt.AppDBPath == "" {
-				opt.AppDBPath = filepath.Join(home, ".gemini", "antigravity", "conversation_summaries.db")
+				opt.AppDBPath = filepath.Join(appRoot, "conversation_summaries.db")
 			}
 			if opt.CLIDBPath == "" {
-				opt.CLIDBPath = filepath.Join(home, ".gemini", "antigravity-cli", "conversation_summaries.db")
+				opt.CLIDBPath = filepath.Join(cliRoot, "conversation_summaries.db")
 			}
 			if opt.AppBrainDir == "" {
-				opt.AppBrainDir = filepath.Join(home, ".gemini", "antigravity", "brain")
+				opt.AppBrainDir = filepath.Join(appRoot, "brain")
 			}
 			if opt.CLIBrainDir == "" {
-				opt.CLIBrainDir = filepath.Join(home, ".gemini", "antigravity-cli", "brain")
+				opt.CLIBrainDir = filepath.Join(cliRoot, "brain")
 			}
 		}
 	}

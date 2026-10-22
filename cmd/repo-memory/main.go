@@ -17,8 +17,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -33,7 +36,47 @@ var rootCmd = &cobra.Command{
 	Version: Version,
 }
 
+// loadAdjacentEnvFile loads optional KEY=VALUE defaults from a repo-memory.env file located
+// adjacent to the resolved binary executable without overriding existing environment variables.
+func loadAdjacentEnvFile() {
+	// --- Step 1: Resolve canonical executable directory ---
+	execPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
+		execPath = resolved
+	}
+	envPath := filepath.Join(filepath.Dir(execPath), "repo-memory.env")
+
+	// --- Step 2: Open and parse KEY=VALUE lines if repo-memory.env is present ---
+	f, err := os.Open(envPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key := strings.TrimSpace(k)
+		val := strings.Trim(strings.TrimSpace(v), `"'`)
+		if key != "" && os.Getenv(key) == "" {
+			_ = os.Setenv(key, os.ExpandEnv(val))
+		}
+	}
+}
+
 func main() {
+	loadAdjacentEnvFile()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

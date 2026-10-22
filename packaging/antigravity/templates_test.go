@@ -1,3 +1,9 @@
+/*
+ * repo-memory-plugin (c) 2026 cblabs-org
+ * https://github.com/cblabs-org/repo-memory-plugin
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 package antigravity_test
 
 import (
@@ -49,7 +55,7 @@ func TestGenerateHooksJSON(t *testing.T) {
 	}
 	preToolUseItem := preToolUseList[0].(map[string]interface{})
 	matcher := preToolUseItem["matcher"].(string)
-	if matcher != "run_command|write_to_file|replace_file_content|call_mcp_tool" {
+	if matcher != "run_command|write_to_file|replace_file_content|write_file|edit_file|multi_replace_file_content|sed_file|notebook_edit|call_mcp_tool" {
 		t.Errorf("unexpected PreToolUse matcher: %s", matcher)
 	}
 
@@ -59,7 +65,7 @@ func TestGenerateHooksJSON(t *testing.T) {
 	}
 	postToolUseItem := postToolUseList[0].(map[string]interface{})
 	postMatcher := postToolUseItem["matcher"].(string)
-	if postMatcher != "run_command" {
+	if postMatcher != "run_command|write_to_file|replace_file_content|write_file|edit_file|multi_replace_file_content|sed_file|notebook_edit|invoke_subagent" {
 		t.Errorf("unexpected PostToolUse matcher: %s", postMatcher)
 	}
 }

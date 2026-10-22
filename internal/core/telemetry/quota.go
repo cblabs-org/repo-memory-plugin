@@ -28,7 +28,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -122,9 +124,13 @@ type rawAgyResponse struct {
 // and returns the current quota state across model pools.
 // If agy is not in PATH, it returns an error.
 func CheckQuota(ctx context.Context) (*QuotaStatus, error) {
-	agyPath, err := lookPath("agy")
+	cliBin := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLI_BIN"))
+	if cliBin == "" {
+		cliBin = "agy"
+	}
+	agyPath, err := lookPath(cliBin)
 	if err != nil {
-		return nil, fmt.Errorf("agy not found in PATH: %w", err)
+		return nil, fmt.Errorf("%s not found in PATH: %w", cliBin, err)
 	}
 
 	cmd := execCommand(ctx, agyPath, "-p", "/usage", "--output-format", "json")

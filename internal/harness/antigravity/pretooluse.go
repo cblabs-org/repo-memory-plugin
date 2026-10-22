@@ -76,17 +76,25 @@ type PreToolUseResponse struct {
 
 // toolArgs captures candidate target-file field names across edit tool argument schemas.
 type toolArgs struct {
-	TargetFile      string `json:"TargetFile"`  // Destination path from replace_file_content / write_to_file PascalCase schema.
-	TargetFileCamel string `json:"targetFile"`  // Destination path from camelCase edit tool argument schema.
-	TargetFileSnake string `json:"target_file"` // Destination path from snake_case edit tool argument schema.
-	FilePath        string `json:"filePath"`    // Destination path from generic camelCase file-tool schema.
-	FilePathSnake   string `json:"file_path"`   // Destination path from generic snake_case file-tool schema.
-	Path            string `json:"path"`        // Destination path from edit_file / write_file lowercase schema.
+	TargetFile      string `json:"TargetFile"`   // Destination path from replace_file_content / write_to_file PascalCase schema.
+	TargetFileCamel string `json:"targetFile"`   // Destination path from camelCase edit tool argument schema.
+	TargetFileSnake string `json:"target_file"`  // Destination path from snake_case edit tool argument schema.
+	FilePath        string `json:"filePath"`     // Destination path from generic camelCase file-tool schema.
+	FilePathSnake   string `json:"file_path"`    // Destination path from generic snake_case file-tool schema.
+	PathPascal      string `json:"Path"`         // Destination path from edit_file / write_file PascalCase schema.
+	Path            string `json:"path"`         // Destination path from edit_file / write_file lowercase schema.
+	NotebookPascal  string `json:"NotebookPath"` // Destination path from notebook_edit PascalCase schema.
+	NotebookCamel   string `json:"notebookPath"` // Destination path from notebook_edit camelCase schema.
 }
 
 // isEditTool reports whether name is a file-modifying tool subject to PreToolUse gates.
 func isEditTool(name string) bool {
-	return strings.EqualFold(name, "replace_file_content") || strings.EqualFold(name, "write_to_file")
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "replace_file_content", "write_to_file", "edit_file", "write_file", "multi_replace_file_content", "sed_file", "notebook_edit":
+		return true
+	default:
+		return false
+	}
 }
 
 // extractTargetFile extracts the target file path from raw JSON tool arguments.
@@ -103,7 +111,17 @@ func extractTargetFile(argsRaw json.RawMessage) string {
 		}
 	}
 	// --- Step 2: Return the first non-empty file path field ---
-	for _, p := range []string{args.TargetFile, args.TargetFileCamel, args.TargetFileSnake, args.FilePath, args.FilePathSnake, args.Path} {
+	for _, p := range []string{
+		args.TargetFile,
+		args.TargetFileCamel,
+		args.TargetFileSnake,
+		args.FilePath,
+		args.FilePathSnake,
+		args.PathPascal,
+		args.Path,
+		args.NotebookPascal,
+		args.NotebookCamel,
+	} {
 		if strings.TrimSpace(p) != "" {
 			return strings.TrimSpace(p)
 		}

@@ -224,4 +224,10 @@ Spawned per session over `stdio` and backed by `<data-dir>/repos/<repo-id>/index
 - [`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md) — Dual-Channel Plugin Packaging, Portable `.zip` Bundles & Versioning Guide
 - [`docs/antigravity-hooks-reference.md`](docs/antigravity-hooks-reference.md) — Empirical Antigravity Hooks Reference (`injectSteps`, `userMessage` vs `ephemeralMessage`, subagent ordering, two-plugin split)
 - [`docs/experiments/SPEC-CHANGES.md`](docs/experiments/SPEC-CHANGES.md) — Experiment Spike (`E01`–`E12`) Specification Reconciliation Ledger
-- [`docs/evaluations/pa-memory-retrieval-effectiveness.md`](docs/evaluations/pa-memory-retrieval-effectiveness.md) — 231-Session Empirical Study of Pull vs Push Memory Retrieval
+
+---
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE) (`SPDX-License-Identifier: Apache-2.0`).
+

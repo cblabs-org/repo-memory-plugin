@@ -38,6 +38,7 @@ dist-zip: build
 		ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
 		stage="$(DIST_DIR)/stage-$$os-$$arch/$(PLUGIN_NAME)"; \
 		mkdir -p "$$stage/bin"; \
+		cp LICENSE "$$stage/LICENSE"; \
 		cp "$(OUTPUT_DIR)/$(BINARY_NAME)-$$os-$$arch$$ext" "$$stage/bin/$(BINARY_NAME)$$ext"; \
 		chmod 0755 "$$stage/bin/$(BINARY_NAME)$$ext"; \
 		REPO_MEMORY_PLUGIN_DIR="$$stage" go run -ldflags="-X 'main.Version=$(VERSION)'" ./cmd/repo-memory install --portable --os="$$os"; \

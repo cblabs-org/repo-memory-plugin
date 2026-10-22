@@ -528,7 +528,7 @@ func isCommandToolName(name string) bool {
 // isEditWriteToolName reports whether name identifies a file edit or write tool.
 func isEditWriteToolName(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "write_to_file", "replace_file_content", "edit_file", "multi_replace_file_content", "write_file":
+	case "write_to_file", "replace_file_content", "edit_file", "multi_replace_file_content", "write_file", "sed_file", "notebook_edit":
 		return true
 	default:
 		return false
@@ -553,7 +553,7 @@ func extractTargetPathFromArgs(tc parsedToolCall) string {
 	if tc.Args == nil {
 		return ""
 	}
-	for _, k := range []string{"TargetFile", "targetFile", "target_file", "FilePath", "filePath", "file_path", "Path", "path"} {
+	for _, k := range []string{"TargetFile", "targetFile", "target_file", "FilePath", "filePath", "file_path", "Path", "path", "NotebookPath", "notebookPath"} {
 		if v, ok := tc.Args[k].(string); ok && strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v)
 		}

@@ -205,7 +205,7 @@ Using `~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh` (or `
       ],
       "PreToolUse": [
         {
-          "matcher": "run_command|write_to_file|replace_file_content|call_mcp_tool",
+          "matcher": "run_command|write_to_file|replace_file_content|write_file|edit_file|multi_replace_file_content|sed_file|notebook_edit|call_mcp_tool",
           "hooks": [
             {
               "type": "command",
@@ -216,7 +216,7 @@ Using `~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh` (or `
       ],
       "PostToolUse": [
         {
-          "matcher": "run_command",
+          "matcher": "run_command|write_to_file|replace_file_content|write_file|edit_file|multi_replace_file_content|sed_file|notebook_edit|invoke_subagent",
           "hooks": [
             {
               "type": "command",
