@@ -415,7 +415,6 @@ func enableDaemonInGlobalConfig(configPath string, createIfMissing bool) {
 		fmt.Fprintf(os.Stderr, "warning: could not update config.json: %v\n", err)
 		return
 	}
-
 }
 
 // atomicWriteConfig writes config data atomically: back up the original (when present),

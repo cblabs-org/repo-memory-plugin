@@ -24,7 +24,7 @@ $(TARGETS):
 	$(eval OS := $(word 1,$(subst /, ,$@)))
 	$(eval ARCH := $(word 2,$(subst /, ,$@)))
 	$(eval EXT := $(if $(filter windows,$(OS)),.exe,))
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) ./cmd/repo-memory
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -trimpath -ldflags="-s -w -X 'main.Version=$(VERSION)'" -o $(OUTPUT_DIR)/$(BINARY_NAME)-$(OS)-$(ARCH)$(EXT) ./cmd/repo-memory
 
 install:
 	./scripts/install.sh
@@ -41,7 +41,7 @@ dist-zip: build
 		cp LICENSE "$$stage/LICENSE"; \
 		cp "$(OUTPUT_DIR)/$(BINARY_NAME)-$$os-$$arch$$ext" "$$stage/bin/$(BINARY_NAME)$$ext"; \
 		chmod 0755 "$$stage/bin/$(BINARY_NAME)$$ext"; \
-		REPO_MEMORY_PLUGIN_DIR="$$stage" go run -ldflags="-X 'main.Version=$(VERSION)'" ./cmd/repo-memory install --portable --os="$$os"; \
+		REPO_MEMORY_PLUGIN_DIR="$$stage" go run -trimpath -ldflags="-X 'main.Version=$(VERSION)'" ./cmd/repo-memory install --portable --os="$$os"; \
 		(cd "$(DIST_DIR)/stage-$$os-$$arch" && zip -qr "../$(PLUGIN_NAME)-$$os-$$arch.zip" "$(PLUGIN_NAME)"); \
 		rm -rf "$(DIST_DIR)/stage-$$os-$$arch"; \
 		echo "Created $(DIST_DIR)/$(PLUGIN_NAME)-$$os-$$arch.zip"; \

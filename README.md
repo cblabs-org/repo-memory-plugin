@@ -148,7 +148,7 @@ What `enroll` sets up in the repository:
 
 ## Two-Plugin Packaging Split
 
-Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from global plugins under `~/.gemini/config/plugins/<name>/`, while workspace hooks and MCP tools can be scoped per repository via `.agents/plugins.json` ([`docs/experiments/phase0-plugin-split.md`](docs/experiments/phase0-plugin-split.md)):
+Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from global plugins under `~/.gemini/config/plugins/<name>/`, while workspace hooks and MCP tools can be scoped per repository via `.agents/plugins.json` ([`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md)):
 
 1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Runs the 1-minute `repo-memory tick` sidecar with **zero global hooks** (zero overhead in non-enrolled workspaces), exposes the global `repo-memory-admin` management skill (`skills/repo-memory-admin/SKILL.md`, invokable via `/repo-memory-admin` in any workspace to enroll, seed, inspect, or unenroll repositories), and bundles `workspace-plugin/repo-memory/`.
 2. **Per-Workspace Plugin (`.agents/plugins.json`):** `repo-memory enroll` (`init`) writes the resolved **absolute path** to `workspace-plugin/repo-memory` into `.agents/plugins.json`, activating `hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), `repo-memory mcp`, and `repo-memory-distiller` only for enrolled repositories.
@@ -223,7 +223,6 @@ Spawned per session over `stdio` and backed by `<data-dir>/repos/<repo-id>/index
 - [`docs/addendum-a-provenance-and-hardening.md`](docs/addendum-a-provenance-and-hardening.md) — Provenance, Seeding, Validation & Hardening (Revision 3)
 - [`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md) — Dual-Channel Plugin Packaging, Portable `.zip` Bundles & Versioning Guide
 - [`docs/antigravity-hooks-reference.md`](docs/antigravity-hooks-reference.md) — Empirical Antigravity Hooks Reference (`injectSteps`, `userMessage` vs `ephemeralMessage`, subagent ordering, two-plugin split)
-- [`docs/experiments/SPEC-CHANGES.md`](docs/experiments/SPEC-CHANGES.md) — Experiment Spike (`E01`–`E12`) Specification Reconciliation Ledger
 
 ---
 
