@@ -52,9 +52,14 @@ func NewIgnoreMatcher(root string) *IgnoreMatcher {
 
 // Match reports whether the relative path (with directory indicator isDir) should be ignored.
 func (m *IgnoreMatcher) Match(path string, isDir bool) bool {
-	// --- Step 1: Always ignore the .git metadata directory ---
-	base := filepath.Base(path)
-	if base == ".git" {
+	// --- Step 1: Always ignore .git, .memory, and staged .agents/plugins trees ---
+	relSlash := filepath.ToSlash(strings.TrimSpace(path))
+	relSlash = strings.TrimPrefix(relSlash, "./")
+	relSlash = strings.TrimLeft(relSlash, "/")
+	base := filepath.Base(relSlash)
+	if base == ".git" ||
+		relSlash == ".memory" || strings.HasPrefix(relSlash, ".memory/") ||
+		relSlash == ".agents/plugins" || strings.HasPrefix(relSlash, ".agents/plugins/") {
 		return true
 	}
 

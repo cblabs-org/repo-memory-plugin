@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
 	"github.com/cblabs-org/repo-memory-plugin/packaging/antigravity"
 	"github.com/spf13/cobra"
 )
@@ -183,7 +184,6 @@ func RunInstall(pluginDir, binPath string) error {
 		filepath.Join(pluginDir, "skills", "repo-memory-admin"),
 		wsDir,
 		filepath.Join(wsDir, "agents"),
-		filepath.Join(wsDir, "agents", "repo-memory-distiller"),
 	}
 	for _, dir := range subdirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -191,7 +191,8 @@ func RunInstall(pluginDir, binPath string) error {
 		}
 	}
 
-	// Clean up any legacy duplicate skill directory inside workspace-plugin
+	// Clean up any legacy duplicate agent/skill directories inside workspace-plugin
+	_ = os.RemoveAll(filepath.Join(wsDir, "agents", "repo-memory-distiller"))
 	_ = os.RemoveAll(filepath.Join(wsDir, "skills"))
 
 	// --- Step 3: Generate JSON and Markdown file contents using templates with absolute binary path ---
@@ -216,10 +217,9 @@ func RunInstall(pluginDir, binPath string) error {
 		filepath.Join(pluginDir, "sidecars", "tick", "sidecar.json"):        sidecarContent,
 		filepath.Join(pluginDir, "skills", "repo-memory-admin", "SKILL.md"): adminSkillContent,
 		// Workspace files
-		filepath.Join(wsDir, "plugin.json"):                                 workspacePluginContent,
-		filepath.Join(wsDir, "mcp_config.json"):                             mcpContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"): distillerAgentContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):          distillerAgentContent,
+		filepath.Join(wsDir, "plugin.json"):                        workspacePluginContent,
+		filepath.Join(wsDir, "mcp_config.json"):                    mcpContent,
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"): distillerAgentContent,
 	}
 
 	for path, content := range files {
@@ -244,6 +244,7 @@ func RunInstall(pluginDir, binPath string) error {
 		return fmt.Errorf("safety check failed for %s: %w", hooksPath, err)
 	}
 
+	cleanPackagingArtifacts(pluginDir)
 	return nil
 }
 
@@ -267,13 +268,16 @@ func RunPortableInstall(pluginDir, targetOS, version string) error {
 		filepath.Join(pluginDir, "skills", "repo-memory-admin"),
 		wsDir,
 		filepath.Join(wsDir, "agents"),
-		filepath.Join(wsDir, "agents", "repo-memory-distiller"),
 	}
 	for _, dir := range subdirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
 	}
+
+	// Clean up any legacy duplicate agent/skill directories inside workspace-plugin
+	_ = os.RemoveAll(filepath.Join(wsDir, "agents", "repo-memory-distiller"))
+	_ = os.RemoveAll(filepath.Join(wsDir, "skills"))
 
 	// --- Step 2: Select portable binary and hook runner paths for the target OS ---
 	hookRunnerPath := "~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh"
@@ -303,7 +307,6 @@ func RunPortableInstall(pluginDir, targetOS, version string) error {
 		filepath.Join(wsDir, "plugin.json"):                                 antigravity.GenerateWorkspacePluginJSONWithVersion(version),
 		filepath.Join(wsDir, "mcp_config.json"):                             antigravity.GeneratePortableMCPConfigJSON(targetOS),
 		filepath.Join(wsDir, "hooks.json"):                                  hooksContent,
-		filepath.Join(wsDir, "agents", "repo-memory-distiller", "agent.md"): antigravity.GenerateDistillerAgentMD(),
 		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"):          antigravity.GenerateDistillerAgentMD(),
 	}
 
@@ -313,7 +316,36 @@ func RunPortableInstall(pluginDir, targetOS, version string) error {
 		}
 	}
 
+	cleanPackagingArtifacts(pluginDir)
 	return nil
+}
+
+// cleanPackagingArtifacts removes OS/Python temporary artifacts (.DS_Store, __pycache__,
+// *.pyc, *.pyo, *.egg-info) from an installed or portable plugin tree.
+func cleanPackagingArtifacts(root string) {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		name := d.Name()
+		if isIgnoredPluginArtifact(name) {
+			_ = os.RemoveAll(path)
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+}
+
+// isIgnoredPluginArtifact reports whether a file or directory name is a packaging artifact
+// that must never be shipped or staged into workspace plugins.
+func isIgnoredPluginArtifact(name string) bool {
+	return name == ".DS_Store" ||
+		name == "__pycache__" ||
+		strings.HasSuffix(name, ".pyc") ||
+		strings.HasSuffix(name, ".pyo") ||
+		strings.HasSuffix(name, ".egg-info")
 }
 
 // installCmd defines the `repo-memory install` subcommand.
@@ -358,13 +390,27 @@ var installCmd = &cobra.Command{
 			return err
 		}
 
-		// --- Step 4: Print post-install onboarding instructions ---
+		// --- Step 4: Refresh staged workspace plugins across enrolled repositories ---
+		refreshedCount := 0
+		for _, rRoot := range collectEnrolledRegistryRepos(config.DataDir(), "") {
+			if restageErr := EnsureWorkspacePluginConfigured(rRoot); restageErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not refresh staged workspace plugin for %s: %v\n", rRoot, restageErr)
+				continue
+			}
+			refreshedCount++
+		}
+
+		// --- Step 5: Print post-install onboarding instructions ---
 		wsDir := ResolveWorkspacePluginDir(pluginDir)
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "Successfully installed repo-memory daemon plugin (v%s) to %s\n",
 			antigravity.NormalizePluginVersion(Version), pluginDir)
 		fmt.Fprintf(out, "Workspace plugin bundle at %s\n", wsDir)
-		fmt.Fprintf(out, "Binary configured at: %s\n\n", absBinPath)
+		fmt.Fprintf(out, "Binary configured at: %s\n", absBinPath)
+		if refreshedCount > 0 {
+			fmt.Fprintf(out, "Refreshed staged workspace plugins in %d enrolled repository(ies).\n", refreshedCount)
+		}
+		fmt.Fprintln(out)
 		fmt.Fprintln(out, "To enroll a repository from chat, use `/repo-memory-admin enroll this repo` (or run `repo-memory enroll .`).")
 		fmt.Fprintln(out, "IMPORTANT: The background tick sidecar is NOT automatically enabled.")
 		fmt.Fprintln(out, "To enable the scheduled background worker, open the Antigravity Automations dashboard:")

@@ -95,15 +95,15 @@ Open any Git repository in Antigravity and either:
 
 What `enroll` sets up in the repository:
 - **Committed in Git (`.memory/`):** `config.yaml`, `scrub.yaml`, `ATLAS.md`, `QUESTIONS.md`, `dossiers/`, and `ops/` (plus the managed Atlas block in `GEMINI.md`) so engineering memory is shared across the team.
-- **Git-Excluded Local Pointers:** `.memory/.enrolled` and `.agents/plugins.json` (added automatically to `.git/info/exclude`), activating `hooks.json` and the `repo-memory` MCP server for that workspace only.
+- **Git-Excluded Local Staged Plugin & Marker:** `.memory/.enrolled` and a real (non-symlink) directory copy at `.agents/plugins/repo-memory/` (added automatically to `.git/info/exclude`, with legacy `.agents/plugins.json` entries scrubbed), activating `hooks.json`, the `repo-memory` MCP server, and `repo-memory-distiller` for that workspace only.
 
 ---
 
 ### Upgrading & Uninstalling
 
-- **Upgrading:** Because `~/.gemini/config/plugins/repo-memory-daemon/` is 100% stateless (all repository memory lives in `<repo>/.memory/` and local index state lives in your OS user data directory), upgrading via any method (`git pull && ./scripts/install.sh`, re-running `install-release.sh`, or unzipping a newer `repo-memory-daemon-<os>-<arch>.zip` over `~/.gemini/config/plugins/repo-memory-daemon/`) **immediately upgrades all enrolled repositories on your machine** without re-enrolling.
-- **Checking Version Sync:** Run `repo-memory status` or `repo-memory doctor .` at any time to verify that your CLI binary and installed plugin bundle versions match.
-- **Unenrolling a Repository:** Run `repo-memory unenroll .` (or `/repo-memory-admin unenroll this repo`) to remove hooks and `.agents/plugins.json` while keeping committed `.memory/` files intact (pass `--purge` to also delete local SQLite index state).
+- **Upgrading:** Because `~/.gemini/config/plugins/repo-memory-daemon/` holds only stateless binaries and plugin templates (all repository memory lives in `<repo>/.memory/` and local index state lives in your OS user data directory), running `git pull && ./scripts/install.sh` (or re-running `install-release.sh`) updates the daemon bundle and automatically re-stages `.agents/plugins/repo-memory/` across all enrolled repositories registered in `<data-dir>/registry.json`. If you upgrade manually via a `.zip` extraction, run `repo-memory doctor --fix` to re-stage enrolled repositories.
+- **Checking Version Sync:** Run `repo-memory status` or `repo-memory doctor .` at any time to verify that your CLI binary, daemon plugin bundle, and staged `.agents/plugins/repo-memory/` directories match (pass `--fix` to `doctor` to repair or re-stage).
+- **Unenrolling a Repository:** Run `repo-memory unenroll .` (or `/repo-memory-admin unenroll this repo`) to remove hooks, `.agents/plugins/repo-memory/`, and any legacy `.agents/plugins.json` entries while keeping committed `.memory/` files intact (pass `--purge` to also delete local SQLite index state).
 - **Uninstalling Globally:** Run `repo-memory uninstall --harness antigravity` (pass `--purge` to also remove all local user data).
 
 ---
@@ -148,10 +148,10 @@ What `enroll` sets up in the repository:
 
 ## Two-Plugin Packaging Split
 
-Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from global plugins under `~/.gemini/config/plugins/<name>/`, while workspace hooks and MCP tools can be scoped per repository via `.agents/plugins.json` ([`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md)):
+Antigravity spawns `sidecar.json` scheduled background daemons (`builtin: schedule`) from global plugins under `~/.gemini/config/plugins/<name>/`, while Antigravity 1.5.8+ auto-discovers workspace-scoped plugins staged as real (non-symlink) directories under `<workspace>/.agents/plugins/<name>/` ([`docs/packaging-and-distribution.md`](docs/packaging-and-distribution.md)):
 
 1. **Global Daemon Plugin (`~/.gemini/config/plugins/repo-memory-daemon/`):** Runs the 1-minute `repo-memory tick` sidecar with **zero global hooks** (zero overhead in non-enrolled workspaces), exposes the global `repo-memory-admin` management skill (`skills/repo-memory-admin/SKILL.md`, invokable via `/repo-memory-admin` in any workspace to enroll, seed, inspect, or unenroll repositories), and bundles `workspace-plugin/repo-memory/`.
-2. **Per-Workspace Plugin (`.agents/plugins.json`):** `repo-memory enroll` (`init`) writes the resolved **absolute path** to `workspace-plugin/repo-memory` into `.agents/plugins.json`, activating `hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), `repo-memory mcp`, and `repo-memory-distiller` only for enrolled repositories.
+2. **Per-Workspace Staged Plugin (`<workspace>/.agents/plugins/repo-memory/`):** `repo-memory enroll` (`init`) and `repo-memory doctor --fix` stage a real, non-symlink copy of `workspace-plugin/repo-memory/` into `<workspace>/.agents/plugins/repo-memory/` (git-excluded in `.git/info/exclude`, with legacy `.agents/plugins.json` entries scrubbed), activating `hooks.json` (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), `repo-memory mcp`, and `repo-memory-distiller` only for enrolled repositories.
 
 ---
 
@@ -194,7 +194,7 @@ repo-memory search <query>
 repo-memory usage
 repo-memory report [--days <n>] [--json]
 repo-memory snapshot
-repo-memory doctor [path] [--repo <path>]
+repo-memory doctor [path] [--repo <path>] [--fix]
 repo-memory disable [--all]
 repo-memory enable
 ```

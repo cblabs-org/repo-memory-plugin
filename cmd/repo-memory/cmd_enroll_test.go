@@ -132,34 +132,42 @@ func TestEnrollUnenrollFlow(t *testing.T) {
 		t.Errorf("expected IsEnrolledFast to return true after enroll")
 	}
 
-	// 6. Verify .agents/plugins.json exists and points to workspace-plugin
-	pluginsPath := filepath.Join(tempRepo, ".agents", "plugins.json")
-	pluginsData, err := os.ReadFile(pluginsPath)
+	// 6. Verify .agents/plugins/repo-memory is staged as a real non-symlink directory
+	// (with hooks pointing to fakeBinPath) and .agents/plugins.json was not created.
+	stagedDir := StagedWorkspacePluginDir(tempRepo)
+	fi, err := os.Lstat(stagedDir)
 	if err != nil {
-		t.Fatalf("expected %s to exist: %v", pluginsPath, err)
+		t.Fatalf("expected staged directory %s to exist: %v", stagedDir, err)
 	}
-	var pluginsConfig map[string]any
-	if err := json.Unmarshal(pluginsData, &pluginsConfig); err != nil {
-		t.Fatalf("parsing plugins.json: %v", err)
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		t.Errorf("expected %s to be a real directory (not symlink)", stagedDir)
 	}
-	entries, ok := pluginsConfig["entries"].([]any)
-	if !ok || len(entries) == 0 {
-		t.Fatalf("expected non-empty entries in plugins.json, got: %v", pluginsConfig["entries"])
+	stagedHooks, err := os.ReadFile(filepath.Join(stagedDir, "hooks.json"))
+	if err != nil {
+		t.Fatalf("expected staged hooks.json: %v", err)
 	}
-	expectedWsPath := filepath.Join(tempPluginDir, "workspace-plugin")
-	firstEntry, ok := entries[0].(map[string]any)
-	if !ok || firstEntry["path"] != expectedWsPath {
-		t.Errorf("expected path %q in plugins.json, got: %v", expectedWsPath, firstEntry["path"])
+	if !strings.Contains(string(stagedHooks), fakeBinPath) {
+		t.Errorf("expected staged hooks.json to reference %s, got:\n%s", fakeBinPath, string(stagedHooks))
+	}
+	if _, err := os.Stat(filepath.Join(stagedDir, "agents", "repo-memory-distiller.md")); err != nil {
+		t.Errorf("expected staged flat distiller agent: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stagedDir, "agents", "repo-memory-distiller")); !os.IsNotExist(err) {
+		t.Errorf("expected no duplicate agents/repo-memory-distiller directory inside staged plugin")
+	}
+	pluginsPath := filepath.Join(tempRepo, ".agents", "plugins.json")
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected %s not to exist on fresh enroll", pluginsPath)
 	}
 
-	// 7. Verify .git/info/exclude contains plugins.json
+	// 7. Verify .git/info/exclude contains /.agents/plugins/repo-memory/
 	gitignorePath := filepath.Join(tempRepo, ".git", "info", "exclude")
 	gitignoreData, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatalf("expected %s to exist: %v", gitignorePath, err)
 	}
-	if !strings.Contains(string(gitignoreData), "plugins.json") {
-		t.Errorf("expected %s to contain plugins.json, got: %s", gitignorePath, string(gitignoreData))
+	if !strings.Contains(string(gitignoreData), "/.agents/plugins/repo-memory/") {
+		t.Errorf("expected %s to contain /.agents/plugins/repo-memory/, got: %s", gitignorePath, string(gitignoreData))
 	}
 
 	// 8. Run unenroll
@@ -170,24 +178,12 @@ func TestEnrollUnenrollFlow(t *testing.T) {
 		t.Fatalf("RunUnenroll failed: %v", err)
 	}
 
-	// 9. Verify .agents/plugins.json entry removed
+	// 9. Verify .agents/plugins/repo-memory removed
 	if config.IsEnrolledFast(tempRepo) {
 		t.Errorf("expected IsEnrolledFast to return false after unenroll")
 	}
-	if data, err := os.ReadFile(pluginsPath); err == nil {
-		// If file still exists, verify entry was removed
-		var remainingConfig map[string]any
-		if err := json.Unmarshal(data, &remainingConfig); err == nil {
-			if remainingEntries, ok := remainingConfig["entries"].([]any); ok {
-				for _, item := range remainingEntries {
-					if m, ok := item.(map[string]any); ok {
-						if p, ok := m["path"].(string); ok && strings.Contains(p, "repo-memory") {
-							t.Errorf("expected repo-memory entry to be removed, found: %v", p)
-						}
-					}
-				}
-			}
-		}
+	if _, err := os.Lstat(stagedDir); !os.IsNotExist(err) {
+		t.Errorf("expected staged plugin directory %s to be deleted after unenroll", stagedDir)
 	}
 
 	// 10. Run install again (idempotent)
@@ -226,12 +222,20 @@ func TestEnrollUnenrollFlow_PreservesOtherPlugins(t *testing.T) {
 		t.Fatalf("RunInstall failed: %v", err)
 	}
 
-	// Pre-populate .agents/plugins.json with a third-party plugin
+	// Pre-populate .agents/plugins.json with a third-party plugin and a legacy repo-memory entry,
+	// plus a sibling staged plugin directory (.agents/plugins/principal-architect-workspace).
 	agentsDir := filepath.Join(tempRepo, ".agents")
-	_ = os.MkdirAll(agentsDir, 0755)
+	siblingPluginFile := filepath.Join(agentsDir, "plugins", "principal-architect-workspace", "state.json")
+	if err := os.MkdirAll(filepath.Dir(siblingPluginFile), 0755); err != nil {
+		t.Fatalf("creating sibling plugin dir: %v", err)
+	}
+	if err := os.WriteFile(siblingPluginFile, []byte(`{"ok":true}`), 0644); err != nil {
+		t.Fatalf("writing sibling plugin state: %v", err)
+	}
 	otherPlugin := map[string]any{
 		"entries": []any{
 			map[string]any{"path": "/opt/custom-other-plugin"},
+			map[string]any{"path": filepath.Join(tempPluginDir, "workspace-plugin")},
 		},
 	}
 	otherBytes, _ := json.MarshalIndent(otherPlugin, "", "  ")
@@ -247,7 +251,10 @@ func TestEnrollUnenrollFlow_PreservesOtherPlugins(t *testing.T) {
 		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
-	// Verify both entries present
+	// Verify .agents/plugins/repo-memory staged and legacy repo-memory scrubbed from plugins.json
+	if _, err := os.Stat(filepath.Join(StagedWorkspacePluginDir(tempRepo), "plugin.json")); err != nil {
+		t.Fatalf("expected staged repo-memory plugin.json: %v", err)
+	}
 	pluginsPath := filepath.Join(agentsDir, "plugins.json")
 	data, err := os.ReadFile(pluginsPath)
 	if err != nil {
@@ -256,8 +263,8 @@ func TestEnrollUnenrollFlow_PreservesOtherPlugins(t *testing.T) {
 	var loaded map[string]any
 	_ = json.Unmarshal(data, &loaded)
 	entries := loaded["entries"].([]any)
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 entries in plugins.json, got %d", len(entries))
+	if len(entries) != 1 || entries[0].(map[string]any)["path"] != "/opt/custom-other-plugin" {
+		t.Fatalf("expected only /opt/custom-other-plugin preserved after enroll, got %v", entries)
 	}
 
 	// Unenroll
@@ -267,7 +274,13 @@ func TestEnrollUnenrollFlow_PreservesOtherPlugins(t *testing.T) {
 		t.Fatalf("RunUnenroll failed: %v", err)
 	}
 
-	// Verify other plugin preserved, plugins.json still exists
+	// Verify repo-memory removed, sibling plugin directory and other plugin in plugins.json preserved
+	if _, err := os.Lstat(StagedWorkspacePluginDir(tempRepo)); !os.IsNotExist(err) {
+		t.Errorf("expected staged repo-memory directory to be removed on unenroll")
+	}
+	if _, err := os.Stat(siblingPluginFile); err != nil {
+		t.Errorf("expected sibling staged plugin %s to remain intact: %v", siblingPluginFile, err)
+	}
 	dataAfter, err := os.ReadFile(pluginsPath)
 	if err != nil {
 		t.Fatalf("expected plugins.json to still exist because other plugin was present: %v", err)

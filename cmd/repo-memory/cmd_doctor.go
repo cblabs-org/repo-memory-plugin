@@ -7,8 +7,9 @@
  *
  * Module: cmd/repo-memory/cmd_doctor.go
  * Description: CLI subcommand and diagnostic runner for verifying repository
- *              memory enrollment, workspace plugin linkage, GEMINI.md managed
- *              block integrity, and graduated skills health.
+ *              memory enrollment, staged .agents/plugins/repo-memory workspace
+ *              plugin health, GEMINI.md managed block integrity, and graduated
+ *              skills health, with optional --fix auto-repair across enrolled repos.
  *
  * Exported Types / Functions:
  * - RunDoctor(): Verifies repository memory installation and health for a target directory.
@@ -21,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/cblabs-org/repo-memory-plugin/internal/core/config"
@@ -30,8 +32,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// doctorRepoDir holds the optional --repo directory override for `repo-memory doctor`.
-var doctorRepoDir string
+var (
+	doctorRepoDir string // Optional --repo directory override for `repo-memory doctor`.
+	doctorFixFlag bool   // When true (--fix), repairs missing/symlinked/stale staged plugins across enrolled repos.
+)
 
 // doctorCmd defines the `repo-memory doctor` subcommand.
 var doctorCmd = &cobra.Command{
@@ -51,11 +55,12 @@ var doctorCmd = &cobra.Command{
 
 func init() {
 	doctorCmd.Flags().StringVar(&doctorRepoDir, "repo", "", "Repository directory (defaults to current working directory)")
+	doctorCmd.Flags().BoolVar(&doctorFixFlag, "fix", false, "Automatically repair missing, symlinked, or stale staged workspace plugins across enrolled repositories")
 }
 
 // RunDoctor verifies repository memory installation and health.
 func RunDoctor(cmd *cobra.Command, targetDir string) error {
-	// --- Step 1: Resolve repository root and check .memory enrollment markers ---
+	// --- Step 1: Resolve repository root and installed daemon version ---
 	repoRoot, err := gitops.FindRepoRoot(targetDir)
 	if err != nil {
 		repoRoot = targetDir
@@ -65,6 +70,41 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("resolving repository root: %w", err)
 	}
 
+	daemonDir, daemonErr := ResolveAntigravityPluginDir()
+	installedDaemonVer := ""
+	if daemonErr == nil {
+		installedDaemonVer = ReadInstalledPluginVersion(daemonDir)
+	}
+	expectedVer := antigravity.NormalizePluginVersion(Version)
+
+	// --- Step 2: Check installed daemon plugin bundle version against binary version ---
+	if daemonErr == nil && installedDaemonVer != "" && Version != "" && Version != "dev" && installedDaemonVer != expectedVer {
+		if doctorFixFlag {
+			if execPath, execErr := os.Executable(); execErr == nil && !isTestExecutable(execPath) {
+				absBin := execPath
+				if a, aErr := filepath.Abs(execPath); aErr == nil {
+					absBin = a
+				}
+				if e, eErr := filepath.EvalSymlinks(absBin); eErr == nil {
+					absBin = e
+				}
+				if installErr := RunInstall(daemonDir, absBin); installErr == nil {
+					installedDaemonVer = ReadInstalledPluginVersion(daemonDir)
+					fmt.Fprintf(cmd.OutOrStdout(), "✓ Updated daemon plugin bundle to v%s\n", installedDaemonVer)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "⚠ Failed to update daemon plugin bundle: %v\n", installErr)
+				}
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠ Plugin bundle version (%s) does not match binary version (%s).\n", installedDaemonVer, expectedVer)
+				fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "⚠ Plugin bundle version (%s) does not match binary version (%s).\n", installedDaemonVer, expectedVer)
+			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
+		}
+	}
+
+	// --- Step 3: Check .memory enrollment markers and staged workspace plugin for target repo ---
 	memDir := filepath.Join(repoRoot, ".memory")
 	enrolledMarker := filepath.Join(memDir, ".enrolled")
 
@@ -73,49 +113,47 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 	_, errEnrolled := os.Stat(enrolledMarker)
 	hasEnrolledMarker := errEnrolled == nil
 
-	// --- Step 2: Verify .agents/plugins.json workspace plugin registration ---
 	if hasMemoryDir && hasEnrolledMarker {
-		pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
-		var pluginPath string
-		foundReference := false
-
-		if data, err := os.ReadFile(pluginsPath); err == nil {
-			var configMap map[string]any
-			if err := json.Unmarshal(data, &configMap); err == nil {
-				if rawEntries, ok := configMap["entries"].([]any); ok {
-					var expectedPath string
-					if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
-						if abs, err := filepath.Abs(daemonDir); err == nil {
-							expectedPath = filepath.Join(abs, "workspace-plugin")
-						}
+		repoCfg, _ := config.LoadRepoConfig(repoRoot)
+		if repoCfg.IsEnabled() {
+			issues := inspectRepoWorkspacePlugin(repoRoot, daemonDir, expectedVer)
+			if len(issues) > 0 {
+				if doctorFixFlag {
+					if fixErr := EnsureWorkspacePluginConfigured(repoRoot); fixErr != nil {
+						return fmt.Errorf("re-staging workspace plugin for %s: %w", repoRoot, fixErr)
 					}
-					for _, item := range rawEntries {
-						if m, ok := item.(map[string]any); ok {
-							if p, ok := m["path"].(string); ok {
-								if isRepoMemoryWorkspacePluginEntry(p, expectedPath) {
-									foundReference = true
-									pluginPath = p
-									break
-								}
-							}
-						}
-					}
+					fmt.Fprintf(cmd.OutOrStdout(), "✓ Re-staged workspace plugin for %s\n", repoRoot)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "⚠ repo-memory is enrolled but workspace plugin needs attention (%s).\n", strings.Join(issues, "; "))
+					fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory doctor --fix  (or: repo-memory enroll .)")
 				}
-			}
-		}
-
-		if !foundReference {
-			fmt.Fprintln(cmd.OutOrStdout(), "⚠ repo-memory is enrolled but workspace plugin is not configured.")
-			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory enroll .")
-		} else {
-			if _, err := os.Stat(pluginPath); os.IsNotExist(err) {
-				fmt.Fprintf(cmd.OutOrStdout(), "⚠ Workspace plugin not found at %s.\n", pluginPath)
-				fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
 			}
 		}
 	}
 
-	// --- Step 3: Validate GEMINI.md managed instruction block ---
+	// --- Step 4: Inspect and optionally repair other enrolled repos in registry.json ---
+	dataDir := config.DataDir()
+	excludePath := ""
+	if hasMemoryDir && hasEnrolledMarker {
+		excludePath = repoRoot
+	}
+	for _, candRoot := range collectEnrolledRegistryRepos(dataDir, excludePath) {
+		issues := inspectRepoWorkspacePlugin(candRoot, daemonDir, expectedVer)
+		if len(issues) == 0 {
+			continue
+		}
+		if doctorFixFlag {
+			if fixErr := EnsureWorkspacePluginConfigured(candRoot); fixErr != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "⚠ Failed to re-stage workspace plugin for %s: %v\n", candRoot, fixErr)
+				continue
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ Re-staged workspace plugin for %s\n", candRoot)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "⚠ Enrolled repo %s has stale or un-staged workspace plugin (%s). Run: repo-memory doctor --fix\n", candRoot, strings.Join(issues, "; "))
+		}
+	}
+
+	// --- Step 5: Validate GEMINI.md managed instruction block ---
 	geminiPath := filepath.Join(repoRoot, config.InstructionFilename)
 	if data, err := os.ReadFile(geminiPath); err == nil {
 		content := string(data)
@@ -127,19 +165,8 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 		}
 	}
 
-	// --- Step 4: Check installed plugin bundle version against binary version ---
-	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
-		installedVer := ReadInstalledPluginVersion(daemonDir)
-		expectedVer := antigravity.NormalizePluginVersion(Version)
-		if installedVer != "" && Version != "" && Version != "dev" && installedVer != expectedVer {
-			fmt.Fprintf(cmd.OutOrStdout(), "⚠ Plugin bundle version (%s) does not match binary version (%s).\n", installedVer, expectedVer)
-			fmt.Fprintln(cmd.OutOrStdout(), "  Run: repo-memory install --harness antigravity")
-		}
-	}
-
-	// --- Step 5: Run graduated skills lint checks ---
+	// --- Step 6: Run graduated skills lint checks ---
 	if hasMemoryDir {
-		dataDir := config.DataDir()
 		repoID := ""
 		if entry, found, _ := config.FindRegistryEntry(dataDir, repoRoot); found && entry != nil {
 			repoID = entry.RepoID
@@ -155,4 +182,139 @@ func RunDoctor(cmd *cobra.Command, targetDir string) error {
 	}
 
 	return nil
+}
+
+// inspectRepoWorkspacePlugin checks a single enrolled repository's .agents/plugins/repo-memory
+// directory and .agents/plugins.json for missing files, symlinks, duplicate distiller agents,
+// version drift, or legacy plugins.json entries.
+func inspectRepoWorkspacePlugin(repoRoot, daemonDir, expectedBinaryVer string) []string {
+	var issues []string
+
+	targetVer := ReadInstalledPluginVersion(daemonDir)
+	if targetVer == "" && Version != "" && Version != "dev" {
+		targetVer = expectedBinaryVer
+	}
+
+	stagedDir := StagedWorkspacePluginDir(repoRoot)
+	fi, lstatErr := os.Lstat(stagedDir)
+	switch {
+	case os.IsNotExist(lstatErr):
+		issues = append(issues, "staged workspace plugin is missing at .agents/plugins/repo-memory")
+	case lstatErr != nil:
+		issues = append(issues, fmt.Sprintf("cannot inspect .agents/plugins/repo-memory: %v", lstatErr))
+	case fi.Mode()&os.ModeSymlink != 0:
+		issues = append(issues, ".agents/plugins/repo-memory is a symlink (ignored by Antigravity 1.5.8+; must be a real directory)")
+	case !fi.IsDir():
+		issues = append(issues, ".agents/plugins/repo-memory is not a directory")
+	default:
+		requiredRel := []string{
+			"plugin.json",
+			"hooks.json",
+			"mcp_config.json",
+			filepath.Join("agents", "repo-memory-distiller.md"),
+		}
+		for _, rel := range requiredRel {
+			full := filepath.Join(stagedDir, rel)
+			lfi, err := os.Lstat(full)
+			if os.IsNotExist(err) {
+				issues = append(issues, fmt.Sprintf("missing staged file .agents/plugins/repo-memory/%s", filepath.ToSlash(rel)))
+				continue
+			}
+			if err == nil && lfi.Mode()&os.ModeSymlink != 0 {
+				issues = append(issues, fmt.Sprintf("symlinked file at .agents/plugins/repo-memory/%s", filepath.ToSlash(rel)))
+			}
+		}
+		if _, err := os.Lstat(filepath.Join(stagedDir, "agents", "repo-memory-distiller")); err == nil {
+			issues = append(issues, "duplicate agent directory .agents/plugins/repo-memory/agents/repo-memory-distiller fails strict validation")
+		}
+		if targetVer != "" {
+			stagedVer := ReadInstalledPluginVersion(stagedDir)
+			if stagedVer != targetVer {
+				issues = append(issues, fmt.Sprintf("staged workspace plugin version (%s) does not match daemon version (%s)", stagedVer, targetVer))
+			}
+		}
+	}
+
+	// Check for lingering legacy repo-memory entries in .agents/plugins.json.
+	pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
+	if data, err := os.ReadFile(pluginsPath); err == nil {
+		var configMap map[string]any
+		if err := json.Unmarshal(data, &configMap); err == nil {
+			if rawEntries, ok := configMap["entries"].([]any); ok {
+				expectedLegacyPath := ""
+				if daemonDir != "" {
+					if abs, absErr := filepath.Abs(daemonDir); absErr == nil {
+						expectedLegacyPath = filepath.Join(abs, "workspace-plugin")
+					}
+				}
+				for _, item := range rawEntries {
+					if m, ok := item.(map[string]any); ok {
+						if p, ok := m["path"].(string); ok && isRepoMemoryWorkspacePluginEntry(p, expectedLegacyPath) {
+							issues = append(issues, "legacy repo-memory entry found in .agents/plugins.json (deprecated in Antigravity 1.5.8+)")
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return issues
+}
+
+// collectEnrolledRegistryRepos returns sorted, deduplicated repository roots from registry.json
+// that exist on disk, are currently enrolled, and remain enabled in .memory/config.yaml.
+func collectEnrolledRegistryRepos(dataDir, excludeRepoRoot string) []string {
+	reg, err := config.LoadRegistry(dataDir)
+	if err != nil || len(reg) == 0 {
+		return nil
+	}
+
+	excludeCanon := ""
+	if strings.TrimSpace(excludeRepoRoot) != "" {
+		excludeCanon = canonicalRepoPath(excludeRepoRoot)
+	}
+
+	seen := make(map[string]bool)
+	var roots []string
+	for wsPath, entry := range reg {
+		cand := strings.TrimSpace(entry.RootPath)
+		if cand == "" {
+			cand = strings.TrimSpace(wsPath)
+		}
+		if cand == "" {
+			continue
+		}
+		canon := canonicalRepoPath(cand)
+		if canon == "" || seen[canon] || (excludeCanon != "" && canon == excludeCanon) {
+			continue
+		}
+		seen[canon] = true
+
+		fi, statErr := os.Stat(cand)
+		if statErr != nil || !fi.IsDir() {
+			continue
+		}
+		if !config.IsEnrolledFast(cand) {
+			continue
+		}
+		if cfg, _ := config.LoadRepoConfig(cand); !cfg.IsEnabled() {
+			continue
+		}
+		roots = append(roots, cand)
+	}
+	sort.Strings(roots)
+	return roots
+}
+
+// canonicalRepoPath normalizes p and resolves any macOS/OS symlinks (e.g. /var -> /private/var).
+func canonicalRepoPath(p string) string {
+	clean := filepath.Clean(strings.TrimSpace(p))
+	if clean == "" || clean == "." {
+		return ""
+	}
+	if eval, err := filepath.EvalSymlinks(clean); err == nil && eval != "" {
+		return eval
+	}
+	return clean
 }

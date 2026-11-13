@@ -169,6 +169,15 @@ func TestVersionStampingAndPortableGenerators(t *testing.T) {
 	if got := antigravity.NormalizePluginVersion("v0.2.3"); got != "0.2.3" {
 		t.Errorf("NormalizePluginVersion('v0.2.3') = %q, want '0.2.3'", got)
 	}
+	if got := antigravity.NormalizePluginVersion("v0.1.0-3-gf2d09c7-dirty"); got != "0.1.0-3-gf2d09c7-dirty" {
+		t.Errorf("NormalizePluginVersion('v0.1.0-3-gf2d09c7-dirty') = %q, want '0.1.0-3-gf2d09c7-dirty'", got)
+	}
+	if got := antigravity.NormalizePluginVersion("f2d09c7"); got != antigravity.DefaultPluginVersion {
+		t.Errorf("NormalizePluginVersion('f2d09c7') = %q, want %q", got, antigravity.DefaultPluginVersion)
+	}
+	if got := antigravity.NormalizePluginVersion(""); got != antigravity.DefaultPluginVersion {
+		t.Errorf("NormalizePluginVersion('') = %q, want %q", got, antigravity.DefaultPluginVersion)
+	}
 	if got := antigravity.NormalizePluginVersion("dev"); got != antigravity.DefaultPluginVersion {
 		t.Errorf("NormalizePluginVersion('dev') = %q, want %q", got, antigravity.DefaultPluginVersion)
 	}

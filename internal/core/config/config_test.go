@@ -652,5 +652,49 @@ gaps:
 	}
 }
 
+func TestResolveDocSeedGlobs_ExcludesStagedWorkspacePlugins(t *testing.T) {
+	repoDir := t.TempDir()
+	files := []string{
+		filepath.Join(".agents", "plugins", "repo-memory", "agents", "repo-memory-distiller.md"),
+		filepath.Join(".agents", "skills", "custom-skill", "SKILL.md"),
+		filepath.Join("agents", "guide.md"),
+		filepath.Join("docs", "developer", "arch.md"),
+	}
+	for _, rel := range files {
+		full := filepath.Join(repoDir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("# doc\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resolved, err := ResolveDocSeedGlobs(repoDir, RepoConfig{
+		DocSeeds: []string{"**/*.md"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveDocSeedGlobs failed: %v", err)
+	}
+
+	gotSet := make(map[string]bool, len(resolved))
+	for _, p := range resolved {
+		gotSet[p] = true
+	}
+
+	if gotSet[".agents/plugins/repo-memory/agents/repo-memory-distiller.md"] {
+		t.Errorf("expected staged workspace plugin markdown to be excluded, got %v", resolved)
+	}
+	for _, want := range []string{
+		".agents/skills/custom-skill/SKILL.md",
+		"agents/guide.md",
+		"docs/developer/arch.md",
+	} {
+		if !gotSet[want] {
+			t.Errorf("expected %q to be included in %v", want, resolved)
+		}
+	}
+}
+
 
 

@@ -32,7 +32,6 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		filepath.Join(tempPluginDir, "skills", "repo-memory-admin"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory"),
 		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents"),
-		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller"),
 	}
 	for _, dir := range expectedDirs {
 		info, err := os.Stat(dir)
@@ -90,20 +89,17 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		}
 	}
 
-	// Verify repo-memory-distiller agent markdown files exist in both directory and flat forms
-	distillerPaths := []string{
-		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller", "agent.md"),
-		filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller.md"),
+	// Verify repo-memory-distiller agent exists ONLY in flat form (agents/repo-memory-distiller.md)
+	distillerFlatPath := filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller.md")
+	data, err := os.ReadFile(distillerFlatPath)
+	if err != nil {
+		t.Errorf("expected distiller agent file %s to exist: %v", distillerFlatPath, err)
+	} else if !strings.Contains(string(data), "name: repo-memory-distiller") || !strings.Contains(string(data), "echo_token:") {
+		t.Errorf("distiller agent file %s missing expected content", distillerFlatPath)
 	}
-	for _, dp := range distillerPaths {
-		data, err := os.ReadFile(dp)
-		if err != nil {
-			t.Errorf("expected distiller agent file %s to exist: %v", dp, err)
-			continue
-		}
-		if !strings.Contains(string(data), "name: repo-memory-distiller") || !strings.Contains(string(data), "echo_token:") {
-			t.Errorf("distiller agent file %s missing expected content", dp)
-		}
+	legacyDistillerDir := filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", "agents", "repo-memory-distiller")
+	if _, err := os.Stat(legacyDistillerDir); !os.IsNotExist(err) {
+		t.Errorf("expected legacy duplicate agent directory %s not to exist", legacyDistillerDir)
 	}
 
 	// Verify global repo-memory-admin skill markdown exists in the daemon plugin and substitutes binary path
@@ -148,10 +144,31 @@ func TestInstallIdempotencyAndLayout(t *testing.T) {
 		t.Errorf("unexpected sidecar args: %v", args)
 	}
 
+	// Simulate legacy duplicate agents/repo-memory-distiller/agent.md and .DS_Store before upgrade
+	if err := os.MkdirAll(legacyDistillerDir, 0755); err != nil {
+		t.Fatalf("creating legacy duplicate distiller dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDistillerDir, "agent.md"), []byte("stale"), 0644); err != nil {
+		t.Fatalf("writing legacy duplicate agent.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", ".DS_Store"), []byte("junk"), 0644); err != nil {
+		t.Fatalf("writing dummy .DS_Store: %v", err)
+	}
+
 	// Second install run (upgrade in place / idempotency) with new binary path
 	newBinPath := "/new/path/repo-memory"
 	if err := RunInstall(tempPluginDir, newBinPath); err != nil {
 		t.Fatalf("second RunInstall failed: %v", err)
+	}
+
+	if _, err := os.Stat(legacyDistillerDir); !os.IsNotExist(err) {
+		t.Errorf("expected second RunInstall to remove legacy duplicate directory %s", legacyDistillerDir)
+	}
+	if _, err := os.Stat(filepath.Join(tempPluginDir, "workspace-plugin", "repo-memory", ".DS_Store")); !os.IsNotExist(err) {
+		t.Errorf("expected second RunInstall to remove .DS_Store")
+	}
+	if _, err := os.Stat(distillerFlatPath); err != nil {
+		t.Errorf("expected flat distiller agent %s to remain after second RunInstall: %v", distillerFlatPath, err)
 	}
 
 	updatedSidecar, err := os.ReadFile(sidecarPath)
@@ -404,6 +421,12 @@ func TestRunPortableInstallAndVersionDrift(t *testing.T) {
 	wsDir := ResolveWorkspacePluginDir(tempPluginDir)
 	if gotWSVer := ReadInstalledPluginVersion(wsDir); gotWSVer != "0.4.2" {
 		t.Errorf("ReadInstalledPluginVersion(workspace) = %q, want '0.4.2'", gotWSVer)
+	}
+	if _, err := os.Stat(filepath.Join(wsDir, "agents", "repo-memory-distiller.md")); err != nil {
+		t.Errorf("expected portable flat distiller agent to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wsDir, "agents", "repo-memory-distiller")); !os.IsNotExist(err) {
+		t.Errorf("expected portable bundle not to contain duplicate agents/repo-memory-distiller directory")
 	}
 
 	// Verify bin/run-repo-memory.sh exists and is executable

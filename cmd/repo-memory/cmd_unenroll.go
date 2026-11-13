@@ -6,8 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Module: cmd/repo-memory/cmd_unenroll.go
- * Description: Removes a repository from repo-memory tracking, cleans up
- *              .agents/plugins.json and .memory/.enrolled, restores Principal Architect
+ * Description: Removes a repository from repo-memory tracking, removes the staged
+ *              .agents/plugins/repo-memory directory (and any legacy .agents/plugins.json
+ *              entries) and .memory/.enrolled, restores Principal Architect
  *              memory_mode to builtin when present, and optionally purges private data.
  *
  * Exported Types / Functions:
@@ -72,7 +73,7 @@ func RunUnenroll(cmd *cobra.Command, targetDir string, purge bool) error {
 		return fmt.Errorf("removing instruction block from %s: %w", config.InstructionFilename, err)
 	}
 
-	// --- Step 2: Remove registry entry, .agents/plugins.json entry, and .enrolled marker ---
+	// --- Step 2: Remove registry entry, staged workspace plugin, and .enrolled marker ---
 	removedIDs, err := config.RemoveFromRegistry(dataDir, repoRoot)
 	if err != nil {
 		return fmt.Errorf("removing from registry: %w", err)

@@ -43,11 +43,15 @@ package antigravity
 import (
 	_ "embed"
 	"encoding/json"
+	"regexp"
 	"strings"
 )
 
 // DefaultPluginVersion is the fallback semantic version written to plugin.json when the build version is unset or "dev".
 const DefaultPluginVersion = "0.1.0"
+
+// semverPrefixRe matches semantic version prefixes so untagged git commit hashes fall back to DefaultPluginVersion.
+var semverPrefixRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
 
 // HooksJSONTemplate holds the raw embedded hooks.json template.
 //
@@ -89,7 +93,7 @@ var AdminSkillMDTemplate string
 func NormalizePluginVersion(version string) string {
 	trimmed := strings.TrimSpace(version)
 	trimmed = strings.TrimPrefix(trimmed, "v")
-	if trimmed == "" || trimmed == "dev" {
+	if trimmed == "" || trimmed == "dev" || !semverPrefixRe.MatchString(trimmed) {
 		return DefaultPluginVersion
 	}
 	return trimmed

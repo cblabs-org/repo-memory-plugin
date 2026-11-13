@@ -8,8 +8,8 @@
 
 A production Antigravity plugin that combines background automation (`sidecar.json`), workspace lifecycle hooks (`hooks.json`), MCP tools (`mcp_config.json`), custom subagents (`agents/`), and slash-command skills (`skills/`) faces three packaging constraints:
 
-1. **Global vs. Per-Workspace Isolation:** Scheduled or UI sidecars (`sidecar.json`) only launch from global plugins under `~/.gemini/config/plugins/<daemon-name>/`, whereas lifecycle hooks (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`) and MCP servers should only fire inside **explicitly enrolled repositories** (`<repo>/.agents/plugins.json`) so unenrolled workspaces experience zero hook overhead.
-2. **Machine-Specific Path Resolution:** Antigravity's configuration loaders apply different path-expansion rules across `.agents/plugins.json`, `hooks.json`, `mcp_config.json`, and `sidecar.json`. Naive zipping of an installed plugin directory captures hardcoded `/Users/<author>/...` paths that break on another user's machine.
+1. **Global vs. Per-Workspace Isolation:** Scheduled or UI sidecars (`sidecar.json`) only launch from global plugins under `~/.gemini/config/plugins/<daemon-name>/`, whereas Antigravity 1.5.8+ discovers workspace-scoped lifecycle hooks (`PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`) and MCP servers only from real (non-symlink) directories under `<repo>/.agents/plugins/<name>/` (legacy `<repo>/.agents/plugins.json` pointers are ignored in 1.5.8+), ensuring unenrolled workspaces experience zero hook overhead.
+2. **Machine-Specific Path Resolution:** Antigravity's configuration loaders apply different path-expansion rules across staged workspace plugins, `hooks.json`, `mcp_config.json`, and `sidecar.json`. Naive zipping of an installed plugin directory captures hardcoded `/Users/<author>/...` paths that break on another user's machine.
 3. **Compiled Binary Portability vs. Zero-CLI Drop-In Bundles:** Compiled plugins require OS/architecture-specific binaries (`darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`, `windows-amd64`), while users want either a one-command CLI installer **or** a self-contained `.zip` they can extract directly into `~/.gemini/config/plugins/`.
 
 This document defines the **Dual-Channel Distribution & Single-Source Versioning Architecture** that solves all three constraints cleanly and reusably across plugins.
@@ -46,8 +46,8 @@ Every multi-repo plugin uses a **single installation directory** under `~/.gemin
 
 **Why this works:**
 - Global plugin discovery scans `~/.gemini/config/plugins/` strictly **one level deep**. It discovers `<name>-daemon` (starting its sidecar and registering the global `/<name>-admin` management skill) and completely ignores `workspace-plugin/<name>/`.
-- When a user enrolls a repository (via `/<name>-admin enroll` or `<binary> enroll`), the tool writes the resolved **absolute path** of `workspace-plugin` into `<repo>/.agents/plugins.json` (and adds `.agents/plugins.json` to `<repo>/.git/info/exclude`).
-- Only enrolled repositories load `workspace-plugin/<name>/hooks.json` and `mcp_config.json`.
+- When a user enrolls a repository (via `/<name>-admin enroll` or `<binary> enroll`), the tool stages a real (non-symlink) copy of `workspace-plugin/<name>/` into `<repo>/.agents/plugins/<name>/` (adds it to `<repo>/.git/info/exclude`, and scrubs any legacy `<repo>/.agents/plugins.json` entry while preserving sibling plugins).
+- Only enrolled repositories load `.agents/plugins/<name>/hooks.json` and `.agents/plugins/<name>/mcp_config.json`.
 
 ### 2.2 Stateless Plugin Directory (`100% Replaceable on Upgrade`)
 
@@ -74,7 +74,7 @@ To build a `.zip` bundle or installer that works on **any** user's machine witho
 
 | Surface | File Path | Expands `~`? | Expands `$HOME` / Env Vars? | Expands `${PLUGIN_ROOT}`? | Portable Pattern for `.zip` Bundles |
 |---|---|---|---|---|---|
-| **Workspace Plugin Pointer** | `<repo>/.agents/plugins.json` | **NO** | **NO** | **NO** | Never distribute statically. Generated on the user's machine at `enroll` time using `os.UserHomeDir()` / `filepath.Abs()`. |
+| **Workspace Plugin Directory** | `<repo>/.agents/plugins/<name>/` | Real directory only (**symlinks ignored in 1.5.8+**) | N/A (must be copied files) | N/A | Staged as a real copy at `enroll` / `doctor --fix` time and git-excluded via `<repo>/.git/info/exclude`. Never commit machine-specific paths. |
 | **Lifecycle Hooks** | `workspace-plugin/<name>/hooks.json` | **YES** (`expandHome`) | **YES** (runs via `/bin/sh -c` on Unix) | **NO** (unless set in command string) | `"command": "~/.gemini/config/plugins/<name>-daemon/bin/<binary> hook antigravity PreInvocation"` |
 | **MCP Server Config** | `workspace-plugin/<name>/mcp_config.json` | **NO** (`exec.Command`) | **NO** (unless wrapped in `sh -c`) | **NO** | For `install`: absolute path.<br>For portable `.zip`: `"command": "/bin/sh", "args": ["-c", "exec \"$HOME/.gemini/config/plugins/<name>-daemon/bin/<binary>\" mcp"]` |
 | **Scheduled Sidecar** | `sidecars/<id>/sidecar.json` (`builtin: "schedule"`) | **NO** | **NO** (unless wrapped in `sh -c`) | **NO** (in `builtin: "schedule"` args) | For `install`: `["*/1 * * * *", "/abs/path/<binary>", "tick"]`<br>For portable `.zip`: `["*/1 * * * *", "/bin/sh", "-c", "exec \"$HOME/.gemini/config/plugins/<name>-daemon/bin/<binary>\" tick"]` |
@@ -149,9 +149,7 @@ repo-memory-daemon/
         ├── hooks.json
         ├── mcp_config.json
         └── agents/
-            ├── repo-memory-distiller.md
-            └── repo-memory-distiller/
-                └── agent.md
+            └── repo-memory-distiller.md
 ```
 
 #### Portable Wrapper (`bin/run-repo-memory.sh`)
@@ -267,7 +265,7 @@ Using `~/.gemini/config/plugins/repo-memory-daemon/bin/run-repo-memory.sh` (or `
   ```
 
 - **`skills/repo-memory-admin/SKILL.md`**:
-  Uses `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory` as `<bin>`. When the user types `/repo-memory-admin enroll this repo` in chat after unzipping the plugin and restarting Antigravity, the skill invokes `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory enroll`, which resolves the user's `$HOME` and writes the exact absolute path `/Users/<user>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin` into `<repo>/.agents/plugins.json`.
+  Uses `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory` as `<bin>`. When the user types `/repo-memory-admin enroll this repo` in chat after unzipping the plugin and restarting Antigravity, the skill invokes `~/.gemini/config/plugins/repo-memory-daemon/bin/repo-memory enroll`, which stages a real directory copy of `workspace-plugin/repo-memory/` into `<repo>/.agents/plugins/repo-memory/` with resolved host paths and git-excludes it via `.git/info/exclude`.
 
 ---
 
@@ -311,17 +309,10 @@ When a user upgrades the binary (e.g., via `git pull && make install` or downloa
 
 ### 5.4 How Upgrades Work Across Enrolled Repositories
 
-Because every enrolled repository's `.agents/plugins.json` points to the stable path:
-```json
-{
-  "entries": [
-    {
-      "path": "/Users/<user>/.gemini/config/plugins/repo-memory-daemon/workspace-plugin"
-    }
-  ]
-}
-```
-upgrading `~/.gemini/config/plugins/repo-memory-daemon/` (either via `./scripts/install.sh`, `repo-memory install`, or unzipping a new `repo-memory-daemon-<os>-<arch>.zip`) **atomically upgrades all enrolled repositories on the machine** without touching `<repo>/.agents/plugins.json` or re-enrolling.
+Because Antigravity `1.5.8+` auto-discovers workspace plugins only as real (non-symlink) directories under `<repo>/.agents/plugins/<name>/` and ignores `.agents/plugins.json`, upgrading `~/.gemini/config/plugins/repo-memory-daemon/` requires re-staging `<repo>/.agents/plugins/repo-memory/` in enrolled repositories:
+
+- Running `./scripts/install.sh`, `install-release.sh`, or `repo-memory install --harness antigravity` automatically refreshes `~/.gemini/config/plugins/repo-memory-daemon/` and runs `repo-memory doctor --fix`, which detects missing, symlinked, or version-drifted `.agents/plugins/repo-memory/` directories across all enrolled repositories in `<data-dir>/registry.json`, re-stages them as clean real directory copies, and scrubs any legacy `repo-memory` entries from `<repo>/.agents/plugins.json`.
+- If you upgraded by manually extracting a `.zip` archive over `~/.gemini/config/plugins/repo-memory-daemon/`, run `repo-memory doctor --fix` once to synchronize all enrolled repositories.
 
 ---
 
@@ -413,8 +404,9 @@ CGO_ENABLED=0 go build \
 chmod +x "${PLUGIN_DIR}/bin/repo-memory"
 ln -sf "${PLUGIN_DIR}/bin/repo-memory" "${BIN_DIR}/repo-memory"
 
-# Render plugin bundle and register in ~/.gemini/config/config.json
+# Render plugin bundle, register in ~/.gemini/config/config.json, and re-stage enrolled repos
 "${BIN_DIR}/repo-memory" install --harness antigravity
+"${BIN_DIR}/repo-memory" doctor --fix || true
 ```
 
 ### 6.3 GitHub Actions Release Pipeline (`.github/workflows/release.yml`)

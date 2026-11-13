@@ -9,6 +9,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 func TestInitSubcommand_FreshRepo(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -58,9 +60,9 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
-	// Verify stdout mentions workspace plugin
-	if !strings.Contains(stdout.String(), "Workspace plugin enabled for this repository via .agents/plugins.json") {
-		t.Errorf("expected output to mention workspace plugin, got: %s", stdout.String())
+	// Verify stdout mentions staged workspace plugin
+	if !strings.Contains(stdout.String(), "Workspace plugin staged for this repository at .agents/plugins/repo-memory") {
+		t.Errorf("expected output to mention staged workspace plugin, got: %s", stdout.String())
 	}
 
 	// 1. Verify .memory and .gitignore exist
@@ -86,22 +88,50 @@ func TestInitSubcommand_FreshRepo(t *testing.T) {
 		t.Errorf("expected marker file %s to exist: %v", markerPath, err)
 	}
 
-	// 1c. Verify .agents/plugins.json and .git/info/exclude exist
-	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
-	pluginsData, err := os.ReadFile(pluginsPath)
+	// 1c. Verify .agents/plugins/repo-memory is staged as a real directory (no symlinks),
+	// .agents/plugins.json was not created, and .git/info/exclude excludes it.
+	stagedDir := filepath.Join(repoDir, ".agents", "plugins", "repo-memory")
+	fi, err := os.Lstat(stagedDir)
 	if err != nil {
-		t.Fatalf("expected .agents/plugins.json to exist: %v", err)
+		t.Fatalf("expected %s to exist: %v", stagedDir, err)
 	}
-	if !strings.Contains(string(pluginsData), "workspace-plugin") {
-		t.Errorf("expected .agents/plugins.json to contain workspace-plugin, got: %s", string(pluginsData))
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		t.Errorf("expected %s to be a real non-symlink directory", stagedDir)
+	}
+	for _, rel := range []string{"plugin.json", "hooks.json", "mcp_config.json", filepath.Join("agents", "repo-memory-distiller.md")} {
+		if _, err := os.Stat(filepath.Join(stagedDir, rel)); err != nil {
+			t.Errorf("expected staged file %s to exist: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(stagedDir, "agents", "repo-memory-distiller")); !os.IsNotExist(err) {
+		t.Errorf("expected duplicate agents/repo-memory-distiller directory not to exist")
+	}
+	_ = filepath.WalkDir(stagedDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr == nil && d.Type()&os.ModeSymlink != 0 {
+			t.Errorf("unexpected symlink inside staged plugin tree: %s", path)
+		}
+		return nil
+	})
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins.json not to exist on fresh enroll")
 	}
 	agentsGitignore := filepath.Join(repoDir, ".git", "info", "exclude")
 	agentsGitignoreData, err := os.ReadFile(agentsGitignore)
 	if err != nil {
 		t.Fatalf("expected .git/info/exclude to exist: %v", err)
 	}
-	if !strings.Contains(string(agentsGitignoreData), "plugins.json") {
-		t.Errorf("expected .git/info/exclude to contain plugins.json, got: %s", string(agentsGitignoreData))
+	if !strings.Contains(string(agentsGitignoreData), "/.agents/plugins/repo-memory/") {
+		t.Errorf("expected .git/info/exclude to contain /.agents/plugins/repo-memory/, got: %s", string(agentsGitignoreData))
+	}
+	gitStatusCmd := exec.Command("git", "status", "--porcelain")
+	gitStatusCmd.Dir = repoDir
+	statusOut, err := gitStatusCmd.Output()
+	if err != nil {
+		t.Fatalf("git status failed: %v", err)
+	}
+	if strings.Contains(string(statusOut), ".agents/") {
+		t.Errorf("expected .agents/plugins/repo-memory to be ignored by git status, got:\n%s", string(statusOut))
 	}
 
 
@@ -215,6 +245,7 @@ func TestInitSubcommand_ExistingGeminiAndTemplateWarning(t *testing.T) {
 func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -255,10 +286,10 @@ func TestLeaveSubcommand_WithoutAndWithPurge(t *testing.T) {
 		t.Errorf("expected repo to be removed from registry")
 	}
 
-	// .agents/plugins.json must be removed
-	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
-	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
-		t.Errorf("expected .agents/plugins.json to be deleted after unenroll")
+	// .agents/plugins/repo-memory must be removed
+	stagedDir := StagedWorkspacePluginDir(repoDir)
+	if _, err := os.Lstat(stagedDir); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins/repo-memory to be deleted after unenroll")
 	}
 
 	// Marker must be removed
@@ -370,6 +401,7 @@ func TestKillSwitch_Subcommands(t *testing.T) {
 func TestHookSubcommand_FastPath(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 	t.Setenv("REPO_MEMORY_V2_SPIKE", "0") // Disable V2 spike handler so fast-path test reaches the stub
 
 	repoDir := t.TempDir()
@@ -445,6 +477,7 @@ func TestHookSubcommand_FastPath(t *testing.T) {
 func TestEnrollAndUnenrollAliases(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -464,9 +497,9 @@ func TestEnrollAndUnenrollAliases(t *testing.T) {
 	if !config.IsEnrolledFast(repoDir) {
 		t.Errorf("expected repo to be enrolled via init alias")
 	}
-	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
-	if _, err := os.Stat(pluginsPath); err != nil {
-		t.Errorf("expected .agents/plugins.json to exist after init alias: %v", err)
+	stagedDir := StagedWorkspacePluginDir(repoDir)
+	if _, err := os.Stat(stagedDir); err != nil {
+		t.Errorf("expected .agents/plugins/repo-memory to exist after init alias: %v", err)
 	}
 
 	// Test "leave" alias
@@ -479,8 +512,8 @@ func TestEnrollAndUnenrollAliases(t *testing.T) {
 	if config.IsEnrolledFast(repoDir) {
 		t.Errorf("expected repo to be unenrolled via leave alias")
 	}
-	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
-		t.Errorf("expected .agents/plugins.json to be deleted after leave alias")
+	if _, err := os.Lstat(stagedDir); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins/repo-memory to be deleted after leave alias")
 	}
 
 	// Test "enroll" primary command
@@ -507,6 +540,7 @@ func TestEnrollAndUnenrollAliases(t *testing.T) {
 func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -514,21 +548,35 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 	runGit(t, repoDir, "config", "user.email", "test@example.com")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
 
-	// Pre-populate .agents/plugins.json with an external plugin
+	// Pre-populate .agents/plugins.json with an external plugin AND a legacy repo-memory entry
 	agentsDir := filepath.Join(repoDir, ".agents")
-	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(agentsDir, "plugins"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	existingJSON := `{
   "entries": [
     {
       "path": "/opt/other-plugin"
+    },
+    {
+      "path": "/old/path/repo-memory-daemon/workspace-plugin"
     }
   ]
 }
 `
 	pluginsPath := filepath.Join(agentsDir, "plugins.json")
 	if err := os.WriteFile(pluginsPath, []byte(existingJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-populate a legacy symlink at .agents/plugins/repo-memory pointing to an external dir
+	symlinkTarget := t.TempDir()
+	sentinel := filepath.Join(symlinkTarget, "preserve.txt")
+	if err := os.WriteFile(sentinel, []byte("keep-me"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	stagedDir := StagedWorkspacePluginDir(repoDir)
+	if err := os.Symlink(symlinkTarget, stagedDir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -546,16 +594,25 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
-	// Verify .git/info/exclude contains both local-secret.json and plugins.json
+	// Verify .git/info/exclude preserves local-secret.json and adds staged exclusion
 	giData, err := os.ReadFile(gitignorePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(giData), "local-secret.json") || !strings.Contains(string(giData), "plugins.json") {
-		t.Errorf("unexpected .gitignore content: %s", string(giData))
+	if !strings.Contains(string(giData), "local-secret.json") || !strings.Contains(string(giData), "/.agents/plugins/repo-memory/") {
+		t.Errorf("unexpected .git/info/exclude content: %s", string(giData))
 	}
 
-	// Verify .agents/plugins.json contains /opt/other-plugin AND workspace-plugin
+	// Verify symlink was unlinked (without deleting symlink target contents) and replaced with a real dir
+	if sentinelData, err := os.ReadFile(sentinel); err != nil || string(sentinelData) != "keep-me" {
+		t.Errorf("expected symlink target file to be untouched, got err=%v data=%q", err, string(sentinelData))
+	}
+	fi, err := os.Lstat(stagedDir)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		t.Fatalf("expected %s to be replaced by a real directory", stagedDir)
+	}
+
+	// Verify .agents/plugins.json preserves /opt/other-plugin AND scrubbed legacy workspace-plugin
 	pData, err := os.ReadFile(pluginsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -563,8 +620,8 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 	if !strings.Contains(string(pData), "/opt/other-plugin") {
 		t.Errorf("expected existing entry /opt/other-plugin to be preserved: %s", string(pData))
 	}
-	if !strings.Contains(string(pData), "workspace-plugin") {
-		t.Errorf("expected workspace-plugin entry to be added: %s", string(pData))
+	if strings.Contains(string(pData), "workspace-plugin") {
+		t.Errorf("expected legacy workspace-plugin entry to be scrubbed on enroll: %s", string(pData))
 	}
 
 	// Re-run enroll (idempotency check)
@@ -572,15 +629,18 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 		t.Fatalf("second RunEnroll failed: %v", err)
 	}
 	pData2, _ := os.ReadFile(pluginsPath)
-	if strings.Count(string(pData2), "workspace-plugin") != 1 {
-		t.Errorf("duplicate workspace-plugin entries found: %s", string(pData2))
+	if !strings.Contains(string(pData2), "/opt/other-plugin") || strings.Contains(string(pData2), "workspace-plugin") {
+		t.Errorf("unexpected plugins.json after idempotent RunEnroll: %s", string(pData2))
 	}
 
-	// Unenroll: should keep /opt/other-plugin, delete only workspace-plugin
+	// Unenroll: should remove .agents/plugins/repo-memory while keeping /opt/other-plugin
 	cmdUnenroll := unenrollCmd
 	cmdUnenroll.SetOut(&buf)
 	if err := RunUnenroll(cmdUnenroll, repoDir, false); err != nil {
 		t.Fatalf("RunUnenroll failed: %v", err)
+	}
+	if _, err := os.Lstat(stagedDir); !os.IsNotExist(err) {
+		t.Errorf("expected staged directory %s to be removed on unenroll", stagedDir)
 	}
 	pData3, err := os.ReadFile(pluginsPath)
 	if err != nil {
@@ -589,14 +649,23 @@ func TestEnrollPluginsJSON_ExistingEntriesAndIdempotency(t *testing.T) {
 	if !strings.Contains(string(pData3), "/opt/other-plugin") {
 		t.Errorf("expected /opt/other-plugin to remain: %s", string(pData3))
 	}
-	if strings.Contains(string(pData3), "workspace-plugin") {
-		t.Errorf("expected workspace-plugin entry to be removed: %s", string(pData3))
+
+	// Also verify that when .agents/plugins.json ONLY contains legacy repo-memory, RunEnroll deletes it
+	if err := os.WriteFile(pluginsPath, []byte(`{"entries":[{"path":"/old/repo-memory-daemon/workspace-plugin"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RunEnroll(cmd, repoDir); err != nil {
+		t.Fatalf("RunEnroll (empty plugins.json cleanup) failed: %v", err)
+	}
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected .agents/plugins.json to be deleted when only legacy repo-memory entry existed")
 	}
 }
 
 func TestEnableDisableRepo_PluginsJSON(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
+	t.Setenv("REPO_MEMORY_PLUGIN_DIR", t.TempDir())
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -612,9 +681,9 @@ func TestEnableDisableRepo_PluginsJSON(t *testing.T) {
 		t.Fatalf("RunEnroll failed: %v", err)
 	}
 
-	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
-	if _, err := os.Stat(pluginsPath); err != nil {
-		t.Fatalf("expected plugins.json to exist: %v", err)
+	stagedDir := StagedWorkspacePluginDir(repoDir)
+	if _, err := os.Stat(stagedDir); err != nil {
+		t.Fatalf("expected %s to exist: %v", stagedDir, err)
 	}
 
 	// Change working dir to repoDir
@@ -630,8 +699,8 @@ func TestEnableDisableRepo_PluginsJSON(t *testing.T) {
 	if err := RunDisable(cmdDisable, true); err != nil {
 		t.Fatalf("RunDisable failed: %v", err)
 	}
-	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
-		t.Errorf("expected plugins.json to be deleted on disable --repo")
+	if _, err := os.Lstat(stagedDir); !os.IsNotExist(err) {
+		t.Errorf("expected %s to be deleted on disable --repo", stagedDir)
 	}
 	// Marker must STILL exist
 	if !config.IsEnrolledFast(repoDir) {
@@ -644,8 +713,8 @@ func TestEnableDisableRepo_PluginsJSON(t *testing.T) {
 	if err := RunEnable(cmdEnable, true); err != nil {
 		t.Fatalf("RunEnable failed: %v", err)
 	}
-	if _, err := os.Stat(pluginsPath); err != nil {
-		t.Errorf("expected plugins.json to be restored on enable --repo: %v", err)
+	if _, err := os.Stat(filepath.Join(stagedDir, "plugin.json")); err != nil {
+		t.Errorf("expected %s to be re-staged on enable --repo: %v", stagedDir, err)
 	}
 }
 
@@ -653,9 +722,21 @@ func TestDoctor_Checks(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_DATA_DIR", dataDir)
 
-	// Set custom plugin dir
+	// Set custom plugin dir and install a daemon bundle at v0.2.0
 	pluginDir := t.TempDir()
 	t.Setenv("REPO_MEMORY_PLUGIN_DIR", pluginDir)
+
+	origVersion := Version
+	Version = "v0.2.0"
+	defer func() { Version = origVersion }()
+
+	origFix := doctorFixFlag
+	doctorFixFlag = false
+	t.Cleanup(func() { doctorFixFlag = origFix })
+
+	if err := RunInstall(pluginDir, "/test/bin/repo-memory"); err != nil {
+		t.Fatalf("RunInstall failed: %v", err)
+	}
 
 	repoDir := t.TempDir()
 	runGit(t, repoDir, "init")
@@ -663,7 +744,7 @@ func TestDoctor_Checks(t *testing.T) {
 	runGit(t, repoDir, "config", "user.email", "test@example.com")
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial commit")
 
-	// Case 1: Repo enrolled but plugins.json missing
+	// Case 1: Repo enrolled but .agents/plugins/repo-memory missing
 	if err := config.EnsureRepoLayout(repoDir); err != nil {
 		t.Fatal(err)
 	}
@@ -677,36 +758,103 @@ func TestDoctor_Checks(t *testing.T) {
 	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
 		t.Fatalf("RunDoctor failed: %v", err)
 	}
-	if !strings.Contains(buf.String(), "⚠ repo-memory is enrolled but workspace plugin is not configured.") {
-		t.Errorf("expected warning 1, got: %s", buf.String())
+	if !strings.Contains(buf.String(), "staged workspace plugin is missing at .agents/plugins/repo-memory") {
+		t.Errorf("expected missing staged plugin warning, got: %s", buf.String())
 	}
 
-	// Case 2: plugins.json configured, but plugin directory does not exist on disk
-	if err := EnsureWorkspacePluginConfigured(repoDir); err != nil {
+	// Case 2: .agents/plugins/repo-memory is a symlink -> doctor warns
+	stagedDir := StagedWorkspacePluginDir(repoDir)
+	if err := os.MkdirAll(filepath.Dir(stagedDir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(ResolveWorkspacePluginDir(pluginDir), stagedDir); err != nil {
 		t.Fatal(err)
 	}
 	buf.Reset()
 	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
 		t.Fatalf("RunDoctor failed: %v", err)
 	}
-	if !strings.Contains(buf.String(), "⚠ Workspace plugin not found at") {
-		t.Errorf("expected warning 2, got: %s", buf.String())
+	if !strings.Contains(buf.String(), ".agents/plugins/repo-memory is a symlink") {
+		t.Errorf("expected symlink warning, got: %s", buf.String())
 	}
+	_ = os.Remove(stagedDir)
 
-	// Case 3: Plugin directory exists on disk
-	wsPluginPath := filepath.Join(pluginDir, "workspace-plugin")
-	if err := os.MkdirAll(wsPluginPath, 0755); err != nil {
+	// Case 3: Real staged dir at stale version + legacy .agents/plugins.json entry -> doctor warns
+	if err := EnsureWorkspacePluginConfigured(repoDir); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(stagedDir, "plugin.json"), []byte(`{"name":"repo-memory","version":"0.0.1"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pluginsPath := filepath.Join(repoDir, ".agents", "plugins.json")
+	if err := os.WriteFile(pluginsPath, []byte(`{"entries":[{"path":"/old/repo-memory-daemon/workspace-plugin"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "staged workspace plugin version (0.0.1) does not match daemon version (0.2.0)") ||
+		!strings.Contains(buf.String(), "legacy repo-memory entry found in .agents/plugins.json") {
+		t.Errorf("expected version drift and legacy plugins.json warnings, got:\n%s", buf.String())
+	}
+
+	// Case 4: Second enrolled repo registered in registry.json missing staged plugin -> doctor detects & doctor --fix repairs BOTH
+	repoDir2 := t.TempDir()
+	runGit(t, repoDir2, "init")
+	runGit(t, repoDir2, "config", "user.name", "Test User")
+	runGit(t, repoDir2, "config", "user.email", "test@example.com")
+	runGit(t, repoDir2, "commit", "--allow-empty", "-m", "initial commit")
+	if err := config.EnsureRepoLayout(repoDir2); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.CreateEnrolledMarker(repoDir2); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AddToRegistry(dataDir, []string{repoDir2}, "repo-2-id", repoDir2); err != nil {
+		t.Fatal(err)
+	}
+
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "has stale or un-staged workspace plugin") {
+		t.Errorf("expected registry repo warning for repoDir2, got:\n%s", buf.String())
+	}
+
+	doctorFixFlag = true
+	buf.Reset()
+	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
+		t.Fatalf("RunDoctor --fix failed: %v", err)
+	}
+	doctorFixFlag = false
+
+	// Verify both repoDir and repoDir2 now have real v0.2.0 staged plugins and repoDir's legacy plugins.json is deleted
+	for _, r := range []string{repoDir, repoDir2} {
+		sDir := StagedWorkspacePluginDir(r)
+		sfi, err := os.Lstat(sDir)
+		if err != nil || sfi.Mode()&os.ModeSymlink != 0 || !sfi.IsDir() {
+			t.Errorf("expected repaired real directory at %s (err=%v)", sDir, err)
+		}
+		if gotVer := ReadInstalledPluginVersion(sDir); gotVer != "0.2.0" {
+			t.Errorf("expected repaired version 0.2.0 at %s, got %q", sDir, gotVer)
+		}
+	}
+	if _, err := os.Stat(pluginsPath); !os.IsNotExist(err) {
+		t.Errorf("expected legacy plugins.json to be removed after doctor --fix")
+	}
+
+	// Clean doctor run after repair
 	buf.Reset()
 	if err := RunDoctor(cmdDoctor, repoDir); err != nil {
 		t.Fatalf("RunDoctor failed: %v", err)
 	}
 	if buf.Len() > 0 {
-		t.Errorf("expected clean doctor output, got: %s", buf.String())
+		t.Errorf("expected clean doctor output after --fix, got: %s", buf.String())
 	}
 
-	// Case 4: GEMINI.md has unbalanced or duplicate managed block markers
+	// Case 5: GEMINI.md has unbalanced or duplicate managed block markers
 	geminiPath := filepath.Join(repoDir, config.InstructionFilename)
 	if err := os.WriteFile(geminiPath, []byte("# Guidelines\n<!-- repo-memory:begin v2 -->\nunclosed block\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -719,7 +867,7 @@ func TestDoctor_Checks(t *testing.T) {
 		t.Errorf("expected doctor warning for unbalanced GEMINI.md markers, got: %s", buf.String())
 	}
 
-	// Case 5: GEMINI.md has duplicate begin markers
+	// Case 6: GEMINI.md has duplicate begin markers
 	if err := os.WriteFile(geminiPath, []byte("<!-- repo-memory:begin v2 -->\n<!-- repo-memory:begin v2 -->\n<!-- repo-memory:end -->\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
