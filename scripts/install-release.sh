@@ -69,5 +69,6 @@ if [[ "${OS}" == "darwin" ]] && command -v xattr >/dev/null 2>&1; then
   xattr -dr com.apple.quarantine "${PLUGIN_DIR}" 2>/dev/null || true
 fi
 
-# --- Step 3: Render daemon and workspace plugin bundles ---
+# --- Step 3: Render daemon/workspace plugin bundles and re-stage enrolled repos ---
 "${BIN_DIR}/repo-memory" install --harness antigravity
+"${BIN_DIR}/repo-memory" doctor --fix || true

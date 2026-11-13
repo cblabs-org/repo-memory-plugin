@@ -6,17 +6,21 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Module: cmd/repo-memory/cmd_enroll.go
- * Description: Enrolls a Git repository for memory tracking, configures the
- *              workspace plugin in .agents/plugins.json, switches any enrolled
+ * Description: Enrolls a Git repository for memory tracking, stages the
+ *              workspace plugin at .agents/plugins/repo-memory (scrubbing any
+ *              legacy .agents/plugins.json entries), switches any enrolled
  *              Principal Architect workspace to external memory mode, and performs
  *              automatic Day-1 seeding of PA history and curated documentation.
  *
  * Exported Types / Functions:
- * - RunEnroll():                      Executes full repository enrollment and Day-1 seeding.
- * - RunInit():                        Alias for RunEnroll.
- * - EnsureWorkspacePluginConfigured(): Registers workspace-plugin in .agents/plugins.json.
- * - RemoveWorkspacePluginConfigured(): Removes workspace-plugin from .agents/plugins.json.
- * - SyncPAMemoryMode():               Updates memory_mode in Principal Architect .state/state.db.
+ * - StagedWorkspacePluginRel:        Relative repository path for the staged workspace plugin.
+ * - StagedWorkspacePluginDir():      Resolves <repoRoot>/.agents/plugins/repo-memory.
+ * - StageWorkspacePlugin():          Copies the workspace plugin bundle into .agents/plugins/repo-memory.
+ * - RunEnroll():                     Executes full repository enrollment and Day-1 seeding.
+ * - RunInit():                       Alias for RunEnroll.
+ * - EnsureWorkspacePluginConfigured(): Stages .agents/plugins/repo-memory and configures git excludes.
+ * - RemoveWorkspacePluginConfigured(): Removes .agents/plugins/repo-memory and cleans legacy plugins.json.
+ * - SyncPAMemoryMode():              Updates memory_mode in Principal Architect .state/state.db.
  */
 
 package main
@@ -113,7 +117,7 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 		return fmt.Errorf("creating enrolled marker: %w", err)
 	}
 
-	// --- Step 2: Configure .agents/plugins.json and global registry ---
+	// --- Step 2: Stage .agents/plugins/repo-memory and update global registry ---
 	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
 		if execPath, execErr := os.Executable(); execErr == nil && !isTestExecutable(execPath) {
 			if absBin, absErr := filepath.Abs(execPath); absErr == nil {
@@ -128,7 +132,7 @@ func RunEnroll(cmd *cobra.Command, targetDir string) error {
 	if err := EnsureWorkspacePluginConfigured(repoRoot); err != nil {
 		return fmt.Errorf("configuring workspace plugin: %w", err)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Workspace plugin enabled for this repository via .agents/plugins.json")
+	fmt.Fprintln(cmd.OutOrStdout(), "Workspace plugin staged for this repository at .agents/plugins/repo-memory")
 
 	repoID, err := gitops.GenerateRepoID(repoRoot)
 	if err != nil {
@@ -352,80 +356,193 @@ func bootstrapRepoMemoryOnEnroll(cmd *cobra.Command, repoRoot, dataDir, repoID s
 	tick.NewPipelineExecutor(dataDir, repoRoot, repoID, nil, nil).RefreshFreshnessState(ctx, false)
 }
 
-// EnsureWorkspacePluginConfigured registers the repo-memory workspace plugin path inside
-// <repoRoot>/.agents/plugins.json and adds .agents/plugins.json to .git/info/exclude.
-func EnsureWorkspacePluginConfigured(repoRoot string) error {
-	// --- Step 1: Resolve daemon workspace-plugin path and .agents/plugins.json ---
-	daemonDir, err := ResolveAntigravityPluginDir()
-	if err != nil {
-		return fmt.Errorf("resolving daemon plugin directory: %w", err)
-	}
-	daemonDir, err = filepath.Abs(daemonDir)
-	if err != nil {
-		return fmt.Errorf("resolving absolute daemon plugin directory: %w", err)
-	}
-	wsPluginPath := filepath.Join(daemonDir, "workspace-plugin")
+// StagedWorkspacePluginRel is the repository-relative path where Antigravity 1.5.8+
+// auto-discovers workspace-scoped plugins as real (non-symlink) directories.
+const StagedWorkspacePluginRel = ".agents/plugins/repo-memory"
 
-	agentsDir := filepath.Join(repoRoot, ".agents")
-	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return fmt.Errorf("creating .agents directory: %w", err)
-	}
+// StagedWorkspacePluginDir returns the staged workspace plugin path inside repoRoot.
+func StagedWorkspacePluginDir(repoRoot string) string {
+	return filepath.Join(repoRoot, ".agents", "plugins", "repo-memory")
+}
 
-	pluginsPath := filepath.Join(agentsDir, "plugins.json")
-
-	cmdGit := exec.Command("git", "ls-files", "--error-unmatch", pluginsPath)
-	cmdGit.Dir = repoRoot
-	if err := cmdGit.Run(); err == nil {
-		return fmt.Errorf(".agents/plugins.json is tracked in git — it contains machine-specific paths and should not be committed. Remove it from git tracking: git rm --cached .agents/plugins.json")
-	}
-
-	// --- Step 2: Merge workspace-plugin entry into .agents/plugins.json ---
-	var configMap map[string]any
-	if data, err := os.ReadFile(pluginsPath); err == nil {
-		if err := json.Unmarshal(data, &configMap); err != nil {
-			return fmt.Errorf("cannot parse existing .agents/plugins.json: %w — please fix or remove the file manually", err)
-		}
-	} else if os.IsNotExist(err) {
-		configMap = make(map[string]any)
-	} else {
-		return fmt.Errorf("reading %s: %w", pluginsPath, err)
-	}
-
-	var rawEntries []any
-	if entriesVal, ok := configMap["entries"]; ok {
-		if list, ok := entriesVal.([]any); ok {
-			rawEntries = list
+// StageWorkspacePlugin copies the repo-memory workspace plugin bundle into
+// <repoRoot>/.agents/plugins/repo-memory as a real (non-symlink) directory tree.
+// It unlinks any pre-existing symlink at the target path, preserves the top-level
+// directory inode when already present, dereferences any symlinks inside the source
+// bundle, strips packaging artifacts, and falls back to embedded templates when the
+// global daemon workspace-plugin directory has not been installed on disk.
+func StageWorkspacePlugin(repoRoot string) error {
+	// --- Step 1: Resolve installed workspace-plugin source directory if present ---
+	var wsSrcDir string
+	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil && strings.TrimSpace(daemonDir) != "" {
+		if absDaemon, absErr := filepath.Abs(daemonDir); absErr == nil {
+			wsSrcDir = ResolveWorkspacePluginDir(absDaemon)
 		}
 	}
 
-	alreadyPresent := false
-	for _, item := range rawEntries {
-		if m, ok := item.(map[string]any); ok {
-			if p, ok := m["path"].(string); ok {
-				if isRepoMemoryWorkspacePluginEntry(p, wsPluginPath) {
-					alreadyPresent = true
-					break
-				}
+	// --- Step 2: Prepare <repoRoot>/.agents/plugins/repo-memory without following symlinks ---
+	stagedDir := StagedWorkspacePluginDir(repoRoot)
+	if err := os.MkdirAll(filepath.Dir(stagedDir), 0755); err != nil {
+		return fmt.Errorf("creating .agents/plugins directory: %w", err)
+	}
+
+	if fi, lstatErr := os.Lstat(stagedDir); lstatErr == nil {
+		if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+			if err := os.Remove(stagedDir); err != nil {
+				return fmt.Errorf("removing legacy symlink or non-directory at %s: %w", stagedDir, err)
 			}
 		}
 	}
 
-	if !alreadyPresent {
-		rawEntries = append(rawEntries, map[string]any{
-			"path": wsPluginPath,
-		})
-		configMap["entries"] = rawEntries
+	if err := os.MkdirAll(stagedDir, 0755); err != nil {
+		return fmt.Errorf("creating staged plugin directory %s: %w", stagedDir, err)
+	}
 
-		marshaled, err := json.MarshalIndent(configMap, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshaling %s: %w", pluginsPath, err)
-		}
-		if err := os.WriteFile(pluginsPath, append(marshaled, '\n'), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", pluginsPath, err)
+	if existing, err := os.ReadDir(stagedDir); err == nil {
+		for _, entry := range existing {
+			if err := os.RemoveAll(filepath.Join(stagedDir, entry.Name())); err != nil {
+				return fmt.Errorf("cleaning stale staged entry %s: %w", entry.Name(), err)
+			}
 		}
 	}
 
-	// --- Step 3: Ensure .agents/plugins.json is git-excluded ---
+	// --- Step 3: Populate staged directory from installed workspace-plugin or embedded templates ---
+	srcManifest := ""
+	if wsSrcDir != "" {
+		srcManifest = filepath.Join(wsSrcDir, "plugin.json")
+	}
+	if fi, err := os.Stat(srcManifest); err == nil && !fi.IsDir() {
+		if err := copyTreeDereferenced(wsSrcDir, "", stagedDir); err != nil {
+			return fmt.Errorf("staging workspace plugin from %s: %w", wsSrcDir, err)
+		}
+		flatAgentPath := filepath.Join(stagedDir, "agents", "repo-memory-distiller.md")
+		if _, statErr := os.Stat(flatAgentPath); os.IsNotExist(statErr) {
+			if err := os.MkdirAll(filepath.Dir(flatAgentPath), 0755); err != nil {
+				return fmt.Errorf("creating staged agents directory: %w", err)
+			}
+			if err := os.WriteFile(flatAgentPath, []byte(antigravity.GenerateDistillerAgentMD()), 0644); err != nil {
+				return fmt.Errorf("writing staged distiller agent: %w", err)
+			}
+		}
+		return nil
+	}
+
+	binPath := "repo-memory"
+	if execPath, err := os.Executable(); err == nil {
+		if absBin, absErr := filepath.Abs(execPath); absErr == nil {
+			if evalBin, evalErr := filepath.EvalSymlinks(absBin); evalErr == nil {
+				absBin = evalBin
+			}
+			binPath = absBin
+		}
+	}
+
+	hooksContent := antigravity.GenerateHooksJSON(binPath)
+	if err := ValidateHooksJSON([]byte(hooksContent)); err != nil {
+		return fmt.Errorf("validating embedded hooks template: %w", err)
+	}
+
+	agentsDir := filepath.Join(stagedDir, "agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("creating staged agents directory: %w", err)
+	}
+
+	fallbackFiles := map[string]string{
+		filepath.Join(stagedDir, "plugin.json"):              antigravity.GenerateWorkspacePluginJSONWithVersion(Version),
+		filepath.Join(stagedDir, "hooks.json"):               hooksContent,
+		filepath.Join(stagedDir, "mcp_config.json"):          antigravity.GenerateMCPConfigJSON(binPath),
+		filepath.Join(agentsDir, "repo-memory-distiller.md"): antigravity.GenerateDistillerAgentMD(),
+	}
+	for path, content := range fallbackFiles {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return fmt.Errorf("writing fallback staged file %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// copyTreeDereferenced recursively copies regular files and directories from srcRoot/srcRel
+// into dstRoot/srcRel as real directories and regular files, dereferencing any symlinks and
+// skipping packaging artifacts, legacy skills directories, and duplicate distiller subdirectories.
+func copyTreeDereferenced(srcRoot, srcRel, dstRoot string) error {
+	curSrc := srcRoot
+	if srcRel != "" {
+		curSrc = filepath.Join(srcRoot, srcRel)
+	}
+	entries, err := os.ReadDir(curSrc)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if isIgnoredPluginArtifact(name) {
+			continue
+		}
+		rel := name
+		if srcRel != "" {
+			rel = filepath.Join(srcRel, name)
+		}
+		relSlash := filepath.ToSlash(rel)
+		if relSlash == "skills" || relSlash == "agents/repo-memory-distiller" {
+			continue
+		}
+		srcPath := filepath.Join(srcRoot, rel)
+		dstPath := filepath.Join(dstRoot, rel)
+		info, err := os.Stat(srcPath)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if err := os.MkdirAll(dstPath, 0755); err != nil {
+				return err
+			}
+			if err := copyTreeDereferenced(srcRoot, rel, dstRoot); err != nil {
+				return err
+			}
+			continue
+		}
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0644)
+		if info.Mode().Perm()&0111 != 0 {
+			mode = 0755
+		}
+		if err := os.WriteFile(dstPath, data, mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EnsureWorkspacePluginConfigured stages the repo-memory workspace plugin inside
+// <repoRoot>/.agents/plugins/repo-memory, scrubs any legacy repo-memory entries from
+// <repoRoot>/.agents/plugins.json, and adds the staged directory to .git/info/exclude.
+func EnsureWorkspacePluginConfigured(repoRoot string) error {
+	// --- Step 1: Reject git-tracked plugin manifests containing machine-specific paths ---
+	cmdTrackedJSON := exec.Command("git", "ls-files", "--error-unmatch", filepath.Join(".agents", "plugins.json"))
+	cmdTrackedJSON.Dir = repoRoot
+	if err := cmdTrackedJSON.Run(); err == nil {
+		return fmt.Errorf(".agents/plugins.json is tracked in git — it contains machine-specific paths and should not be committed. Remove it from git tracking: git rm --cached .agents/plugins.json")
+	}
+
+	cmdTrackedStaged := exec.Command("git", "ls-files", "--error-unmatch", filepath.Join(".agents", "plugins", "repo-memory", "plugin.json"))
+	cmdTrackedStaged.Dir = repoRoot
+	if err := cmdTrackedStaged.Run(); err == nil {
+		return fmt.Errorf(".agents/plugins/repo-memory is tracked in git — staged workspace plugins contain machine-specific paths and must not be committed. Remove it from git tracking: git rm -r --cached .agents/plugins/repo-memory")
+	}
+
+	// --- Step 2: Stage real plugin directory and scrub legacy .agents/plugins.json entries ---
+	if err := StageWorkspacePlugin(repoRoot); err != nil {
+		return err
+	}
+
+	if err := scrubRepoMemoryFromPluginsJSON(repoRoot, true); err != nil {
+		return err
+	}
+
+	// --- Step 3: Ensure .agents/plugins/repo-memory/ and .agents/plugins.json are git-excluded ---
 	if err := ensurePluginsGitExcluded(repoRoot); err != nil {
 		return fmt.Errorf("updating .git/info/exclude: %w", err)
 	}
@@ -433,10 +550,10 @@ func EnsureWorkspacePluginConfigured(repoRoot string) error {
 	return nil
 }
 
-// RemoveWorkspacePluginConfigured removes the repo-memory workspace-plugin entry from
-// <repoRoot>/.agents/plugins.json, deleting the file if no other entries remain.
-func RemoveWorkspacePluginConfigured(repoRoot string) error {
-	// --- Step 1: Read and parse .agents/plugins.json ---
+// scrubRepoMemoryFromPluginsJSON removes legacy repo-memory workspace-plugin entries from
+// <repoRoot>/.agents/plugins.json while preserving sibling entries and unrelated keys.
+// It never creates .agents/plugins.json if absent, and deletes the file if no entries or keys remain.
+func scrubRepoMemoryFromPluginsJSON(repoRoot string, strictParse bool) error {
 	pluginsPath := filepath.Join(repoRoot, ".agents", "plugins.json")
 	data, err := os.ReadFile(pluginsPath)
 	if err != nil {
@@ -448,10 +565,12 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 
 	var configMap map[string]any
 	if err := json.Unmarshal(data, &configMap); err != nil {
-		return fmt.Errorf("parsing %s: %w", pluginsPath, err)
+		if !strictParse {
+			return nil
+		}
+		return fmt.Errorf("cannot parse existing .agents/plugins.json: %w — please fix or remove the file manually", err)
 	}
 
-	// --- Step 2: Filter out repo-memory workspace-plugin entries ---
 	var expectedPath string
 	if daemonDir, err := ResolveAntigravityPluginDir(); err == nil {
 		if abs, err := filepath.Abs(daemonDir); err == nil {
@@ -467,10 +586,12 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	}
 
 	var remaining []any
+	removedAny := false
 	for _, item := range rawEntries {
 		if m, ok := item.(map[string]any); ok {
 			if p, ok := m["path"].(string); ok {
 				if isRepoMemoryWorkspacePluginEntry(p, expectedPath) {
+					removedAny = true
 					continue
 				}
 			}
@@ -478,7 +599,10 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 		remaining = append(remaining, item)
 	}
 
-	// --- Step 3: Remove empty plugins.json or write remaining entries ---
+	if !removedAny {
+		return nil
+	}
+
 	hasOtherKeys := false
 	for k, v := range configMap {
 		if k == "entries" {
@@ -508,13 +632,71 @@ func RemoveWorkspacePluginConfigured(repoRoot string) error {
 	return os.WriteFile(pluginsPath, append(marshaled, '\n'), 0644)
 }
 
-// ensurePluginsGitExcluded appends .agents/plugins.json to <repoRoot>/.git/info/exclude if absent.
+// RemoveWorkspacePluginConfigured removes the staged <repoRoot>/.agents/plugins/repo-memory
+// directory (or legacy symlink), cleans up empty .agents/plugins / .agents parents, and scrubs
+// any legacy repo-memory entries from <repoRoot>/.agents/plugins.json while preserving siblings.
+func RemoveWorkspacePluginConfigured(repoRoot string) error {
+	// --- Step 1: Remove staged plugin directory or symlink ---
+	stagedDir := StagedWorkspacePluginDir(repoRoot)
+	if fi, err := os.Lstat(stagedDir); err == nil {
+		if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+			if rmErr := os.Remove(stagedDir); rmErr != nil && !os.IsNotExist(rmErr) {
+				return fmt.Errorf("removing %s: %w", stagedDir, rmErr)
+			}
+		} else {
+			if rmErr := os.RemoveAll(stagedDir); rmErr != nil {
+				return fmt.Errorf("removing %s: %w", stagedDir, rmErr)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspecting %s: %w", stagedDir, err)
+	}
+
+	// Best-effort cleanup of empty .agents/plugins and .agents directories without disturbing siblings.
+	pluginsParent := filepath.Join(repoRoot, ".agents", "plugins")
+	if entries, err := os.ReadDir(pluginsParent); err == nil && len(entries) == 0 {
+		_ = os.Remove(pluginsParent)
+	}
+	agentsDir := filepath.Join(repoRoot, ".agents")
+	if entries, err := os.ReadDir(agentsDir); err == nil && len(entries) == 0 {
+		_ = os.Remove(agentsDir)
+	}
+
+	// --- Step 2: Scrub any legacy repo-memory entries from .agents/plugins.json ---
+	return scrubRepoMemoryFromPluginsJSON(repoRoot, true)
+}
+
+// ensurePluginsGitExcluded appends /.agents/plugins/repo-memory/ and .agents/plugins.json
+// to <repoRoot>/.git/info/exclude (supporting git worktrees) when absent.
 func ensurePluginsGitExcluded(repoRoot string) error {
-	// --- Step 1: Verify .git/info directory exists and read current exclude file ---
-	excludePath := filepath.Join(repoRoot, ".git", "info", "exclude")
+	// --- Step 1: Resolve .git/info/exclude path for standard repos and worktrees ---
+	gitDot := filepath.Join(repoRoot, ".git")
+	fi, err := os.Stat(gitDot)
+	if err != nil {
+		return nil
+	}
+
+	var excludePath string
+	if fi.IsDir() {
+		excludePath = filepath.Join(gitDot, "info", "exclude")
+	} else {
+		out, cmdErr := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-path", "info/exclude").Output()
+		if cmdErr != nil {
+			return nil
+		}
+		resolved := strings.TrimSpace(string(out))
+		if resolved == "" {
+			return nil
+		}
+		if filepath.IsAbs(resolved) {
+			excludePath = resolved
+		} else {
+			excludePath = filepath.Join(repoRoot, resolved)
+		}
+	}
 
 	infoDir := filepath.Dir(excludePath)
-	if info, err := os.Stat(infoDir); err != nil || !info.IsDir() {
+	if info, statErr := os.Stat(infoDir); statErr != nil || !info.IsDir() {
 		return nil
 	}
 
@@ -523,35 +705,59 @@ func ensurePluginsGitExcluded(repoRoot string) error {
 		return err
 	}
 
-	// --- Step 2: Check for existing entry and append if missing ---
+	// --- Step 2: Check for existing exclude entries and append missing patterns ---
 	content := string(data)
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	hasStagedExclude := false
+	hasLegacyJSONExclude := false
+	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == ".agents/plugins.json" || trimmed == "/.agents/plugins.json" {
-			return nil
+		switch trimmed {
+		case "/.agents/plugins/repo-memory/", ".agents/plugins/repo-memory/", "/.agents/plugins/repo-memory", ".agents/plugins/repo-memory":
+			hasStagedExclude = true
+		case ".agents/plugins.json", "/.agents/plugins.json":
+			hasLegacyJSONExclude = true
 		}
+	}
+
+	if hasStagedExclude && hasLegacyJSONExclude {
+		return nil
 	}
 
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	content += "# repo-memory: machine-specific workspace plugin path\n.agents/plugins.json\n"
+	if !hasStagedExclude && !hasLegacyJSONExclude {
+		content += "# repo-memory: local staged workspace plugin\n"
+	}
+	if !hasStagedExclude {
+		content += "/.agents/plugins/repo-memory/\n"
+	}
+	if !hasLegacyJSONExclude {
+		content += ".agents/plugins.json\n"
+	}
 	return os.WriteFile(excludePath, []byte(content), 0644)
 }
 
-// isRepoMemoryWorkspacePluginEntry reports whether entryPath matches the repo-memory workspace plugin.
+// isRepoMemoryWorkspacePluginEntry reports whether entryPath refers to a legacy or current
+// repo-memory workspace plugin path.
 func isRepoMemoryWorkspacePluginEntry(entryPath, expectedPath string) bool {
-	if entryPath == "" || expectedPath == "" {
+	if strings.TrimSpace(entryPath) == "" {
 		return false
 	}
-	if filepath.Clean(entryPath) == filepath.Clean(expectedPath) {
-		return true
+	if expectedPath != "" {
+		if filepath.Clean(entryPath) == filepath.Clean(expectedPath) {
+			return true
+		}
+		if filepath.Clean(entryPath) == filepath.Join(filepath.Clean(expectedPath), "repo-memory") {
+			return true
+		}
 	}
-	if filepath.Clean(entryPath) == filepath.Join(filepath.Clean(expectedPath), "repo-memory") {
-		return true
-	}
-	return false
+	norm := strings.TrimRight(filepath.ToSlash(strings.TrimSpace(entryPath)), "/")
+	return norm == ".agents/plugins/repo-memory" ||
+		strings.HasSuffix(norm, "/repo-memory-daemon/workspace-plugin") ||
+		strings.HasSuffix(norm, "/repo-memory-daemon/workspace-plugin/repo-memory") ||
+		strings.HasSuffix(norm, "/workspace-plugin/repo-memory") ||
+		strings.HasSuffix(norm, "/.agents/plugins/repo-memory")
 }
 
 // isTestExecutable reports whether execPath appears to be a temporary `go test` binary.
@@ -575,12 +781,18 @@ func ensurePluginBundleInstalled(daemonDir, binPath string) error {
 		filepath.Join(wsDir, "plugin.json"),
 		filepath.Join(wsDir, "hooks.json"),
 		filepath.Join(wsDir, "mcp_config.json"),
+		filepath.Join(wsDir, "agents", "repo-memory-distiller.md"),
 	}
 	needsInstall := false
 	for _, p := range requiredFiles {
 		if _, err := os.Stat(p); err != nil {
 			needsInstall = true
 			break
+		}
+	}
+	if !needsInstall {
+		if _, err := os.Stat(filepath.Join(wsDir, "agents", "repo-memory-distiller")); err == nil {
+			needsInstall = true
 		}
 	}
 

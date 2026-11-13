@@ -44,6 +44,26 @@ ignore_me.c
 void ignored_func() {}
 `), 0644)
 
+	stagedPluginDir := filepath.Join(tempDir, ".agents", "plugins", "repo-memory")
+	if err := os.MkdirAll(stagedPluginDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(stagedPluginDir, "staged_ignore.c"), []byte(`
+int staged_plugin_func(void) {
+	return 0;
+}
+`), 0644)
+
+	realAgentsDir := filepath.Join(tempDir, "agents")
+	if err := os.MkdirAll(realAgentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(realAgentsDir, "real_agent.c"), []byte(`
+int real_agent_func(void) {
+	return 0;
+}
+`), 0644)
+
 	ext := New(tempDir)
 	entities, err := ext.Run()
 	if err != nil {
@@ -54,6 +74,8 @@ void ignored_func() {}
 	foundConfig := false
 	foundSymbol := false
 	foundIgnored := false
+	foundStagedPlugin := false
+	foundRealAgent := false
 
 	for _, e := range entities {
 		if e.ID == "topic:networking" {
@@ -68,6 +90,12 @@ void ignored_func() {}
 		if e.ID == "symbol:ignored_func" {
 			foundIgnored = true
 		}
+		if e.ID == "symbol:staged_plugin_func" {
+			foundStagedPlugin = true
+		}
+		if e.ID == "symbol:real_agent_func" {
+			foundRealAgent = true
+		}
 	}
 
 	if !foundTopic {
@@ -81,5 +109,11 @@ void ignored_func() {}
 	}
 	if foundIgnored {
 		t.Error("Expected ignored_func to be ignored")
+	}
+	if foundStagedPlugin {
+		t.Error("Expected staged_plugin_func under .agents/plugins to be ignored")
+	}
+	if !foundRealAgent {
+		t.Error("Expected real_agent_func under agents/ to be extracted")
 	}
 }

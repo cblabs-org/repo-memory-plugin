@@ -29,7 +29,11 @@ PLUGIN_DIR="${REPO_MEMORY_PLUGIN_DIR:-$HOME/.gemini/config/plugins/repo-memory-d
 
 if [[ -z "${VERSION:-}" ]]; then
   RAW_VERSION="$(git -C "${REPO_ROOT}" describe --tags --always --dirty 2>/dev/null || echo "0.1.0")"
-  VERSION="${RAW_VERSION#v}"
+  if [[ "${RAW_VERSION}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    VERSION="${RAW_VERSION#v}"
+  else
+    VERSION="0.1.0"
+  fi
 fi
 
 # --- Step 2: Compile binary into the plugin bin directory and link into BIN_DIR ---
@@ -49,5 +53,6 @@ if [[ "$(uname -s)" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
   xattr -dr com.apple.quarantine "${PLUGIN_DIR}" 2>/dev/null || true
 fi
 
-# --- Step 3: Render daemon and workspace plugin bundles ---
+# --- Step 3: Render daemon/workspace plugin bundles and re-stage enrolled repos ---
 "${BIN_DIR}/repo-memory" install --harness antigravity
+"${BIN_DIR}/repo-memory" doctor --fix || true

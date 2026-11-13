@@ -654,7 +654,10 @@ func ResolveDocSeedGlobs(repoRoot string, cfg RepoConfig) ([]string, error) {
 
 			if d.IsDir() {
 				base := d.Name()
-				if base == ".git" || base == ".memory" || relSlash == ".agents/skills/principal-architect-workspace" || strings.HasSuffix(relSlash, "/principal-architect-workspace") {
+				relNorm := normalizeRelRepoPath(relSlash)
+				if base == ".git" || base == ".memory" ||
+					relNorm == ".agents/plugins" || strings.HasPrefix(relNorm, ".agents/plugins/") ||
+					relNorm == ".agents/skills/principal-architect-workspace" || strings.HasSuffix(relNorm, "/principal-architect-workspace") {
 					return filepath.SkipDir
 				}
 				return nil
@@ -705,16 +708,31 @@ func normalizeSlashPattern(raw string) string {
 	return p
 }
 
+// normalizeRelRepoPath converts raw to forward slashes and strips leading "./" and "/"
+// without touching leading dots on hidden directories such as ".agents".
+func normalizeRelRepoPath(raw string) string {
+	p := filepath.ToSlash(strings.TrimSpace(raw))
+	p = strings.TrimPrefix(p, "./")
+	p = strings.TrimLeft(p, "/")
+	return p
+}
+
 // shouldExcludeDocSeedPath reports whether relSlash must be excluded from doc
-// seeding due to protected directories (.memory, PA workspaces) or default exclusions.
+// seeding due to protected directories (.memory, .agents/plugins, PA workspaces) or default exclusions.
 func shouldExcludeDocSeedPath(relSlash string, isExplicitExact bool) bool {
-	// --- Step 1: Always exclude .memory and Principal Architect workspaces ---
-	if relSlash == ".memory" || strings.HasPrefix(relSlash, ".memory/") || strings.Contains(relSlash, "/.memory/") {
+	// --- Step 1: Always exclude .memory, staged .agents/plugins, and Principal Architect workspaces ---
+	norm := normalizeRelRepoPath(relSlash)
+	if norm == ".memory" || strings.HasPrefix(norm, ".memory/") || strings.Contains(norm, "/.memory/") {
 		return true
 	}
-	if strings.HasPrefix(relSlash, ".agents/skills/principal-architect-workspace/") ||
-		strings.Contains(relSlash, "/principal-architect-workspace/") ||
-		strings.HasPrefix(relSlash, "principal-architect-workspace/") {
+	if norm == ".agents/plugins" ||
+		strings.HasPrefix(norm, ".agents/plugins/") ||
+		strings.Contains(norm, "/.agents/plugins/") {
+		return true
+	}
+	if strings.HasPrefix(norm, ".agents/skills/principal-architect-workspace/") ||
+		strings.Contains(norm, "/principal-architect-workspace/") ||
+		strings.HasPrefix(norm, "principal-architect-workspace/") {
 		return true
 	}
 
